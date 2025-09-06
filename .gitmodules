@@ -1,0 +1,6 @@
+[submodule "archsim/third-party/sponza-model"]
+	path = archsim/third-party/sponza-model
+	url = https://github.com/jimmiebergmann/Sponza.git
+[submodule "archsim/third-party/imgui"]
+	path = archsim/third-party/imgui
+	url = https://github.com/ocornut/imgui.git
