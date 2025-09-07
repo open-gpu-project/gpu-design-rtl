@@ -1,0 +1,14 @@
+{
+   "version": 2,
+   "configurePresets": [
+      {
+         "name": "default",
+         "inherits": "vcpkg-template-preset",
+         "environment": {
+            "VCPKG_ROOT": "path to vcpkg root",
+            "CMAKE_C_COMPILER": "path to clang-19",
+            "CMAKE_CXX_COMPILER": "path to clang++-19"
+         }
+      }
+   ]
+}
