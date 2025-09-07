@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+      {
+         "type": "cmake",
+         "label": "Build CMake Project",
+         "command": "build",
+         "targets": [
+            "all"
+         ],
+         "preset": "__defaultBuildPreset__",
+         "group": {
+            "kind": "build",
+         },
+         "problemMatcher": [],
+         "detail": "Build all C++ code in this repository",
+      }
+   ]
+}

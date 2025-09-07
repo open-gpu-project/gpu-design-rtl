@@ -1,5 +1,11 @@
 {
   "dependencies": [
-    "glm"
+    "glm",
+    {
+      "name": "glfw3",
+      "features": [
+        "wayland"
+      ]
+    }
   ]
 }

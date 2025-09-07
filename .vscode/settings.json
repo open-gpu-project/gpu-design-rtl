@@ -8,10 +8,11 @@
    "editor.tabSize": 3,
    "editor.detectIndentation": false,
 
+   // C++ specific rules
+   "C_Cpp.autoAddFileAssociations": false,
+
    // Misc configuration
    "git.enableCommitSigning": false,
    "search.quickOpen.includeHistory": false,
-
-   // C++ specific rules
-   "C_Cpp.autoAddFileAssociations": false,
+   "task.autoDetect": "off",
 }
