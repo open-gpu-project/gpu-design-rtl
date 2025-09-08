@@ -1,11 +1,7 @@
 {
   "dependencies": [
     "glm",
-    {
-      "name": "glfw3",
-      "features": [
-        "wayland"
-      ]
-    }
+    "glfw3",
+    "glad"
   ]
 }

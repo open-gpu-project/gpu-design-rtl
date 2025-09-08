@@ -1,0 +1,43 @@
+{
+  "version": 5,
+  "configurePresets": [
+    {
+      "name": "default",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/default",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/Program Files/Ninja/ninja.exe",
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/ehdec/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_ROOT": "C:/Users/ehdec/vcpkg",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "targets": [ "all" ],
+      "jobs": 8
+    }
+  ]
+}
+
+
+{
+   "version": 2,
+   "configurePresets": [
+      {
+         "name": "default",
+         "inherits": "vcpkg-template-preset",
+         "environment": {
+            "VCPKG_ROOT": "C:/Users/ehdec/vcpkg",
+            "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+            "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe"
+         }
+      }
+   ]
+}
