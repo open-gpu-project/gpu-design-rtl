@@ -9,6 +9,7 @@ Repository will contain:
 - SiVal tests
 
 C++ Environment Setup guide:
+1. Install Ninja and CMake. For CMake, try to install the latest version, you can grab the `.sh` install file for **Linux** here: https://cmake.org/download/ (and .msi for **Windows**). On **MacOS**, use brew.
 1. Download and install LLVM-19. **On Linux**, this can be installed with the LLVM install script by running:
    ```bash
    wget https://apt.llvm.org/llvm.sh
@@ -26,7 +27,7 @@ C++ Environment Setup guide:
    cd vcpkg
    ./bootstrap-vcpkg.sh
    ```
-   (on Windows this will be a `.bat` file instead). Note that the `vcpkg/` directory is now your `VCPKG_ROOT`. **Make sure you add it to your path.** For more information see [the official setup guide](https://learn.microsoft.com/en-gb/vcpkg/get_started/get-started).
+   (on Windows this will be a `.bat` file instead and you may need to download Visual Studio). Note that the `vcpkg/` directory is now your `VCPKG_ROOT`. **Make sure you add it to your path.** For more information see [the official setup guide](https://learn.microsoft.com/en-gb/vcpkg/get_started/get-started).
 4. Confirm by running `vcpkg --version`
 5. Open this repository in VSCode and download the recommended workspace extensions (it should prompt you, or you can go to the extensions panel and install it).
 6. Copy over `CMakeUserPresets.template.json` into `CMakeUserPresets.json` and fill in the required paths under the `"environment"` key.
