@@ -17,20 +17,27 @@
 #include "shader.cc"
 #include <glm/gtc/type_ptr.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 Camera camera;
 
 double lastx, lasty;
 double cursorx, cursory;
 
+bool mouse_focus = true;
+
+
 void mouse_callback(GLFWwindow* window, double xpos, double ypos){
    cursorx = xpos;
    cursory = ypos;
-   camera.ProcessMouseMovement(xpos-lastx, lasty-ypos);
+   if (mouse_focus){
+      camera.ProcessMouseMovement(xpos-lastx, lasty-ypos);
+   }
    lastx = xpos;
    lasty = ypos;
    ImGui_ImplGlfw_CursorPosCallback(window, xpos, ypos);
 }
-
 
 static void glfw_error_callback(int error, const char* description) {
    std::cerr << "GLFW Error " << error << ": " << description << std::endl;
@@ -115,7 +122,10 @@ int main(int, char**) {
    // Load resources/fonts/settings/...
    // ...
 
-   Shader mainShader("/mnt/9A807E95807E7799/software/projects/gpu-design-rtl/archsim/stdref-cpp/main.vert","/mnt/9A807E95807E7799/software/projects/gpu-design-rtl/archsim/stdref-cpp/main.frag");
+   std::string objPath = "../archsim/third-party/sponza-model/sponza.obj";
+   std::string dir = "../archsim/third-party/sponza-model/";
+
+   Shader mainShader("../archsim/stdref-cpp/main.vert","../archsim/stdref-cpp/main.frag");
 
    tinyobj::attrib_t attrib;                  // holds vertex arrays
    std::vector<tinyobj::shape_t> shapes;      // holds faces grouped into objects
@@ -124,8 +134,8 @@ int main(int, char**) {
 
    bool ret = tinyobj::LoadObj(
       &attrib, &shapes, &materials, &warn, &err,
-      "/mnt/9A807E95807E7799/software/projects/gpu-design-rtl/archsim/third-party/sponza-model/sponza.obj",        // path to OBJ
-      "/mnt/9A807E95807E7799/software/projects/gpu-design-rtl/archsim/third-party/sponza-model/",           // path to MTL + textures
+      objPath.c_str(),        // path to OBJ
+      dir.c_str(),           // path to MTL + textures
       true                 // triangulate polygons
    );
 
@@ -136,35 +146,129 @@ int main(int, char**) {
    std::cout << "Loaded " << shapes.size() << " shapes\n";
    std::cout << "Loaded " << materials.size() << " materials\n";
 
-   std::vector<float> vertices;
+   std::map<int,std::vector<tinyobj::index_t>> materialGroup;
+
+   std::map<std::string,GLuint> loaded_texture;
+
+   for (const tinyobj::material_t mat: materials){
+      if(!mat.diffuse_texname.empty()){
+         if (!loaded_texture.contains(mat.diffuse_texname)){
+            stbi_set_flip_vertically_on_load(true);  
+            GLuint textureID;
+            glGenTextures(1,&textureID);
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            int width, height, channels;
+            unsigned char* data = stbi_load((dir+mat.diffuse_texname).c_str(), &width, &height, &channels, 0);
+            GLenum format = GL_RGB;
+            if (channels == 1) format = GL_RED;
+            else if (channels == 3) format = GL_RGB;
+            else if (channels == 4) format = GL_RGBA;
+
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0,
+                        format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            stbi_image_free(data);
+
+            loaded_texture[mat.diffuse_texname] = textureID;
+         }
+      }
+   }
+
+   // std::vector<float> vertices;
 
    for (int i = 0; i< shapes.size(); i++){
       tinyobj::shape_t currentShape = shapes.at(i);
       tinyobj::mesh_t currentMesh = currentShape.mesh;
-      for (int j = 0; j < currentMesh.indices.size(); j++){
-         int v_index = currentMesh.indices.at(j).vertex_index;
-         int n_index = currentMesh.indices.at(j).normal_index;
-         int t_index = currentMesh.indices.at(j).texcoord_index;
-         vertices.push_back(attrib.vertices.at(3*v_index));
-         vertices.push_back(attrib.vertices.at(3*v_index+1));
-         vertices.push_back(attrib.vertices.at(3*v_index+2));
-         vertices.push_back(attrib.normals.at(3*n_index));
-         vertices.push_back(attrib.normals.at(3*n_index+1));
-         vertices.push_back(attrib.normals.at(3*n_index+2));
-         vertices.push_back(attrib.texcoords.at(2*t_index));
-         vertices.push_back(attrib.texcoords.at(2*t_index+1));
+      for (int j = 0; j + 2 < currentMesh.indices.size(); j += 3){
+         int currentMaterialID = currentMesh.material_ids.at(j / 3);
+         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j));
+         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j+1));
+         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j+2));
       }
    }
 
-   std::cout << "Loaded " << vertices.size()/8 << " vertices"<< "\n";
+   struct Vertex {
+      float position[3];
+      float normal[3];
+      float uv[2];
 
-   unsigned int VBO, VAO;
+      // Strict lexicographic compare (avoids memcmp/padding issues)
+      bool operator<(const Vertex &v) const {
+         for (int i = 0; i < 3; ++i) if (position[i] != v.position[i]) return position[i] < v.position[i];
+         for (int i = 0; i < 3; ++i) if (normal[i]   != v.normal[i])   return normal[i]   < v.normal[i];
+         for (int i = 0; i < 2; ++i) if (uv[i]       != v.uv[i])       return uv[i]       < v.uv[i];
+         return false;
+      }
+   };
+   static_assert(sizeof(Vertex) == 8 * sizeof(float), "Vertex has unexpected padding");
+
+   struct Mesh {
+      int materialID;
+      int startIndex;
+      int size;
+   };
+
+   std::vector<Vertex> vertices;
+   std::map<Vertex, int> vertexMap;
+   std::vector<int> indices;
+   std::vector<Mesh> mesh;
+
+   int startIndex = 0;
+
+   for (int i = 0; i < materials.size(); i++){
+      std::vector<tinyobj::index_t> m_indices = materialGroup[i];
+
+      Mesh currentMesh;
+      currentMesh.materialID = i;
+      currentMesh.startIndex = startIndex;
+
+      for (int j = 0; j < m_indices.size(); j++){
+
+         tinyobj::index_t currentIndex = m_indices[j];
+         float position[3], normal[3], uv[2];
+         position[0] = attrib.vertices[3*currentIndex.vertex_index];
+         position[1] = attrib.vertices[3*currentIndex.vertex_index + 1];
+         position[2] = attrib.vertices[3*currentIndex.vertex_index + 2];
+         normal[0] = attrib.normals[3*currentIndex.normal_index];
+         normal[1] = attrib.normals[3*currentIndex.normal_index + 1];
+         normal[2] = attrib.normals[3*currentIndex.normal_index + 2];      
+         uv[0] = attrib.texcoords[2*currentIndex.texcoord_index];
+         uv[1] = attrib.texcoords[2*currentIndex.texcoord_index + 1];                  
+         Vertex v = { {position[0], position[1], position[2]}, {normal[0], normal[1], normal[2]}, {uv[0], uv[1]} };
+         if (vertexMap.count(v)==0){
+            vertexMap[v] = vertices.size();
+            vertices.push_back(v);
+         }
+         indices.push_back(vertexMap[v]);
+      }
+      startIndex += m_indices.size();
+      currentMesh.size = m_indices.size();
+      mesh.push_back(currentMesh);
+   }
+
+   std::cout << "Loaded " << vertices.size() << " vertices"<< "\n";
+   std::cout << "Loaded " << indices.size()/3 << " triangles"<< "\n";
+
+   unsigned int VBO, VAO, EBO;
    glGenVertexArrays(1, &VAO);
    glGenBuffers(1, &VBO);
+   glGenBuffers(1, &EBO);
 
    glBindVertexArray(VAO);
+
    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+
+   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+   glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(int), indices.data(), GL_STATIC_DRAW);
 
    // vertex position
    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
@@ -190,6 +294,7 @@ int main(int, char**) {
    float fov = 45;
    camera.MovementSpeed = 300.0f;
    camera.MouseSensitivity = 0.3f;
+   bool wireframe = false;
 
    // Main loop
    auto& io = ImGui::GetIO();
@@ -214,9 +319,11 @@ int main(int, char**) {
       float currentTime = (float) glfwGetTime();
       deltaTime = currentTime - lastFrame;
       lastFrame = currentTime;
+
       ImGui::Begin("Info");
       ImGui::SliderFloat("speed", &camera.MovementSpeed, 0.0f, 500.0f);
       ImGui::SliderFloat("fov", &fov, 0.0f, 180.0f);
+      ImGui::Checkbox("wireframe", &wireframe);
 
       ImGui::Text("fps: %.3f ", 1/deltaTime);
 
@@ -236,18 +343,20 @@ int main(int, char**) {
                    clear_color.z * clear_color.w, clear_color.w);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-      mainShader.use();
-      glBindVertexArray(VAO);
-
       if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.ProcessKeyboard(FORWARD,  deltaTime);
       if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.ProcessKeyboard(BACKWARD, deltaTime);
       if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.ProcessKeyboard(LEFT,     deltaTime);
       if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.ProcessKeyboard(RIGHT,    deltaTime);
       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) camera.ProcessKeyboard(UP,    deltaTime);
       if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera.ProcessKeyboard(DOWN,    deltaTime);
-      if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-      if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);  
+      if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS){
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mouse_focus = false;
+      }
+      if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS){
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouse_focus = true;
+      }
 
 
       glm::mat4 view = glm::mat4(1.0f);
@@ -262,7 +371,25 @@ int main(int, char**) {
       glUniformMatrix4fv(glGetUniformLocation(mainShader.ID, "view"),1,GL_FALSE, glm::value_ptr(view));
       glUniformMatrix4fv(glGetUniformLocation(mainShader.ID, "projection"),1,GL_FALSE, glm::value_ptr(projection));
 
-      glDrawArrays(GL_TRIANGLES, 0, vertices.size()/3);
+      if (wireframe){
+         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      } else {
+         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      }
+      mainShader.use();
+      glBindVertexArray(VAO);
+      glBindBuffer(GL_ARRAY_BUFFER, VBO);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+
+      for (int i = 0; i < mesh.size(); i++){
+         Mesh m = mesh.at(i);
+         tinyobj::material_t mat = materials.at(i);
+         
+         glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
+         glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void *)(m.startIndex * sizeof(int)));
+      }
+
+      // glDrawArrays(GL_TRIANGLES, 0, vertices.size());
 
       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
       glfwSwapBuffers(window);
