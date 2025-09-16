@@ -1,7 +1,4 @@
-
-
-#ifndef CAMERA_H
-#define CAMERA_H
+#pragma once
 
 #include "glad.h"
 #include <glm/glm.hpp>
@@ -80,9 +77,9 @@ public:
             Position -= Right * velocity;
         if (direction == RIGHT)
             Position += Right * velocity;
-         if (direction == UP)
+        if (direction == UP)
             Position += WorldUp * velocity;
-         if (direction == DOWN)
+        if (direction == DOWN)
             Position -= WorldUp * velocity;
     }
 
@@ -133,5 +130,3 @@ private:
         Up    = glm::normalize(glm::cross(Right, Front));
     }
 };
-#endif
-
