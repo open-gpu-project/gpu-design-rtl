@@ -50,7 +50,7 @@ float ShadowFactor(vec4 fragPosLight)
     float current = p.z;                              // our depth
 
     // depth bias to avoid acne; make it slope-aware if you have the normal
-    float bias = 0.015;                             
+    float bias = 0.0003;                             
    //  return current - bias > closest ? 1.0 : 0.0;     // 1 = shadow, 0 = lit
       // PCF
     float shadow = 0.0;
@@ -81,9 +81,9 @@ void main() {
         }
         if (alpha < 0.5)
         discard;
-
         // no lighting, just texture
-        FragColor = texture(material.normal, TexCoords);
+        FragColor = texture(material.diffuse, TexCoords);
+
     } else if (lightType == 1 || lightType == 2){
         vec3 n = texture(material.normal, TexCoords).rgb;
         vec3 norm = normalize(TBN * normalize(n * 2.0 - 1.0));   // this normal is in tangent space

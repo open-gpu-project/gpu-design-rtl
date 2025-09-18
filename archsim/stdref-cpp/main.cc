@@ -10,14 +10,18 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
+#include "utils.h"
+#include "model.h"
+#include "camera.h"
+#include "shader.h"
+
 #define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include <glm/gtc/type_ptr.hpp>
-#include "camera.h"
-#include "shader.h"
-#include "tiny_obj_loader.h"
 
 
 Camera camera;
@@ -131,270 +135,244 @@ int main(int, char**) {
 
    Shader mainShader((projectRoot + "/archsim/stdref-cpp/main.vert").c_str(),
                      (projectRoot + "/archsim/stdref-cpp/main.frag").c_str());
+   
+   Model sponza(objPath,dir);
 
-   tinyobj::attrib_t attrib;                   // holds vertex arrays
-   std::vector<tinyobj::shape_t> shapes;       // holds faces grouped into objects
-   std::vector<tinyobj::material_t> materials; // holds material info
-   std::string warn, err;
+   // tinyobj::attrib_t attrib;                   // holds vertex arrays
+   // std::vector<tinyobj::shape_t> shapes;       // holds faces grouped into objects
+   // std::vector<tinyobj::material_t> materials; // holds material info
+   // std::string warn, err;
 
-   bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                               objPath.c_str(), // path to OBJ
-                               dir.c_str(),     // path to MTL + textures
-                               true             // triangulate polygons
-   );
+   // bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
+   //                             objPath.c_str(), // path to OBJ
+   //                             dir.c_str(),     // path to MTL + textures
+   //                             true             // triangulate polygons
+   // );
 
-   if (!warn.empty()) std::cout << "WARN: " << warn << "\n";
-   if (!err.empty()) std::cerr << "ERR: " << err << "\n";
-   if (!ret) return 1;
+   // if (!warn.empty()) std::cout << "WARN: " << warn << "\n";
+   // if (!err.empty()) std::cerr << "ERR: " << err << "\n";
+   // if (!ret) return 1;
 
-   std::cout << "Loaded " << shapes.size() << " shapes\n";
-   std::cout << "Loaded " << materials.size() << " materials\n";
+   // std::cout << "Loaded " << shapes.size() << " shapes\n";
+   // std::cout << "Loaded " << materials.size() << " materials\n";
 
-   std::map<int, std::vector<tinyobj::index_t>> materialGroup;
+   // std::map<int, std::vector<tinyobj::index_t>> materialGroup;
 
-   std::map<std::string, GLuint> loaded_texture;
+   // std::map<std::string, GLuint> loaded_texture;
 
-   std::set<std::string> tex_names;
+   // std::set<std::string> tex_names;
 
-   for (const tinyobj::material_t mat : materials) {
-      std::cout << mat.name << "\n";
-      if (!mat.diffuse_texname.empty() && !tex_names.contains(mat.diffuse_texname)) {
-         std::cout << "diffuse: " << mat.diffuse_texname << "\n";
-         tex_names.insert(mat.diffuse_texname);
-      }
-      if (!mat.specular_texname.empty()) {
-         std::cout << "specular: " << mat.specular_texname << "\n";
-         tex_names.insert(mat.specular_texname);
-      }
-      if (!mat.alpha_texname.empty()) {
-         std::cout << "alpha: " << mat.alpha_texname << "\n";
-         tex_names.insert(mat.alpha_texname);
-      }
-      if (!mat.displacement_texname.empty()) {
-         std::cout << "displacement: " << mat.displacement_texname << "\n";
-         tex_names.insert(mat.displacement_texname);
-      }
-      std::cout << "\n";
-   }
+   // for (const tinyobj::material_t mat : materials) {
+   //    std::cout << mat.name << "\n";
+   //    if (!mat.diffuse_texname.empty() && !tex_names.contains(mat.diffuse_texname)) {
+   //       std::cout << "diffuse: " << mat.diffuse_texname << "\n";
+   //       tex_names.insert(mat.diffuse_texname);
+   //    }
+   //    if (!mat.specular_texname.empty()) {
+   //       std::cout << "specular: " << mat.specular_texname << "\n";
+   //       tex_names.insert(mat.specular_texname);
+   //    }
+   //    if (!mat.alpha_texname.empty()) {
+   //       std::cout << "alpha: " << mat.alpha_texname << "\n";
+   //       tex_names.insert(mat.alpha_texname);
+   //    }
+   //    if (!mat.displacement_texname.empty()) {
+   //       std::cout << "displacement: " << mat.displacement_texname << "\n";
+   //       tex_names.insert(mat.displacement_texname);
+   //    }
+   //    std::cout << "\n";
+   // }
 
-   for (const std::string tex_name : tex_names) {
-         if (!loaded_texture.contains(tex_name)) {
-      stbi_set_flip_vertically_on_load(true);
-      GLuint textureID;
-      glGenTextures(1, &textureID);
-      glBindTexture(GL_TEXTURE_2D, textureID);
-      int width, height, channels;
-      unsigned char* data = stbi_load((dir + tex_name).c_str(), &width, &height, &channels, 0);
-      GLenum format = GL_RGB;
-      if (channels == 1)
-         format = GL_RED;
-      else if (channels == 3)
-         format = GL_RGB;
-      else if (channels == 4)
-         format = GL_RGBA;
+   // Scene s(attrib,shapes, materials);
 
-      glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+   // for (const std::string tex_name : tex_names) {
+   //       if (!loaded_texture.contains(tex_name)) {
+   //    stbi_set_flip_vertically_on_load(true);
+   //    GLuint textureID;
+   //    glGenTextures(1, &textureID);
+   //    glBindTexture(GL_TEXTURE_2D, textureID);
+   //    int width, height, channels;
+   //    unsigned char* data = stbi_load((dir + tex_name).c_str(), &width, &height, &channels, 0);
+   //    GLenum format = GL_RGB;
+   //    if (channels == 1)
+   //       format = GL_RED;
+   //    else if (channels == 3)
+   //       format = GL_RGB;
+   //    else if (channels == 4)
+   //       format = GL_RGBA;
 
-      glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-      glGenerateMipmap(GL_TEXTURE_2D);
+   //    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   //    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+   //    glGenerateMipmap(GL_TEXTURE_2D);
 
-      stbi_image_free(data);
+   //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+   //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+   //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+   //    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-      loaded_texture[tex_name] = textureID;
-         }
-   }
+   //    stbi_image_free(data);
 
-   for (const auto &currentShape:shapes) {
-      tinyobj::mesh_t currentMesh = currentShape.mesh;
-      for (int j = 0; j + 2 < currentMesh.indices.size(); j += 3) {
-         int currentMaterialID = currentMesh.material_ids.at(j / 3);
-         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j));
-         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j + 1));
-         materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j + 2));
-      }
-   }
+   //    loaded_texture[tex_name] = textureID;
+   //       }
+   // }
 
-   struct Vertex {
-      float position[3];
-      float normal[3];
-      float uv[2];
-      float tangent[3];
-      float bitangent[3];
+   // for (const auto &currentShape:shapes) {
+   //    tinyobj::mesh_t currentMesh = currentShape.mesh;
+   //    for (int j = 0; j + 2 < currentMesh.indices.size(); j += 3) {
+   //       assert(currentMesh.num_face_vertices.size() > j / 3 && currentMesh.num_face_vertices[j / 3] == 3);
+   //       int currentMaterialID = currentMesh.material_ids.at(j / 3);
+   //       materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j));
+   //       materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j + 1));
+   //       materialGroup[currentMaterialID].push_back(currentMesh.indices.at(j + 2));
+   //    }
+   // }
+
+   // std::vector<Vertex> vertices;
+   // std::map<Vertex, int> vertexMap;
+   // std::vector<int> indices;
+   // std::vector<Mesh> mesh;
+
+   // int startIndex = 0;
+
+   // for (int i = 0; i < materials.size(); i++) {
+   //    std::vector<tinyobj::index_t> m_indices = materialGroup[i];
+
+   //    Mesh currentMesh;
+   //    currentMesh.materialID = i;
+   //    currentMesh.startIndex = startIndex;
+
+   //    for (int j = 0; j < m_indices.size(); j++) {
+   //       tinyobj::index_t currentIndex = m_indices[j];
+   //       float position[3], normal[3], uv[2];
+   //       position[0] = attrib.vertices[3 * currentIndex.vertex_index];
+   //       position[1] = attrib.vertices[3 * currentIndex.vertex_index + 1];
+   //       position[2] = attrib.vertices[3 * currentIndex.vertex_index + 2];
+   //       normal[0] = attrib.normals[3 * currentIndex.normal_index];
+   //       normal[1] = attrib.normals[3 * currentIndex.normal_index + 1];
+   //       normal[2] = attrib.normals[3 * currentIndex.normal_index + 2];
+   //       uv[0] = attrib.texcoords[2 * currentIndex.texcoord_index];
+   //       uv[1] = attrib.texcoords[2 * currentIndex.texcoord_index + 1];
+
+   //       Vertex v = {{position[0], position[1], position[2]},
+   //                   {normal[0], normal[1], normal[2]},
+   //                   {uv[0], uv[1]},
+   //                   {0,0,0}, // tangent placeholder
+   //                   {0,0,0} // bitangent placeholder
+   //                };
+   //       if (vertexMap.count(v) == 0) {
+   //          vertexMap[v] = vertices.size();
+   //          vertices.push_back(v);
+   //       }
+   //       indices.push_back(vertexMap[v]);
+   //    }
+   //    startIndex += m_indices.size();
+   //    currentMesh.size = m_indices.size();
+   //    mesh.push_back(currentMesh);
+   // }
+
+   // std::map<int,glm::vec3> accTangents;
+   // std::map<int,glm::vec3> accBitangents;
+
+   // // Initialize tangent and bitangent accumulators to zero for all vertices
+   // for (int i = 0; i < vertices.size(); ++i) {
+   //    accTangents[i] = glm::vec3(0.0f);
+   //    accBitangents[i] = glm::vec3(0.0f);
+   // }
+
+   // for (int i = 0; i < indices.size(); i += 3){
+   //    Vertex vert1 = vertices.at(indices[i]);
+   //    Vertex vert2 = vertices.at(indices[i+1]);
+   //    Vertex vert3 = vertices.at(indices[i+2]);
+   //    float uv1[2] = { vert1.uv[0], vert1.uv[1] };
+   //    float uv2[2] = { vert2.uv[0], vert2.uv[1] };
+   //    float uv3[2] = { vert3.uv[0], vert3.uv[1] };
+   //    float u1 = uv2[0]-uv1[0];
+   //    float u2 = uv3[0]-uv1[0];
+   //    float v1 = uv2[1]-uv1[1];
+   //    float v2 = uv3[1]-uv1[1];
+   //    glm::vec3 e1 = glm::make_vec3(vert2.position) - glm::make_vec3(vert1.position);
+   //    glm::vec3 e2 = glm::make_vec3(vert3.position) - glm::make_vec3(vert1.position);
+   //    float det = (u1*v2-v1*u2);
+   //    if (abs(det) < 0.0001)
+   //       continue;
+   //    float f = 1/det;
+   //    glm::mat2 inv = f * glm::mat2(v2, -v1, -u2, u1);
+   //    glm::mat3x2 e;
+   //    e[0][0] = e1.x; e[0][1] = e2.x;
+   //    e[1][0] = e1.y; e[1][1] = e2.y;
+   //    e[2][0] = e1.z; e[2][1] = e2.z;
+   //    glm::mat3x2 result = inv * e;
+   //    glm::vec3 tangent = glm::transpose(result)[0];
+   //    glm::vec3 bitangent = glm::transpose(result)[1];
+   //    // glm::vec3 tangent = (e1 * v2 - e2 * v1) / det;
+   //    // glm::vec3 bitangent = (e2 * u1 - e1 * u2) / det;
+   //    accTangents[indices[i]] += tangent;
+   //    accTangents[indices[i+1]] += tangent;
+   //    accTangents[indices[i+2]] += tangent;
+   //    accBitangents[indices[i]] += bitangent;
+   //    accBitangents[indices[i+1]] += bitangent;
+   //    accBitangents[indices[i+2]] += bitangent;
+   // }
+
+   // for (int i = 0; i < vertices.size(); ++i) {
+   //    glm::vec3 T = normalize(accTangents[i]);
+   //    glm::vec3 B = normalize(accBitangents[i]);
+   //    glm::vec3 N = normalize(glm::make_vec3(vertices[i].normal));
+
+   //    // Gram-Schmidt orthogonalization
+   //    T = glm::normalize(T - glm::dot(T, N) * N);
       
+   //    // Check for "handedness" (optional but good practice)
+   //    // if (glm::dot(glm::cross(N, T), B) < 0.0f) {
+   //    //    T *= -1.0f;
+   //    // }
 
-      // Strict lexicographic compare (avoids memcmp/padding issues)
-      bool operator<(const Vertex& v) const {
-         for (int i = 0; i < 3; ++i)
-            if (position[i] != v.position[i]) return position[i] < v.position[i];
-         for (int i = 0; i < 3; ++i)
-            if (normal[i] != v.normal[i]) return normal[i] < v.normal[i];
-         for (int i = 0; i < 2; ++i)
-            if (uv[i] != v.uv[i]) return uv[i] < v.uv[i];
-         for (int i = 0; i < 3; ++i)
-            if (tangent[i] != v.tangent[i]) return tangent[i] < v.tangent[i];
-         for (int i = 0; i < 3; ++i)
-            if (bitangent[i] != v.bitangent[i]) return bitangent[i] < v.bitangent[i];
-         return false;
-      }
-   };
-   static_assert(sizeof(Vertex) == 14 * sizeof(float), "Vertex has unexpected padding");
+   //    // Store the final vectors in the vertex data
+   //    vertices.at(i).tangent[0] = T.x;
+   //    vertices.at(i).tangent[1] = T.y;
+   //    vertices.at(i).tangent[2] = T.z;
+   //    vertices.at(i).bitangent[0] = B.x;
+   //    vertices.at(i).bitangent[1] = B.y;
+   //    vertices.at(i).bitangent[2] = B.z;
+   // }
 
-   struct Mesh {
-      int materialID;
-      int startIndex;
-      int size;
-   };
+   // std::cout << "Loaded " << vertices.size() << " vertices" << "\n";
+   // std::cout << "Loaded " << indices.size() / 3 << " triangles" << "\n";
 
-   std::vector<Vertex> vertices;
-   std::map<Vertex, int> vertexMap;
-   std::vector<int> indices;
-   std::vector<Mesh> mesh;
+   // unsigned int VBO, VAO, EBO;
+   // glGenVertexArrays(1, &VAO);
+   // glGenBuffers(1, &VBO);
+   // glGenBuffers(1, &EBO);
 
-   int startIndex = 0;
+   // glBindVertexArray(VAO);
 
-   for (int i = 0; i < materials.size(); i++) {
-      std::vector<tinyobj::index_t> m_indices = materialGroup[i];
+   // glBindBuffer(GL_ARRAY_BUFFER, VBO);
+   // glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
 
-      Mesh currentMesh;
-      currentMesh.materialID = i;
-      currentMesh.startIndex = startIndex;
+   // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+   // glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(int), indices.data(),
+   //              GL_STATIC_DRAW);
 
-      for (int j = 0; j < m_indices.size(); j++) {
-         tinyobj::index_t currentIndex = m_indices[j];
-         float position[3], normal[3], uv[2];
-         position[0] = attrib.vertices[3 * currentIndex.vertex_index];
-         position[1] = attrib.vertices[3 * currentIndex.vertex_index + 1];
-         position[2] = attrib.vertices[3 * currentIndex.vertex_index + 2];
-         normal[0] = attrib.normals[3 * currentIndex.normal_index];
-         normal[1] = attrib.normals[3 * currentIndex.normal_index + 1];
-         normal[2] = attrib.normals[3 * currentIndex.normal_index + 2];
-         uv[0] = attrib.texcoords[2 * currentIndex.texcoord_index];
-         uv[1] = attrib.texcoords[2 * currentIndex.texcoord_index + 1];
+   // // vertex position
+   // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
+   // glEnableVertexAttribArray(0);
 
-         Vertex v = {{position[0], position[1], position[2]},
-                     {normal[0], normal[1], normal[2]},
-                     {uv[0], uv[1]},
-                     {0,0,0}, // tangent placeholder
-                     {0,0,0} // bitangent placeholder
-                  };
-         if (vertexMap.count(v) == 0) {
-            vertexMap[v] = vertices.size();
-            vertices.push_back(v);
-         }
-         indices.push_back(vertexMap[v]);
-      }
-      startIndex += m_indices.size();
-      currentMesh.size = m_indices.size();
-      mesh.push_back(currentMesh);
-   }
+   // // normal
+   // glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(3 * sizeof(float)));
+   // glEnableVertexAttribArray(1);
 
-   std::map<int,glm::vec3> accTangents;
-   std::map<int,glm::vec3> accBitangents;
+   // // texture coordinates
+   // glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(6 * sizeof(float)));
+   // glEnableVertexAttribArray(2);
 
-   // Initialize tangent and bitangent accumulators to zero for all vertices
-   for (int i = 0; i < vertices.size(); ++i) {
-      accTangents[i] = glm::vec3(0.0f);
-      accBitangents[i] = glm::vec3(0.0f);
-   }
+   // // tangent
+   // glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
+   // glEnableVertexAttribArray(3);
 
-   for (int i = 0; i < indices.size(); i += 3){
-      Vertex vert1 = vertices.at(indices[i]);
-      Vertex vert2 = vertices.at(indices[i+1]);
-      Vertex vert3 = vertices.at(indices[i+2]);
-      float uv1[2] = { vert1.uv[0], vert1.uv[1] };
-      float uv2[2] = { vert2.uv[0], vert2.uv[1] };
-      float uv3[2] = { vert3.uv[0], vert3.uv[1] };
-      float u1 = uv2[0]-uv1[0];
-      float u2 = uv3[0]-uv1[0];
-      float v1 = uv2[1]-uv1[1];
-      float v2 = uv3[1]-uv1[1];
-      glm::vec3 e1 = glm::make_vec3(vert2.position) - glm::make_vec3(vert1.position);
-      glm::vec3 e2 = glm::make_vec3(vert3.position) - glm::make_vec3(vert1.position);
-      float det = (u1*v2-v1*u2);
-      if (abs(det) < 0.0001)
-         continue;
-      float f = 1/det;
-      glm::mat2 inv = f * glm::mat2(v2, -v1, -u2, u1);
-      glm::mat3x2 e;
-      e[0][0] = e1.x; e[0][1] = e2.x;
-      e[1][0] = e1.y; e[1][1] = e2.y;
-      e[2][0] = e1.z; e[2][1] = e2.z;
-      glm::mat3x2 result = inv * e;
-      glm::vec3 tangent = glm::transpose(result)[0];
-      glm::vec3 bitangent = glm::transpose(result)[1];
-      // glm::vec3 tangent = (e1 * v2 - e2 * v1) / det;
-      // glm::vec3 bitangent = (e2 * u1 - e1 * u2) / det;
-      accTangents[indices[i]] += tangent;
-      accTangents[indices[i+1]] += tangent;
-      accTangents[indices[i+2]] += tangent;
-      accBitangents[indices[i]] += bitangent;
-      accBitangents[indices[i+1]] += bitangent;
-      accBitangents[indices[i+2]] += bitangent;
-   }
-
-   for (int i = 0; i < vertices.size(); ++i) {
-      glm::vec3 T = normalize(accTangents[i]);
-      glm::vec3 B = normalize(accBitangents[i]);
-      glm::vec3 N = normalize(glm::make_vec3(vertices[i].normal));
-
-      // Gram-Schmidt orthogonalization
-      T = glm::normalize(T - glm::dot(T, N) * N);
-      
-      // Check for "handedness" (optional but good practice)
-      if (glm::dot(glm::cross(N, T), B) < 0.0f) {
-         T *= -1.0f;
-      }
-
-      // Store the final vectors in the vertex data
-      vertices.at(i).tangent[0] = T.x;
-      vertices.at(i).tangent[1] = T.y;
-      vertices.at(i).tangent[2] = T.z;
-      vertices.at(i).bitangent[0] = B.x;
-      vertices.at(i).bitangent[1] = B.y;
-      vertices.at(i).bitangent[2] = B.z;
-   }
-
-   std::cout << "Loaded " << vertices.size() << " vertices" << "\n";
-   std::cout << "Loaded " << indices.size() / 3 << " triangles" << "\n";
-
-   unsigned int VBO, VAO, EBO;
-   glGenVertexArrays(1, &VAO);
-   glGenBuffers(1, &VBO);
-   glGenBuffers(1, &EBO);
-
-   glBindVertexArray(VAO);
-
-   glBindBuffer(GL_ARRAY_BUFFER, VBO);
-   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-
-   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-   glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(int), indices.data(),
-                GL_STATIC_DRAW);
-
-   // vertex position
-   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
-   glEnableVertexAttribArray(0);
-
-   // normal
-   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(3 * sizeof(float)));
-   glEnableVertexAttribArray(1);
-
-   // texture coordinates
-   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(6 * sizeof(float)));
-   glEnableVertexAttribArray(2);
-
-   // tangent
-   glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
-   glEnableVertexAttribArray(3);
-
-   // bitangent
-   glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
-   glEnableVertexAttribArray(4);
+   // // bitangent
+   // glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
+   // glEnableVertexAttribArray(4);
 
    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -409,6 +387,8 @@ int main(int, char**) {
    camera.MovementSpeed = 300.0f;
    camera.MouseSensitivity = 0.3f;
    bool wireframe = false;
+   bool loadTextures = true;
+
 
    // lighting
    unsigned int lightVAO, lightVBO;
@@ -481,6 +461,15 @@ int main(int, char**) {
 
        Shader depthShader((projectRoot + "/archsim/stdref-cpp/depth.vert").c_str(),
                      (projectRoot + "/archsim/stdref-cpp/depth.frag").c_str());
+   
+    GLuint blackTex; 
+    glGenTextures(1, &blackTex);
+    glBindTexture(GL_TEXTURE_2D, blackTex);
+    const GLubyte black[4] = {255,255,255,255};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, black);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
    // Main loop
    auto& io = ImGui::GetIO();
@@ -519,6 +508,7 @@ int main(int, char**) {
       ImGui::SliderFloat("speed", &camera.MovementSpeed, 0.0f, 500.0f);
       ImGui::SliderFloat("fov", &fov, 0.0f, 180.0f);
       ImGui::Checkbox("wireframe", &wireframe);
+      ImGui::Checkbox("load textures", &loadTextures);
 
       if (ImGui::RadioButton("None", lightType == None)) lightType = None;
       if (ImGui::RadioButton("Point", lightType == Point)) {
@@ -562,11 +552,12 @@ int main(int, char**) {
 
         glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-         glClear(GL_DEPTH_BUFFER_BIT);
-         glBindVertexArray(VAO);
-         for (auto m :mesh) {
-            glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
-         }
+         // glClear(GL_DEPTH_BUFFER_BIT);
+         // glBindVertexArray(VAO);
+         // for (auto m :mesh) {
+         //    glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
+         // }
+         sponza.renderGeometry();
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
       
         ImGui::Begin("Shadow Map");
@@ -623,7 +614,6 @@ int main(int, char**) {
          case Point:
             mainShader.setInt("lightType", 1);
             mainShader.setVec3("light.position", glm::make_vec3(lightPos));
-            // glUniform3fv(glGetUniformLocation(mainShader.ID, "light.position"), 1, lightPos);
             mainShader.setFloat("light.constant", lightAttenuationConstants[0]);
             mainShader.setFloat("light.linear", lightAttenuationConstants[1]);
             mainShader.setFloat("light.quadratic", lightAttenuationConstants[2]);
@@ -657,40 +647,69 @@ int main(int, char**) {
          glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
       }
 
-      glBindVertexArray(VAO);
+      // glBindVertexArray(VAO);
 
-      for (int i = 0; i < mesh.size(); i++) {
-         Mesh m = mesh.at(i);
-         tinyobj::material_t mat = materials.at(i);
+         glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, blackTex);
+         
+            sponza.render(mainShader, loadTextures);
+            
+      // for (int i = 0; i < mesh.size(); i++) {
+      //    Mesh m = mesh.at(i);
+      //    tinyobj::material_t mat = materials.at(i);
 
-         glActiveTexture(GL_TEXTURE1);
-         glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
-         mainShader.setInt("material.diffuse",1);
 
-         glActiveTexture(GL_TEXTURE2);
-         glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.specular_texname]);
-         mainShader.setInt("material.specular",2);
 
-         mainShader.setBool("hasOpacityMask", !mat.alpha_texname.empty());
-         if (!mat.alpha_texname.empty()) {
-            // use diffuse texture since there is actually no alpha texture file
-            glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
-            mainShader.setInt("material.alpha",3);
-         }
+      //    if (loadTextures){
+      //       glActiveTexture(GL_TEXTURE1);
+      //       glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
+      //       mainShader.setInt("material.diffuse",1);
 
-         // displacement map is actually normal map
-         glActiveTexture(GL_TEXTURE4);
-          glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.displacement_texname]);
-         mainShader.setInt("material.normal",4);
+      //       glActiveTexture(GL_TEXTURE2);
+      //       glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.specular_texname]);
+      //       mainShader.setInt("material.specular",2);
+
+      //       // mainShader.setBool("hasOpacityMask", !mat.alpha_texname.empty());
+      //       // if (!mat.alpha_texname.empty()) {
+      //       //    // use diffuse texture since there is actually no alpha texture file
+      //       //    glActiveTexture(GL_TEXTURE3);
+      //       //    glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
+      //       //    mainShader.setInt("material.alpha",3);
+      //       // }
+
+      //       // displacement map is actually normal map
+      //       // glActiveTexture(GL_TEXTURE4);
+      //       // glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.displacement_texname]);
+      //       // mainShader.setInt("material.normal",4);
+
+
+      //       // glActiveTexture(GL_TEXTURE5);
+      //       // glBindTexture(GL_TEXTURE_2D, depthMap);
+      //       // mainShader.setInt("depthMap",5);
+      //    } else {
+      //       mainShader.setInt("material.diffuse",0);
+      //       mainShader.setInt("material.specular",0);
+      //       mainShader.setInt("material.alpha",0);
+      //       // mainShader.setInt("material.normal",0);
+      //       // mainShader.setInt("depthMap",0);
+      //    }
+
+      //                // displacement map is actually normal map
+      //       glActiveTexture(GL_TEXTURE4);
+      //       glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.displacement_texname]);
+      //       mainShader.setInt("material.normal",4);
+
+      //                glActiveTexture(GL_TEXTURE5);
+      //       glBindTexture(GL_TEXTURE_2D, depthMap);
+      //       mainShader.setInt("depthMap",5);
+
+      //    glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
+      // }
 
 
          glActiveTexture(GL_TEXTURE5);
-          glBindTexture(GL_TEXTURE_2D, depthMap);
+         glBindTexture(GL_TEXTURE_2D, depthMap);
          mainShader.setInt("depthMap",5);
-
-         glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
-      }
 
       // light
       glm::mat4 lightModel = glm::mat4(1.0f);
