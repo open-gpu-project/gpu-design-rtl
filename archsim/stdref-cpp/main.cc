@@ -209,8 +209,7 @@ int main(int, char**) {
          }
    }
 
-   for (int i = 0; i < shapes.size(); i++) {
-      tinyobj::shape_t currentShape = shapes.at(i);
+   for (const auto &currentShape:shapes) {
       tinyobj::mesh_t currentMesh = currentShape.mesh;
       for (int j = 0; j + 2 < currentMesh.indices.size(); j += 3) {
          int currentMaterialID = currentMesh.material_ids.at(j / 3);
@@ -224,6 +223,9 @@ int main(int, char**) {
       float position[3];
       float normal[3];
       float uv[2];
+      float tangent[3];
+      float bitangent[3];
+      
 
       // Strict lexicographic compare (avoids memcmp/padding issues)
       bool operator<(const Vertex& v) const {
@@ -233,10 +235,14 @@ int main(int, char**) {
             if (normal[i] != v.normal[i]) return normal[i] < v.normal[i];
          for (int i = 0; i < 2; ++i)
             if (uv[i] != v.uv[i]) return uv[i] < v.uv[i];
+         for (int i = 0; i < 3; ++i)
+            if (tangent[i] != v.tangent[i]) return tangent[i] < v.tangent[i];
+         for (int i = 0; i < 3; ++i)
+            if (bitangent[i] != v.bitangent[i]) return bitangent[i] < v.bitangent[i];
          return false;
       }
    };
-   static_assert(sizeof(Vertex) == 8 * sizeof(float), "Vertex has unexpected padding");
+   static_assert(sizeof(Vertex) == 14 * sizeof(float), "Vertex has unexpected padding");
 
    struct Mesh {
       int materialID;
@@ -269,9 +275,13 @@ int main(int, char**) {
          normal[2] = attrib.normals[3 * currentIndex.normal_index + 2];
          uv[0] = attrib.texcoords[2 * currentIndex.texcoord_index];
          uv[1] = attrib.texcoords[2 * currentIndex.texcoord_index + 1];
+
          Vertex v = {{position[0], position[1], position[2]},
                      {normal[0], normal[1], normal[2]},
-                     {uv[0], uv[1]}};
+                     {uv[0], uv[1]},
+                     {0,0,0}, // tangent placeholder
+                     {0,0,0} // bitangent placeholder
+                  };
          if (vertexMap.count(v) == 0) {
             vertexMap[v] = vertices.size();
             vertices.push_back(v);
@@ -281,6 +291,72 @@ int main(int, char**) {
       startIndex += m_indices.size();
       currentMesh.size = m_indices.size();
       mesh.push_back(currentMesh);
+   }
+
+   std::map<int,glm::vec3> accTangents;
+   std::map<int,glm::vec3> accBitangents;
+
+   // Initialize tangent and bitangent accumulators to zero for all vertices
+   for (int i = 0; i < vertices.size(); ++i) {
+      accTangents[i] = glm::vec3(0.0f);
+      accBitangents[i] = glm::vec3(0.0f);
+   }
+
+   for (int i = 0; i < indices.size(); i += 3){
+      Vertex vert1 = vertices.at(indices[i]);
+      Vertex vert2 = vertices.at(indices[i+1]);
+      Vertex vert3 = vertices.at(indices[i+2]);
+      float uv1[2] = { vert1.uv[0], vert1.uv[1] };
+      float uv2[2] = { vert2.uv[0], vert2.uv[1] };
+      float uv3[2] = { vert3.uv[0], vert3.uv[1] };
+      float u1 = uv2[0]-uv1[0];
+      float u2 = uv3[0]-uv1[0];
+      float v1 = uv2[1]-uv1[1];
+      float v2 = uv3[1]-uv1[1];
+      glm::vec3 e1 = glm::make_vec3(vert2.position) - glm::make_vec3(vert1.position);
+      glm::vec3 e2 = glm::make_vec3(vert3.position) - glm::make_vec3(vert1.position);
+      float det = (u1*v2-v1*u2);
+      if (abs(det) < 0.0001)
+         continue;
+      float f = 1/det;
+      glm::mat2 inv = f * glm::mat2(v2, -v1, -u2, u1);
+      glm::mat3x2 e;
+      e[0][0] = e1.x; e[0][1] = e2.x;
+      e[1][0] = e1.y; e[1][1] = e2.y;
+      e[2][0] = e1.z; e[2][1] = e2.z;
+      glm::mat3x2 result = inv * e;
+      glm::vec3 tangent = glm::transpose(result)[0];
+      glm::vec3 bitangent = glm::transpose(result)[1];
+      // glm::vec3 tangent = (e1 * v2 - e2 * v1) / det;
+      // glm::vec3 bitangent = (e2 * u1 - e1 * u2) / det;
+      accTangents[indices[i]] += tangent;
+      accTangents[indices[i+1]] += tangent;
+      accTangents[indices[i+2]] += tangent;
+      accBitangents[indices[i]] += bitangent;
+      accBitangents[indices[i+1]] += bitangent;
+      accBitangents[indices[i+2]] += bitangent;
+   }
+
+   for (int i = 0; i < vertices.size(); ++i) {
+      glm::vec3 T = normalize(accTangents[i]);
+      glm::vec3 B = normalize(accBitangents[i]);
+      glm::vec3 N = normalize(glm::make_vec3(vertices[i].normal));
+
+      // Gram-Schmidt orthogonalization
+      T = glm::normalize(T - glm::dot(T, N) * N);
+      
+      // Check for "handedness" (optional but good practice)
+      if (glm::dot(glm::cross(N, T), B) < 0.0f) {
+         T *= -1.0f;
+      }
+
+      // Store the final vectors in the vertex data
+      vertices.at(i).tangent[0] = T.x;
+      vertices.at(i).tangent[1] = T.y;
+      vertices.at(i).tangent[2] = T.z;
+      vertices.at(i).bitangent[0] = B.x;
+      vertices.at(i).bitangent[1] = B.y;
+      vertices.at(i).bitangent[2] = B.z;
    }
 
    std::cout << "Loaded " << vertices.size() << " vertices" << "\n";
@@ -301,16 +377,24 @@ int main(int, char**) {
                 GL_STATIC_DRAW);
 
    // vertex position
-   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
    glEnableVertexAttribArray(0);
 
    // normal
-   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(3 * sizeof(float)));
    glEnableVertexAttribArray(1);
 
    // texture coordinates
-   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(6 * sizeof(float)));
    glEnableVertexAttribArray(2);
+
+   // tangent
+   glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
+   glEnableVertexAttribArray(3);
+
+   // bitangent
+   glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
+   glEnableVertexAttribArray(4);
 
    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -365,14 +449,38 @@ int main(int, char**) {
    float lightAttenuationConstants[3] = {1.0f, 0.000009f, 0.0000032f};
    float lightIntensity = 0.5f;
 
-   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
    glEnable(GL_BLEND);
+   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
 
    bool blinn = false;
    enum LightType { None, Point, Directional };
    LightType lightType = Point;
 
    static glm::vec3 lightDir(0.0f, -1.0f, 0.0f);
+
+    const unsigned int SHADOW_WIDTH = 4096, SHADOW_HEIGHT = 4096;
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+    // create depth texture
+    unsigned int depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    // attach depth texture as FBO's depth buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+       Shader depthShader((projectRoot + "/archsim/stdref-cpp/depth.vert").c_str(),
+                     (projectRoot + "/archsim/stdref-cpp/depth.frag").c_str());
 
    // Main loop
    auto& io = ImGui::GetIO();
@@ -428,7 +536,7 @@ int main(int, char**) {
                            "%.7f");
          ImGui::Checkbox("blinn", &blinn);
       } else if (lightType == Directional) {
-         if (ImGui::DragFloat3("light direction", &lightDir[0], 0.1f, -1.0f, 1.0f)) {
+         if (ImGui::DragFloat3("light direction", &lightDir[0], 0.0001f, -1.0f, 1.0f)) {
             lightDir = glm::normalize(lightDir); // keep it normalized
          }
          ImGui::ColorEdit3("color", lightColor);
@@ -437,6 +545,40 @@ int main(int, char**) {
       }
 
       ImGui::End();
+
+      glm::mat4 lightProjection, lightView;
+      glm::mat4 lightModel2 = glm::mat4(1.0f);
+        glm::mat4 lightSpaceMatrix;
+        float near_plane = 1.0f, far_plane = 7000.0f;
+        //lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
+        lightProjection = glm::ortho(-1300.0f, 1300.0f, -1500.0f, 1500.0f, near_plane, far_plane);
+        lightProjection = glm::scale(lightProjection, glm::vec3(0.6));
+        lightView = glm::lookAt(lightDir*(-3000.0f), glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+        lightSpaceMatrix = lightProjection * lightView;
+        // render scene from light's point of view
+        depthShader.use();
+        depthShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+         depthShader.setMat4("model", lightModel2);
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+         glClear(GL_DEPTH_BUFFER_BIT);
+         glBindVertexArray(VAO);
+         for (auto m :mesh) {
+            glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
+         }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      
+        ImGui::Begin("Shadow Map");
+         ImTextureID id = (ImTextureID)(intptr_t) depthMap;
+
+         // flip V (OpenGL’s origin is bottom-left; ImGui’s is top-left)
+         ImVec2 uv0 = ImVec2(0, 1);
+         ImVec2 uv1 = ImVec2(1, 0);
+
+         // pick a display size (pixels)
+         ImGui::Image(id, ImVec2(256, 256), uv0, uv1);
+         ImGui::End();
 
       // Rendering
       ImGui::Render();
@@ -477,18 +619,11 @@ int main(int, char**) {
       mainShader.setMat4("view", view);
       mainShader.setMat4("projection",projection);
 
-      // glUniformMatrix4fv(glGetUniformLocation(mainShader.ID, "model"), 1, GL_FALSE,
-      //                    glm::value_ptr(model));
-      // glUniformMatrix4fv(glGetUniformLocation(mainShader.ID, "view"), 1, GL_FALSE,
-      //                    glm::value_ptr(view));
-      // glUniformMatrix4fv(glGetUniformLocation(mainShader.ID, "projection"), 1, GL_FALSE,
-      //                    glm::value_ptr(projection));
-
       switch (lightType) {
          case Point:
             mainShader.setInt("lightType", 1);
-            glUniform3fv(glGetUniformLocation(mainShader.ID, "lightPos"), 1, lightPos);
-            glUniform3fv(glGetUniformLocation(mainShader.ID, "light.position"), 1, lightPos);
+            mainShader.setVec3("light.position", glm::make_vec3(lightPos));
+            // glUniform3fv(glGetUniformLocation(mainShader.ID, "light.position"), 1, lightPos);
             mainShader.setFloat("light.constant", lightAttenuationConstants[0]);
             mainShader.setFloat("light.linear", lightAttenuationConstants[1]);
             mainShader.setFloat("light.quadratic", lightAttenuationConstants[2]);
@@ -510,6 +645,7 @@ int main(int, char**) {
             glUniform3fv(glGetUniformLocation(mainShader.ID, "viewPos"), 1,
                          glm::value_ptr(camera.Position));
             mainShader.setFloat("lightIntensity", lightIntensity);
+            mainShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
             break;
          default:
             break;
@@ -522,26 +658,36 @@ int main(int, char**) {
       }
 
       glBindVertexArray(VAO);
-      // glBindBuffer(GL_ARRAY_BUFFER, VBO);
-      // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
 
       for (int i = 0; i < mesh.size(); i++) {
          Mesh m = mesh.at(i);
          tinyobj::material_t mat = materials.at(i);
 
-         glActiveTexture(GL_TEXTURE0);
-         glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
-
          glActiveTexture(GL_TEXTURE1);
+         glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
+         mainShader.setInt("material.diffuse",1);
+
+         glActiveTexture(GL_TEXTURE2);
          glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.specular_texname]);
+         mainShader.setInt("material.specular",2);
 
          mainShader.setBool("hasOpacityMask", !mat.alpha_texname.empty());
          if (!mat.alpha_texname.empty()) {
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.alpha_texname]);
+            // use diffuse texture since there is actually no alpha texture file
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.diffuse_texname]);
+            mainShader.setInt("material.alpha",3);
          }
 
-         //  glBindTexture(GL_TEXTURE_2D, depthMap);
+         // displacement map is actually normal map
+         glActiveTexture(GL_TEXTURE4);
+          glBindTexture(GL_TEXTURE_2D, loaded_texture[mat.displacement_texname]);
+         mainShader.setInt("material.normal",4);
+
+
+         glActiveTexture(GL_TEXTURE5);
+          glBindTexture(GL_TEXTURE_2D, depthMap);
+         mainShader.setInt("depthMap",5);
 
          glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
       }
@@ -571,8 +717,6 @@ int main(int, char**) {
          default:
             break;
       }
-
-      // glDrawArrays(GL_TRIANGLES, 0, vertices.size());
 
       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
       glfwSwapBuffers(window);
