@@ -21,11 +21,15 @@ public:
 
       if (!warn.empty()) std::cout << "WARN: " << warn << "\n";
       if (!err.empty()) std::cerr << "ERR: " << err << "\n";
-      // if (!ret) return 1;
+      if (!ret) {
+         std::cerr << "Failed to load OBJ file: " << objPath << "\n";
+         throw std::runtime_error("tinyobj::LoadObj failed");
+      }
       std::cout << "Loaded " << shapes.size() << " shapes\n";
       std::cout << "Loaded " << materials.size() << " materials\n";
       loaded_textures = loadTextures(uniqueTexturePathsSet());
       std::tie(vertices, meshes, indices) = buildMeshes();
+      std::cout << "Loaded " << loaded_textures.size() << " textures" << "\n";
       std::cout << "Loaded " << vertices.size() << " vertices" << "\n";
       std::cout << "Loaded " << indices.size() / 3 << " triangles" << "\n";
       vertices = findTangentBitangent(vertices, indices);
@@ -47,13 +51,13 @@ public:
             glBindTexture(GL_TEXTURE_2D, loaded_textures[mtlDir + mat.specular_texname]);
             shader.setInt("material.specular", 2);
             
-            shader.setBool("hasOpacityMask", !mat.alpha_texname.empty());
-            if (!mat.alpha_texname.empty()) {
-               // use diffuse texture since there is actually no alpha texture file
-               glActiveTexture(GL_TEXTURE3);
-               glBindTexture(GL_TEXTURE_2D, loaded_textures[mtlDir + mat.diffuse_texname]);
-               shader.setInt("material.alpha",3);
-            }
+            // shader.setBool("hasOpacityMask", !mat.alpha_texname.empty());
+            // if (!mat.alpha_texname.empty()) {
+            //    // use diffuse texture since there is actually no alpha texture file
+            //    glActiveTexture(GL_TEXTURE3);
+            //    glBindTexture(GL_TEXTURE_2D, loaded_textures[mtlDir + mat.alpha_texname]);
+            //    shader.setInt("material.alpha",3);
+            // }
 
          } else {
             shader.setInt("material.diffuse", 0);
@@ -210,8 +214,10 @@ public:
 
       std::tuple<std::vector<Vertex>, std::vector<Mesh>, std::vector<int>> buildMeshes() {
          std::vector<Vertex> vertices;
+         vertices.reserve(200000);
          std::map<Vertex, int> vertexMap;
          std::vector<int> indices;
+         indices.reserve(700000);
          std::vector<Mesh> meshes;
          int startIndex = 0;
          std::map<int, std::vector<tinyobj::index_t>> materialGroup = groupVerticesByMaterial();
@@ -260,24 +266,19 @@ public:
 
          // construct texture names set
          for (const auto& mat : materials) {
-            std::cout << mat.name << "\n";
             if (!mat.diffuse_texname.empty()) {
-               std::cout << "diffuse: " << mat.diffuse_texname << "\n";
                tex_paths.insert(mtlDir + mat.diffuse_texname);
             }
             if (!mat.specular_texname.empty()) {
-               std::cout << "specular: " << mat.specular_texname << "\n";
                tex_paths.insert(mtlDir + mat.specular_texname);
             }
-            if (!mat.alpha_texname.empty()) {
-               std::cout << "alpha: " << mat.alpha_texname << "\n";
-               tex_paths.insert(mtlDir + mat.alpha_texname);
-            }
+            // if (!mat.alpha_texname.empty()) {
+            //    std::cout << "alpha: " << mat.alpha_texname << "\n";
+            //    tex_paths.insert(mtlDir + mat.alpha_texname);
+            // }
             if (!mat.displacement_texname.empty()) {
-               std::cout << "displacement: " << mat.displacement_texname << "\n";
                tex_paths.insert(mtlDir + mat.displacement_texname);
             }
-            std::cout << "\n";
          }
 
          return tex_paths;
@@ -285,11 +286,12 @@ public:
 
       GLuint loadTexture(std::string tex_path) {
          stbi_set_flip_vertically_on_load(true);
-         GLuint textureID;
-         glGenTextures(1, &textureID);
-         glBindTexture(GL_TEXTURE_2D, textureID);
+
          int width, height, channels;
          unsigned char* data = stbi_load((tex_path).c_str(), &width, &height, &channels, 0);
+         if (data == nullptr){
+            throw std::runtime_error("Texture loading failed for path: " + tex_path);
+         }
          GLenum format = GL_RGB;
          if (channels == 1)
             format = GL_RED;
@@ -297,6 +299,10 @@ public:
             format = GL_RGB;
          else if (channels == 4)
             format = GL_RGBA;
+         
+         GLuint textureID;
+         glGenTextures(1, &textureID);
+         glBindTexture(GL_TEXTURE_2D, textureID);
 
          glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 

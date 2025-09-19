@@ -29,3 +29,7 @@ struct Mesh {
    int startIndex;
    int size;
 };
+
+struct Uniform {
+
+};

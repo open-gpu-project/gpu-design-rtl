@@ -50,20 +50,20 @@ float ShadowFactor(vec4 fragPosLight)
     float current = p.z;                              // our depth
 
     // depth bias to avoid acne; make it slope-aware if you have the normal
-    float bias = 0.0003;                             
+    float bias = 0.00055;                             
    //  return current - bias > closest ? 1.0 : 0.0;     // 1 = shadow, 0 = lit
       // PCF
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(depthMap, 0);
-    for(int x = -2; x <= 2; ++x)
+    for(int x = -1; x <= 1; ++x)
     {
-        for(int y = -2; y <= 2; ++y)
+        for(int y = -1; y <= 1; ++y)
         {
             float pcfDepth = texture(depthMap, p.xy + vec2(x, y) * texelSize).r; 
             shadow += current - bias > pcfDepth  ? 1.0 : 0.0;        
         }    
     }
-    shadow /= 25.0;
+    shadow /= 9.0;
     
     // keep the shadow at 0.0 when outside the far_plane region of the light's frustum.
     if(p.z > 1.0)
@@ -76,13 +76,13 @@ void main() {
     if (lightType == 0){
         // alpha
         float alpha = 1.0;
-        if (hasOpacityMask) {
+      //   if (hasOpacityMask) {
             alpha = texture(material.diffuse, TexCoords).a;
-        }
+      //   }
         if (alpha < 0.5)
         discard;
         // no lighting, just texture
-        FragColor = texture(material.diffuse, TexCoords);
+        FragColor = vec4(pow(texture(material.diffuse, TexCoords).rgb, vec3(2.2)),1.0f);
 
     } else if (lightType == 1 || lightType == 2){
         vec3 n = texture(material.normal, TexCoords).rgb;
@@ -113,15 +113,16 @@ void main() {
 
         // alpha
         float alpha = 1.0;
-        if (hasOpacityMask) {
-            alpha = texture(material.alpha, TexCoords).a;
-        }
+      //   if (hasOpacityMask) {
+            alpha = texture(material.diffuse, TexCoords).a;
+      //   }
         if (alpha < 0.9)
         discard;
 
+         float gamma = 2.2;
         // results of each component
-        vec3 ambient  = lightIntensity * lightColor  * vec3(texture(material.diffuse, TexCoords));
-        vec3 diffuse  = lightIntensity * lightColor  * diff * vec3(texture(material.diffuse, TexCoords));  
+        vec3 ambient  = lightIntensity * lightColor  * pow(texture(material.diffuse, TexCoords).rgb, vec3(gamma));
+        vec3 diffuse  = lightIntensity * lightColor  * diff * pow(texture(material.diffuse, TexCoords).rgb, vec3(gamma));
         vec3 specular = lightIntensity * lightColor * spec * vec3(texture(material.specular, TexCoords));
 
         // attenuation
