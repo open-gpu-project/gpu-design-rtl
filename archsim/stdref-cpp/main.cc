@@ -28,7 +28,7 @@
 #include "stb_image_write.h"
 
 void renderModelToImage(Shader mainShader, Model sponza, glm::vec3 loc, glm::vec3 look, float fov,
-                        char* filename);
+                        std::string filename);
 
 namespace ImGui {
 
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
    // GL 3.0 + GLSL 130
    const char* glsl_version = "#version 130";
    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
    // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
    // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
@@ -167,32 +167,41 @@ int main(int argc, char** argv) {
    const std::string objPath = projectRoot + "/archsim/third-party/sponza-model/sponza.obj";
    const std::string dir = projectRoot + "/archsim/third-party/sponza-model/";
 
-   Shader mainShader((projectRoot + "/archsim/stdref-cpp/main.vert").c_str(),
-                     (projectRoot + "/archsim/stdref-cpp/main.frag").c_str());
+   Shader mainShader((projectRoot + "/archsim/stdref-cpp/shaders/main.vert").c_str(),
+                     (projectRoot + "/archsim/stdref-cpp/shaders/main.frag").c_str());
 
    Model sponza(objPath, dir);
 
    // lighting
    PointLight cubeLight;
 
-   Shader lightCubeShader((projectRoot + "/archsim/stdref-cpp/lightCube.vert").c_str(),
-                          (projectRoot + "/archsim/stdref-cpp/lightCube.frag").c_str());
-   std::cout << "light cube ready" << "\n";
+   Shader lightCubeShader((projectRoot + "/archsim/stdref-cpp/shaders/lightCube.vert").c_str(),
+                          (projectRoot + "/archsim/stdref-cpp/shaders/lightCube.frag").c_str());
 
    float lightPos[3] = {0.0f, 200.0f, 0.0f};
    float lightColor[3] = {1.0f, 1.0f, 1.0f};
    float lightAttenuationConstants[3] = {1.0f, 0.000009f, 0.0000032f};
    float lightIntensity = 0.5f;
 
-   Shader depthShader((projectRoot + "/archsim/stdref-cpp/depth.vert").c_str(),
-                      (projectRoot + "/archsim/stdref-cpp/depth.frag").c_str());
+   Shader depthShader((projectRoot + "/archsim/stdref-cpp/shaders/depth.vert").c_str(),
+                      (projectRoot + "/archsim/stdref-cpp/shaders/depth.frag").c_str());
    DepthMap dm(depthShader);
 
+
+   Shader simpleDepthShader(
+      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.vert").c_str(),
+      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.frag").c_str(),
+      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.geom").c_str()
+   );
+   depthCubeMap dcm(simpleDepthShader);
+
+
+   // fallback texture (white)
    GLuint fallbackTex;
    glGenTextures(1, &fallbackTex);
    glBindTexture(GL_TEXTURE_2D, fallbackTex);
-   const GLubyte black[4] = {255, 255, 255, 255};
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, black);
+   const GLubyte texture[4] = {255, 255, 255, 255};
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
    glBindTexture(GL_TEXTURE_2D, 0);
@@ -206,6 +215,7 @@ int main(int argc, char** argv) {
    glm::vec3 lightDir(0.0f, -1.0f, 0.0f);
    bool blinn = false;
    LightType lightType = Point;
+   int imageCounter = 0;
 
    // setup for render
    glEnable(GL_BLEND);
@@ -215,17 +225,21 @@ int main(int argc, char** argv) {
    glfwSetCursorPosCallback(window, mouse_callback);
    glEnable(GL_DEPTH_TEST);
 
+   // initialize shadows
+   dm.drawToTexture(lightDir, sponza);
+   dcm.drawToTexture(glm::make_vec3(lightPos), sponza);
+
    // render to image
+   Shader imageShader((projectRoot + "/archsim/stdref-cpp/shaders/image.vert").c_str(),
+                                (projectRoot + "/archsim/stdref-cpp/shaders/image.frag").c_str());
    if (argc == 9) {
-      std::cout << "Writing to image" << "\n";
-      renderModelToImage(Shader((projectRoot + "/archsim/stdref-cpp/image.vert").c_str(),
-                                (projectRoot + "/archsim/stdref-cpp/image.frag").c_str()),
+      renderModelToImage(imageShader,
                          sponza,
                          glm::vec3(std::stof(std::string(argv[1])), std::stof(std::string(argv[2])),
                                    std::stof(std::string(argv[3]))),
                          glm::vec3(std::stof(std::string(argv[4])), std::stof(std::string(argv[5])),
                                    std::stof(std::string(argv[6]))),
-                         std::stof(std::string(argv[7])), argv[8]);
+                         std::stof(std::string(argv[7])), std::string(argv[8]));
       return 0;
    }
 
@@ -257,10 +271,13 @@ int main(int argc, char** argv) {
       ImGui::Text("FPS: %.1f (%.3f ms)", io.Framerate, 1000.0f / io.Framerate);
       ImGui::Text("Position x: %.3f y: %.3f z: %.3f", camera.getPosition().x,
                   camera.getPosition().y, camera.getPosition().z);
-      ImGui::Text("Lookat x: %.5f y: %5f z: %5f", camera.getFront().x, camera.getFront().y,
-                  camera.getFront().z);
-      ImGui::Text("cursor x: %.3f", cursorx);
-      ImGui::Text("cursor y: %.3f", cursory);
+      ImGui::Text("Lookat x: %.5f y: %5f z: %5f", camera.getLookAt().x, camera.getLookAt().y,
+                  camera.getLookAt().z);
+      ImGui::Text("Cursor x: %.3f, y: %.3f", cursorx, cursory);
+      if (ImGui::Button("Output Image")) {
+         renderModelToImage(imageShader, sponza, camera.getPosition(), camera.getLookAt(), fov, std::format("test{}.png", imageCounter));
+         imageCounter++;
+      }
       ImGui::End();
 
       ImGui::Begin("Settings");
@@ -275,7 +292,9 @@ int main(int argc, char** argv) {
       if (ImGui::RadioButton("Directional", lightType == Directional)) lightType = Directional;
 
       if (lightType == Point) {
-         ImGui::DragFloat3("light position", lightPos, 1.0f, -3000.0f, 3000.0f);
+         if (ImGui::DragFloat3("light position", lightPos, 1.0f, -3000.0f, 3000.0f)){
+            dcm.drawToTexture(glm::make_vec3(lightPos), sponza);
+         }
          ImGui::ColorEdit3("color", lightColor);
          ImGui::SliderFloat("light intensity", &lightIntensity, 0.0f, 5.0f);
          ImGui::DragFloat3("attenuation", lightAttenuationConstants, 0.0000001f, -3.0f, 3.0f,
@@ -284,6 +303,7 @@ int main(int argc, char** argv) {
       } else if (lightType == Directional) {
          if (ImGui::DragFloat3("light direction", &lightDir[0], 0.0001f, -1.0f, 1.0f)) {
             lightDir = glm::normalize(lightDir); // keep it normalized
+            dm.drawToTexture(lightDir, sponza);
          }
          ImGui::ColorEdit3("color", lightColor);
          ImGui::SliderFloat("light intensity", &lightIntensity, 0.0f, 5.0f);
@@ -292,18 +312,20 @@ int main(int argc, char** argv) {
 
       ImGui::End();
 
-      dm.drawToTexture(lightDir, sponza);
 
-      ImGui::Begin("Shadow Map");
-      ImTextureID id = (ImTextureID)(intptr_t)dm.depthMap;
+      if (lightType == Directional)
+      {
+         ImGui::Begin("Shadow Map");
+         ImTextureID id = (ImTextureID)(intptr_t)dm.getDepthMap();
 
-      // flip V (OpenGL’s origin is bottom-left; ImGui’s is top-left)
-      ImVec2 uv0 = ImVec2(0, 1);
-      ImVec2 uv1 = ImVec2(1, 0);
+         // flip V (OpenGL’s origin is bottom-left; ImGui’s is top-left)
+         ImVec2 uv0 = ImVec2(0, 1);
+         ImVec2 uv1 = ImVec2(1, 0);
 
-      // pick a display size (pixels)
-      ImGui::Image(id, ImVec2(256, 256), uv0, uv1);
-      ImGui::End();
+         // pick a display size (pixels)
+         ImGui::Image(id, ImVec2(256, 256), uv0, uv1);
+         ImGui::End();
+      }
 
       // Rendering
       ImGui::Render();
@@ -344,33 +366,18 @@ int main(int argc, char** argv) {
       mainShader.setMat4("view", view);
       mainShader.setMat4("projection", projection);
 
-      switch (lightType) {
-         case Point:
-            mainShader.setInt("lightType", lightType);
-            mainShader.setVec3("light.position", glm::make_vec3(lightPos));
-            mainShader.setFloat("light.constant", lightAttenuationConstants[0]);
-            mainShader.setFloat("light.linear", lightAttenuationConstants[1]);
-            mainShader.setFloat("light.quadratic", lightAttenuationConstants[2]);
-            mainShader.setBool("blinn", blinn);
-            mainShader.setVec3("lightColor", glm::make_vec3(lightColor));
-            mainShader.setVec3("viewPos", glm::make_vec3(camera.getPosition()));
-            mainShader.setFloat("lightIntensity", lightIntensity);
-            break;
-         case None:
-            mainShader.setInt("lightType", lightType);
-            break;
-         case Directional:
-            mainShader.setInt("lightType", lightType);
-            mainShader.setVec3("light.direction", glm::make_vec3(lightDir));
-            mainShader.setBool("blinn", blinn);
-            mainShader.setVec3("lightColor", glm::make_vec3(lightColor));
-            mainShader.setVec3("viewPos", glm::make_vec3(camera.getPosition()));
-            mainShader.setFloat("lightIntensity", lightIntensity);
-            mainShader.setMat4("lightSpaceMatrix", dm.lightSpaceMatrix);
-            break;
-         default:
-            break;
-      }
+      mainShader.setInt("lightType", lightType);
+      mainShader.setVec3("light.position", glm::make_vec3(lightPos));
+      mainShader.setVec3("light.direction", glm::make_vec3(lightDir));
+
+      mainShader.setFloat("light.constant", lightAttenuationConstants[0]);
+      mainShader.setFloat("light.linear", lightAttenuationConstants[1]);
+      mainShader.setFloat("light.quadratic", lightAttenuationConstants[2]);
+      mainShader.setBool("blinn", blinn);
+      mainShader.setVec3("lightColor", glm::make_vec3(lightColor));
+      mainShader.setVec3("viewPos", glm::make_vec3(camera.getPosition()));
+      mainShader.setFloat("lightIntensity", lightIntensity);
+      mainShader.setMat4("lightSpaceMatrix", dm.getLightSpaceMatrix());
 
       if (wireframe) {
          glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -381,11 +388,18 @@ int main(int argc, char** argv) {
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, fallbackTex);
 
+      glActiveTexture(GL_TEXTURE5);
+      glBindTexture(GL_TEXTURE_2D, dm.getDepthMap());
+      mainShader.setInt("depthMap", 5);
+
+      glActiveTexture(GL_TEXTURE6);
+      glBindTexture(GL_TEXTURE_CUBE_MAP, dcm.getDepthCubeMap());
+      mainShader.setInt("cubeDepthMap", 6);
+
+      mainShader.setFloat("far_plane", 2500.0f);
+
       sponza.render(mainShader, loadTextures);
 
-      glActiveTexture(GL_TEXTURE5);
-      glBindTexture(GL_TEXTURE_2D, dm.depthMap);
-      mainShader.setInt("depthMap", 5);
 
       // light
       glm::mat4 lightModel = glm::mat4(1.0f);
@@ -423,7 +437,7 @@ int main(int argc, char** argv) {
 }
 
 void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, float fov,
-                        char* filename) {
+                        std::string filename) {
    const int W = 1280, H = 720;
 
    // --- Setup FBO once (not every frame!)
@@ -457,7 +471,16 @@ void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, f
 
    shader.use();
    shader.setInt("lightType", LightType::None);
-   glm::mat4 view = glm::lookAt(loc, look, {0, 1, 0});
+   glm::vec3 dir = look-loc;
+   glm::mat4 view;
+
+   // handling looking straight down
+   if (dir.x == 0 && dir.z == 0){
+      view = glm::lookAt(loc, look, {0, 0, 1});
+   } else {
+      view = glm::lookAt(loc, look, {0, 1, 0});
+   }
+
    glm::mat4 proj = glm::perspective(glm::radians(fov), (float)W / H, 0.1f, 10000.0f);
    glm::mat4 model(1.0f);
    shader.setMat4("model", model);
@@ -472,7 +495,11 @@ void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, f
    glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
 
    stbi_flip_vertically_on_write(true);
-   stbi_write_png(filename, W, H, 3, pixels.data(), 3840);
+   if (!stbi_write_png(filename.c_str(), W, H, 3, pixels.data(), 3840)){
+      std::cout << "image write failed" << "\n";
+   } else {
+      std::cout << "image write success" << "\n";
+   }
 
    // --- Cleanup (or keep for reuse)
    glDeleteRenderbuffers(1, &depthRb);

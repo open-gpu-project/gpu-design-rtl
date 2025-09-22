@@ -38,6 +38,9 @@ uniform bool blinn;
 uniform int lightType;
 uniform sampler2D depthMap;
 
+uniform samplerCube cubeDepthMap;
+uniform float far_plane;
+
 float ShadowFactor(vec4 fragPosLight)
 {
     // transform from clip to texture space
@@ -72,6 +75,24 @@ float ShadowFactor(vec4 fragPosLight)
     return shadow;
 }
 
+float ShadowCalculation(vec3 fragPos)
+{
+    // get vector between fragment position and light position
+    vec3 fragToLight = fragPos - light.position;
+    // ise the fragment to light vector to sample from the depth map    
+    float closestDepth = texture(cubeDepthMap, fragToLight).r;
+    // it is currently in linear range between [0,1], let's re-transform it back to original depth value
+    closestDepth *= far_plane;
+    // now get current linear depth as the length between the fragment and light position
+    float currentDepth = length(fragToLight);
+    // test for shadows
+    float bias = 1; // we use a much larger bias since depth is now in [near_plane, far_plane] range
+    float shadow = currentDepth -  bias > closestDepth ? 1.0 : 0.0;        
+    // display closestDepth as debug (to visualize depth cubemap)
+   //  FragColor = vec4(vec3(closestDepth / far_plane), 1.0);    
+        
+    return shadow;
+}
 void main() {
     if (lightType == 0){
         // alpha
@@ -133,6 +154,9 @@ void main() {
             ambient *= attenuation;
             diffuse *= attenuation;
             specular *= attenuation;
+            float shadow = ShadowCalculation(FragPos);
+            diffuse  *= (1.0 - shadow);
+            specular *= (1.0 - shadow);             
         }
 
         if (lightType == 2){
@@ -141,7 +165,7 @@ void main() {
             specular *= (1.0 - shadow);   
         }
 
-        // results
+      //   results
         FragColor = vec4(ambient + diffuse + specular, alpha); 
     }
 }

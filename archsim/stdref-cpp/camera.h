@@ -109,6 +109,10 @@ public:
       return Front;
     }
 
+   glm::vec3 getLookAt(){
+      return Position + Front;
+   }
+
     float getMovementSpeed(){
       return MovementSpeed;
     }
