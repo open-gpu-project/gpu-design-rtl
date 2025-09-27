@@ -127,9 +127,9 @@ void main() {
         float spec = 0.0f;
         if (blinn){
             vec3 halfwayVec = normalize(viewDir + lightDir);
-            spec = pow(max(dot(halfwayVec, norm),0.0),material.shininess);
+            spec = pow(max(dot(halfwayVec, norm),0.0),material.shininess+1);
         } else {
-            spec = pow(max(dot(viewDir, reflectDir),0.0),material.shininess);
+            spec = pow(max(dot(viewDir, reflectDir),0.0),material.shininess+1);
         }
 
         // alpha

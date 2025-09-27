@@ -83,6 +83,20 @@ public:
       }
    }
 
+   void renderCacheSim(Shader shader) {
+      glBindVertexArray(VAO);
+      for (int i = 0; i < meshes.size(); i++) {
+         Mesh m = meshes.at(i);
+         tinyobj::material_t mat = materials.at(i);
+
+         // glActiveTexture(GL_TEXTURE1);
+         // glBindTexture(GL_TEXTURE_2D, loaded_textures[mtlDir + mat.diffuse_texname]);
+         shader.setInt("material.diffuse", loaded_textures[mtlDir + mat.diffuse_texname]);
+
+         glDrawElements(GL_TRIANGLES, m.size, GL_UNSIGNED_INT, (void*)(m.startIndex * sizeof(int)));
+      }
+   }
+
    private:
       std::string mtlDir;
       tinyobj::attrib_t attrib;

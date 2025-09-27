@@ -24,11 +24,15 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <glm/gtc/type_ptr.hpp>
+#include <stack>
 
+#include "lodepng.h"
 #include "stb_image_write.h"
 
 void renderModelToImage(Shader mainShader, Model sponza, glm::vec3 loc, glm::vec3 look, float fov,
                         std::string filename);
+void renderCacheSim(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, float fov,
+                    std::string filename);
 
 namespace ImGui {
 
@@ -46,7 +50,8 @@ namespace ImGui {
    }
 
    // template <typename T, typename Getter, typename Setter>
-   // void DragFloat3(const char* label, T* obj, Getter getter, Setter setter, float speed, float min,
+   // void DragFloat3(const char* label, T* obj, Getter getter, Setter setter, float speed, float
+   // min,
    //                 float max) {
    //    glm::vec3 current = (obj->*getter)(); // get current value
    //    glm::vec3 newValue = current;
@@ -187,14 +192,10 @@ int main(int argc, char** argv) {
                       (projectRoot + "/archsim/stdref-cpp/shaders/depth.frag").c_str());
    DepthMap dm(depthShader);
 
-
-   Shader simpleDepthShader(
-      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.vert").c_str(),
-      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.frag").c_str(),
-      (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.geom").c_str()
-   );
+   Shader simpleDepthShader((projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.vert").c_str(),
+                            (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.frag").c_str(),
+                            (projectRoot + "/archsim/stdref-cpp/shaders/pointShadow.geom").c_str());
    depthCubeMap dcm(simpleDepthShader);
-
 
    // fallback texture (white)
    GLuint fallbackTex;
@@ -231,10 +232,9 @@ int main(int argc, char** argv) {
 
    // render to image
    Shader imageShader((projectRoot + "/archsim/stdref-cpp/shaders/image.vert").c_str(),
-                                (projectRoot + "/archsim/stdref-cpp/shaders/image.frag").c_str());
+                      (projectRoot + "/archsim/stdref-cpp/shaders/image.frag").c_str());
    if (argc == 9) {
-      renderModelToImage(imageShader,
-                         sponza,
+      renderModelToImage(imageShader, sponza,
                          glm::vec3(std::stof(std::string(argv[1])), std::stof(std::string(argv[2])),
                                    std::stof(std::string(argv[3]))),
                          glm::vec3(std::stof(std::string(argv[4])), std::stof(std::string(argv[5])),
@@ -242,6 +242,9 @@ int main(int argc, char** argv) {
                          std::stof(std::string(argv[7])), std::string(argv[8]));
       return 0;
    }
+
+   Shader cacheSimShader((projectRoot + "/archsim/stdref-cpp/shaders/cacheSim.vert").c_str(),
+                         (projectRoot + "/archsim/stdref-cpp/shaders/cacheSim.frag").c_str());
 
    // Main loop
    auto& io = ImGui::GetIO();
@@ -274,8 +277,9 @@ int main(int argc, char** argv) {
       ImGui::Text("Lookat x: %.5f y: %5f z: %5f", camera.getLookAt().x, camera.getLookAt().y,
                   camera.getLookAt().z);
       ImGui::Text("Cursor x: %.3f, y: %.3f", cursorx, cursory);
-      if (ImGui::Button("Output Image")) {
-         renderModelToImage(imageShader, sponza, camera.getPosition(), camera.getLookAt(), fov, std::format("test{}.png", imageCounter));
+      if (ImGui::Button("Output Cache Sim Image")) {
+         renderCacheSim(cacheSimShader, sponza, camera.getPosition(), camera.getLookAt(), fov,
+                        std::format("test{}.png", imageCounter));
          imageCounter++;
       }
       ImGui::End();
@@ -292,7 +296,7 @@ int main(int argc, char** argv) {
       if (ImGui::RadioButton("Directional", lightType == Directional)) lightType = Directional;
 
       if (lightType == Point) {
-         if (ImGui::DragFloat3("light position", lightPos, 1.0f, -3000.0f, 3000.0f)){
+         if (ImGui::DragFloat3("light position", lightPos, 1.0f, -3000.0f, 3000.0f)) {
             dcm.drawToTexture(glm::make_vec3(lightPos), sponza);
          }
          ImGui::ColorEdit3("color", lightColor);
@@ -312,9 +316,7 @@ int main(int argc, char** argv) {
 
       ImGui::End();
 
-
-      if (lightType == Directional)
-      {
+      if (lightType == Directional) {
          ImGui::Begin("Shadow Map");
          ImTextureID id = (ImTextureID)(intptr_t)dm.getDepthMap();
 
@@ -400,7 +402,6 @@ int main(int argc, char** argv) {
 
       sponza.render(mainShader, loadTextures);
 
-
       // light
       glm::mat4 lightModel = glm::mat4(1.0f);
 
@@ -471,11 +472,11 @@ void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, f
 
    shader.use();
    shader.setInt("lightType", LightType::None);
-   glm::vec3 dir = look-loc;
+   glm::vec3 dir = look - loc;
    glm::mat4 view;
 
    // handling looking straight down
-   if (dir.x == 0 && dir.z == 0){
+   if (dir.x == 0 && dir.z == 0) {
       view = glm::lookAt(loc, look, {0, 0, 1});
    } else {
       view = glm::lookAt(loc, look, {0, 1, 0});
@@ -495,7 +496,7 @@ void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, f
    glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
 
    stbi_flip_vertically_on_write(true);
-   if (!stbi_write_png(filename.c_str(), W, H, 3, pixels.data(), 3840)){
+   if (!stbi_write_png(filename.c_str(), W, H, 3, pixels.data(), 3840)) {
       std::cout << "image write failed" << "\n";
    } else {
       std::cout << "image write success" << "\n";
@@ -505,4 +506,121 @@ void renderModelToImage(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, f
    glDeleteRenderbuffers(1, &depthRb);
    glDeleteTextures(1, &colorTex);
    glDeleteFramebuffers(1, &fbo);
+}
+
+void renderCacheSim(Shader shader, Model m, glm::vec3 loc, glm::vec3 look, float fov,
+                    std::string filename) {
+   const int W = 1280, H = 720;
+
+   // --- Setup FBO once (not every frame!)
+   GLuint fbo, idTex, uvTex, depthRb;
+   glGenFramebuffers(1, &fbo);
+   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+   // id texture
+   glGenTextures(1, &idTex);
+   glBindTexture(GL_TEXTURE_2D, idTex);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, W, H, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, idTex, 0);
+
+   // uv texture
+   glGenTextures(1, &uvTex);
+   glBindTexture(GL_TEXTURE_2D, uvTex);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, W, H, 0, GL_RG, GL_FLOAT, nullptr);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, uvTex, 0);
+
+   // Depth renderbuffer
+   glGenRenderbuffers(1, &depthRb);
+   glBindRenderbuffer(GL_RENDERBUFFER, depthRb);
+   glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, W, H);
+   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthRb);
+
+   GLenum bufs[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+   glDrawBuffers(2, bufs);
+
+   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+      throw std::runtime_error("Framebuffer incomplete");
+   }
+   glDisablei(GL_BLEND, 0); // COLOR_ATTACHMENT0 (IDs)
+   glDisablei(GL_BLEND, 1); // COLOR_ATTACHMENT1 (UVs) unless you truly need it
+   glDisable(GL_FRAMEBUFFER_SRGB);
+
+   // --- Render
+   glViewport(0, 0, W, H);
+   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+   glClearColor(0, 0, 0, 1);
+   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+   shader.use();
+   shader.setInt("lightType", LightType::None);
+   glm::vec3 dir = look - loc;
+   glm::mat4 view;
+
+   // handling looking straight down
+   if (dir.x == 0 && dir.z == 0) {
+      view = glm::lookAt(loc, look, {0, 0, 1});
+   } else {
+      view = glm::lookAt(loc, look, {0, 1, 0});
+   }
+
+   glm::mat4 proj = glm::perspective(glm::radians(fov), (float)W / H, 0.1f, 10000.0f);
+   glm::mat4 model(1.0f);
+   shader.setMat4("model", model);
+   shader.setMat4("view", view);
+   shader.setMat4("projection", proj);
+
+   m.renderCacheSim(shader);
+
+   // --- Read back
+
+   std::vector<uint32_t> id(W * H);
+   glBindTexture(GL_TEXTURE_2D, idTex);
+   glGetTexImage(GL_TEXTURE_2D, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, id.data());
+
+   std::vector<float> uv(W * H * 2);
+   glBindTexture(GL_TEXTURE_2D, uvTex);
+   glGetTexImage(GL_TEXTURE_2D, 0, GL_RG, GL_FLOAT, uv.data());
+
+   assert(id.size() * 2 == uv.size());
+   std::vector<uint8_t> pixel_vec(W * H * 6);
+
+   for (int i = 0; i < H; i++) {
+      for (int j = 0; j < W; j++) {
+         int idx = i * W + j;
+         uint16_t u = (uint16_t)(uv.at(2 * idx) * 65536);
+         uint16_t v = (uint16_t)(uv.at(2 * idx + 1) * 65536);
+         int addr = (6 * W) * ((H - 1) - i) + j * 6;
+         pixel_vec[addr] = (((uint16_t)id.at(idx)) >> 8) & 0xFF;
+         pixel_vec[addr + 1] = (((uint16_t)id.at(idx)) & 0xFF);
+         pixel_vec[addr + 2] = (u >> 8) & 0xFF;
+         pixel_vec[addr + 3] = u & 0xFF;
+         pixel_vec[addr + 4] = (v >> 8) & 0xFF;
+         pixel_vec[addr + 5] = v & 0xFF;
+      }
+   }
+
+   std::vector<unsigned char> png;
+   lodepng::State state; // optionally customize this one
+   state.info_raw.colortype = LCT_RGB;
+   state.info_raw.bitdepth = 16;
+   state.info_png.color = state.info_raw;
+
+   unsigned error = lodepng::encode(png, pixel_vec, W, H, state);
+   if (!error) lodepng::save_file(png, filename);
+
+   // if there's an error, display it
+   if (error)
+      std::cout << "encoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+   // --- Cleanup (or keep for reuse)
+   glDeleteRenderbuffers(1, &depthRb);
+   glDeleteTextures(1, &idTex);
+   glDeleteTextures(1, &uvTex);
+   glDeleteFramebuffers(1, &fbo);
+   glEnable(GL_FRAMEBUFFER_SRGB);
+   glEnable(GL_BLEND);
 }
