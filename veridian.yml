@@ -9,4 +9,4 @@ verible:
 verilator:
   syntax:
     enabled: false
-log_level: Debug
+log_level: Info

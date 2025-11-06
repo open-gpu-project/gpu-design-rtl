@@ -7,6 +7,10 @@
    "editor.indentSize": "tabSize",
    "editor.tabSize": 3,
    "editor.detectIndentation": false,
+   "[systemverilog]": {
+      "editor.tabSize": 4,
+      "editor.detectIndentation": true,
+   },
 
    // C++ specific rules
    "C_Cpp.autoAddFileAssociations": false,
@@ -26,9 +30,7 @@
     // Verilog HDL configuration
     "verilog.linting.linter": "verilator",
     "verilog.linting.verilator.runAtFileLocation": false,
-    "verilog.linting.verilator.arguments": "",
-    "verilog.languageServer.veridian.enabled": true,
-    "verilog.ctags.path": "none",
+    "verilog.linting.verilator.arguments": "-F design/scripts/lint.f",
 
    // Misc configuration
    "git.enableCommitSigning": false,
