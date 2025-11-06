@@ -1,0 +1,12 @@
+source_dirs:
+  - design/libraries
+  - design/partitions
+verible:
+  syntax:
+    enabled: false
+  format:
+    enabled: false
+verilator:
+  syntax:
+    enabled: false
+log_level: Debug

@@ -11,6 +11,25 @@
    // C++ specific rules
    "C_Cpp.autoAddFileAssociations": false,
 
+   // Material Icon Theme configuration
+   "material-icon-theme.folders.theme": "classic",
+    "material-icon-theme.folders.associations": {
+        "design": "sandbox",
+        "design/partitions": "ui",
+        "rtl": "core",
+        "dv": "test",
+        "integration": "connection",
+        "libraries": "lib",
+        "scripts": "scripts"
+    },
+
+    // Verilog HDL configuration
+    "verilog.linting.linter": "verilator",
+    "verilog.linting.verilator.runAtFileLocation": false,
+    "verilog.linting.verilator.arguments": "",
+    "verilog.languageServer.veridian.enabled": true,
+    "verilog.ctags.path": "none",
+
    // Misc configuration
    "git.enableCommitSigning": false,
    "search.quickOpen.includeHistory": false,

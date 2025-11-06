@@ -1,6 +1,8 @@
 {
     "recommendations": [
         "ms-vscode.cmake-tools",
-        "ms-vscode.cpptools"
+        "ms-vscode.cpptools",
+        "pkief.material-icon-theme",
+        "mshr-h.veriloghdl"
     ]
 }
