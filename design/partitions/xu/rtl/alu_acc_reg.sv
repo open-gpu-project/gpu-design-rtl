@@ -1,6 +1,6 @@
 `default_nettype none
 
-module acc_reg (
+module alu_acc_reg (
 );
 
 endmodule

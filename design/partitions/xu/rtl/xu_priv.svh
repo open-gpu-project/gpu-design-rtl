@@ -42,6 +42,10 @@ package xu_priv;
         logic CARRYCASCOUT;
     } dsp_casc_out;
 
+    typedef struct packed {
+        logic[1:0] mode;
+    } alu_lane_ctl;
+
 endpackage;
 
 `endif // INCLUDE_XU_PRIV_SVH
