@@ -15,10 +15,10 @@ module alu_lane #(
     // Clocks and resets
     input logic dsp_clk,
     input logic dsp_rst,
-    input logic fab_pclk,
-    input logic fab_prst,
-    input logic fab_nclk,
-    input logic fab_nrst,
+    input logic fab_in_clk,
+    input logic fab_in_rst,
+    input logic fab_out_clk,
+    input logic fab_out_rst,
     
     // ALU control signals
     input xu_priv::alu_lane_ctl alu_ctl,
@@ -94,8 +94,8 @@ module alu_lane #(
 
     // Registered control signals
     xu_priv::dsp_ctl dsp_control_reg;
-    always_ff @(posedge fab_pclk)
-    if (fab_prst) begin
+    always_ff @(posedge fab_in_clk)
+    if (fab_in_rst) begin
         dsp_control_reg <= 0;
     end else begin
         dsp_control_reg <= dsp_control;
@@ -132,8 +132,8 @@ module alu_lane #(
 
     // Input datapath to DSP
     xu_priv::dsp_input dsp_data_in;
-    always_ff @(posedge fab_pclk)
-    if (fab_prst) begin
+    always_ff @(posedge fab_in_clk)
+    if (fab_in_rst) begin
         dsp_data_in <= 0;
     end else begin
         // FIXME(kevin): Need to manually optimize mux tree here
@@ -148,8 +148,8 @@ module alu_lane #(
     // Output datapath from DSP
     logic[1:0] alu_mode_reg[LANE_LATENCY-1:0];
     xu_priv::dsp_output dsp_data_out;
-    always_ff @(posedge fab_nclk)
-    if (fab_nrst) begin
+    always_ff @(posedge fab_out_clk)
+    if (fab_out_rst) begin
         dsp_data_out_reg <= 0;
         alu_mode_reg <= '{default:2'b0};
     end else begin
