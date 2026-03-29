@@ -39,10 +39,15 @@ module alu_lane #(
     output logic[17:0] Y2
 );
     // Pre-define some input signals for clarity
-    logic[29:0] X1Zext = {6'b0, X1};
-    logic[29:0] X1Sext = {{6{X1[23]}}, X1};
-    logic[35:0] Acc1Acc2In = {AccIn1, AccIn2};
-    logic[47:0] Acc1PadAcc2In = {6'b0, AccIn1, 6'b0, AccIn2};
+    logic [29:0] X1Zext;
+    logic [29:0] X1Sext;
+    logic [35:0] Acc1Acc2In;
+    logic [47:0] Acc1PadAcc2In;
+
+    assign X1Zext      = {6'b0, X1};
+    assign X1Sext      = {{6{X1[23]}}, X1};
+    assign Acc1Acc2In  = {AccIn1, AccIn2};
+    assign Acc1PadAcc2In = {6'b0, AccIn1, 6'b0, AccIn2};
 
     // Let the DSP output be captured here
     xu_priv::dsp_output dsp_data_out_reg;
@@ -51,32 +56,37 @@ module alu_lane #(
     xu_priv::dsp_input mode1_18b_input;
     logic[17:0] mode1_Y1;
     logic[17:0] mode1_Y2;
-    assign mode1_18b_input.A = X1Zext;
+    logic [47:0] Acc1PadAcc2In_d1;
+    assign mode1_18b_input.A = {X1, 6'b0};
     assign mode1_18b_input.B = X2;
-    assign mode1_18b_input.C = Acc1PadAcc2In;
+    assign mode1_18b_input.C = Acc1PadAcc2In_d1;
     assign mode1_18b_input.D = 0;
-    assign mode1_Y1 = dsp_data_out_reg.P[17:0];
-    assign mode1_Y2 = dsp_data_out_reg.P[41:24];
+    assign mode1_Y1 = dsp_data_out_reg.P[41:24];
+    assign mode1_Y2 = dsp_data_out_reg.P[17:0];
 
     // Motivation: 18-bit multiplication + addition
     xu_priv::dsp_input mode2_18b_input;
     logic[17:0] mode2_Y1;
     logic[FXP18_LOC-1:0] MODE2_C_PAD_LO = 0;
     logic[48-FXP18_LOC-18-1:0] MODE2_C_PAD_HI;
-    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2[17]}};
+    logic [17:0] AccIn2_d3;
+    logic [17:0] AccIn2_d2;
+    logic [17:0] AccIn2_d1;
+    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2_d3[17]}};
     assign mode2_18b_input.A = X1Sext;
     assign mode2_18b_input.B = mode1_18b_input.B;
-    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2, MODE2_C_PAD_LO};
+    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2_d3, MODE2_C_PAD_LO};
     assign mode2_18b_input.D = 0;
     assign mode2_Y1 = dsp_data_out_reg.P[FXP18_LOC+17:FXP18_LOC];
 
     // Motivation: 24-bit addition (X1:X2 + Acc1:Acc2)
     xu_priv::dsp_input mode3_24b_input;
     logic[23:0] mode3_Y1Y2;
+    logic[35:0] Acc1Acc2In_d1;
     assign mode3_24b_input.A = X1Zext;
     assign mode3_24b_input.B = X2;
-    assign mode3_24b_input.C = {12'b0, Acc1Acc2In};
-    assign mode3_24b_input.D = mode1_18b_input.D;
+    assign mode3_24b_input.C = {12'b0, Acc1Acc2In_d1};
+    assign mode3_24b_input.D = 0;
     assign mode3_Y1Y2 = dsp_data_out_reg.P[23:0];
 
     // Motivation: 24-bit multiplication + addition;
@@ -132,17 +142,34 @@ module alu_lane #(
 
     // Input datapath to DSP
     xu_priv::dsp_input dsp_data_in;
-    always_ff @(posedge fab_in_clk)
-    if (fab_in_rst) begin
-        dsp_data_in <= 0;
-    end else begin
-        // FIXME(kevin): Need to manually optimize mux tree here
-        case (alu_ctl.mode)
-            2'b00: dsp_data_in <= mode1_18b_input;
-            2'b01: dsp_data_in <= mode2_18b_input;
-            2'b10: dsp_data_in <= mode3_24b_input;
-            2'b11: dsp_data_in <= mode4_24b_input;
-        endcase
+
+    always_ff @(posedge fab_in_clk) begin
+        
+        if (fab_in_rst) begin
+            Acc1PadAcc2In_d1 <= 48'b0;
+            AccIn2_d1 <= 0;
+            AccIn2_d2 <= 0;
+            AccIn2_d3 <= 0;
+            Acc1Acc2In_d1 <= 0;
+        end else begin
+            Acc1PadAcc2In_d1 <= Acc1PadAcc2In;
+            AccIn2_d1 <= AccIn2;
+            AccIn2_d2 <= AccIn2_d1;
+            AccIn2_d3 <= AccIn2_d2;
+            Acc1Acc2In_d1 <= Acc1Acc2In;
+        end
+
+        if (fab_in_rst) begin
+            dsp_data_in <= 0;
+        end else begin
+            // FIXME(kevin): Need to manually optimize mux tree here
+            case (alu_ctl.mode)
+                2'b00: dsp_data_in <= mode1_18b_input;
+                2'b01: dsp_data_in <= mode2_18b_input;
+                2'b10: dsp_data_in <= mode3_24b_input;
+                2'b11: dsp_data_in <= mode4_24b_input;
+            endcase
+        end
     end
 
     // Output datapath from DSP
@@ -151,10 +178,17 @@ module alu_lane #(
     always_ff @(posedge fab_out_clk)
     if (fab_out_rst) begin
         dsp_data_out_reg <= 0;
-        alu_mode_reg <= '{default:2'b0};
+        // alu_mode_reg <= '{default:2'b0};
+        for (int i = 0; i < LANE_LATENCY; i++) begin
+            alu_mode_reg[i] <= 2'b0;
+        end
     end else begin
         dsp_data_out_reg <= dsp_data_out;
-        alu_mode_reg <= {alu_mode_reg[LANE_LATENCY-2:0], alu_ctl.mode};
+        // alu_mode_reg <= {alu_mode_reg[LANE_LATENCY-2:0], alu_ctl.mode};
+        for (int i = LANE_LATENCY-1; i > 0; i--) begin
+            alu_mode_reg[i] <= alu_mode_reg[i-1];
+        end
+        alu_mode_reg[0] <= alu_ctl.mode;
     end
 
     // Connect outputs
@@ -190,7 +224,19 @@ module alu_lane #(
     );
 
     // Check parameter legality
-    generate begin : parameter_checks
+    // generate begin : parameter_checks
+    //     if (FXP24_LOC <= 0 || FXP24_LOC > 23) begin
+    //         $error("FXP24_LOC parameter out of range (0-23)");
+    //     end
+    //     if (FXP18_LOC <= 0 || FXP18_LOC > 17) begin
+    //         $error("FXP18_LOC parameter out of range (0-17)");
+    //     end
+    //     if (LERP_FXP18_LOC <= 0 || LERP_FXP18_LOC > 17) begin
+    //         $error("LERP_FXP18_LOC parameter out of range (0-17)");
+    //     end
+    // end : parameter_checks
+    // endgenerate
+    initial begin
         if (FXP24_LOC <= 0 || FXP24_LOC > 23) begin
             $error("FXP24_LOC parameter out of range (0-23)");
         end
@@ -200,8 +246,7 @@ module alu_lane #(
         if (LERP_FXP18_LOC <= 0 || LERP_FXP18_LOC > 17) begin
             $error("LERP_FXP18_LOC parameter out of range (0-17)");
         end
-    end : parameter_checks
-    endgenerate
+    end
 
 endmodule
 
