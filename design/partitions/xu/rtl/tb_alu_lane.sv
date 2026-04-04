@@ -220,15 +220,28 @@ module tb_alu_lane;
 
         // Mode 2
         rst = 1'b1;
-        alu_mode.mode <= 2'b01; // Switch to mode 1 for 18b multiplication + addition
+        alu_mode.mode <= 2'b01; // Switch to mode 2 for 18b multiplication + addition
         OPMODE <= 7'b011_0101;
         ALUMODE <= 4'b0000;
         INMODE <= 5'b00000;
+        X1 <= 24'h00_0000;
+        X2 <= 18'h0_0000;
         AccIn1 <= 18'h00000; //unused
         AccIn2 <= 18'h00000;   
 
         repeat (2) @(posedge clk);
         rst = 1'b0;
+
+        tick_and_show("14");
+        tick_and_show("15");
+        tick_and_show("16");
+        tick_and_show("17");
+        tick_and_show("18");
+        tick_and_show("19");
+        tick_and_show("20");
+        tick_and_show("21");
+        tick_and_show("22");
+        tick_and_show("23");
 
         X1 <= 24'h00_0100;
         X2 <= 18'h0_0200;
@@ -263,12 +276,13 @@ module tb_alu_lane;
         tick_and_show("22");
         tick_and_show("23");
 
-        // Mode 3
         rst = 1'b1;
-        alu_mode.mode <= 2'b10; // Switch to mode 1 for 18b multiplication + addition
+        alu_mode.mode <= 2'b10; // Switch to mode 3 for 24b addition
         OPMODE <= 7'b000_1111;
         ALUMODE <= 4'b0000;
         INMODE <= 5'b00000;
+        X1 <= 24'h00_0000;
+        X2 <= 18'h0_0000;
         AccIn1 <= 18'h00000; //unused
         AccIn2 <= 18'h00000;   
 
@@ -285,76 +299,6 @@ module tb_alu_lane;
         tick_and_show("28");
         tick_and_show("29");
         tick_and_show("30");
-
-        // Mode 4
-        // rst = 1'b1;
-        // alu_mode.mode <= 2'b11; // Switch to mode 1 for 18b multiplication + addition
-        // OPMODE <= 7'b000_1111;
-        // ALUMODE <= 4'b0000;
-        // INMODE <= 5'b00000;
-        // AccIn1 <= 18'h00000; //unused
-        // AccIn2 <= 18'h00000;   
-
-        // repeat (2) @(posedge clk);
-        // rst = 1'b0;
-        // X1 <= 24'h00_0000;
-        // X2 <= 18'h0_0200;
-        // AccIn1 <= 18'h00000; //unused
-        // AccIn2 <= 18'h00100;   
-
-        // // Change ALUMODE -> XOR behavior.
-        // ALUMODE <= 4'b0100;
-        // tick_and_show("alumode xor");
-
-        // // Change OPMODE -> use Z only before ALU stage.
-        // OPMODE <= 7'b0000000;
-        // ALUMODE <= 4'b0000;
-        // tick_and_show("opmode z-only");
-
-        // // Demonstrate INMODE effect: include D in X term.
-        // OPMODE <= 7'b0000001;
-        // INMODE <= 5'b00001;
-        // tick_and_show("inmode uses D");
-
-        // // Demonstrate CEP gating: hold P while inputs keep changing.
-        // p_hold = P;
-        // CEP <= 1'b0;
-        // A <= 30'd77;
-        // B <= 18'd55;
-        // C <= 48'd99;
-        // D <= 25'd11;
-        // tick_and_show("CEP=0 hold P");
-        // // if (dsp_data_out.P !== p_hold) begin
-        // //     $display("FAIL: P changed while CEP=0");
-        // //     $finish;
-        // // end
-
-        // // Re-enable P update.
-        // CEP <= 1'b1;
-        // tick_and_show("CEP=1 update P");
-        // // if (dsp_data_out.P === p_hold) begin
-        // //     $display("FAIL: P did not update after CEP=1");
-        // //     $finish;
-        // // end
-
-        // // Demonstrate CEA/CEB/CEC/CED hold behavior.
-        // p_hold = P;
-        // CEA <= 2'b00;
-        // CEB <= 2'b00;
-        // CEC <= 1'b0;
-        // CED <= 1'b0;
-        // CEAD <= 1'b0;
-        // A <= 30'd999;
-        // B <= 18'd888;
-        // C <= 48'd777;
-        // D <= 25'd666;
-        // tick_and_show("data CEs low hold regs");
-        // // if (dsp_data_out.P !== p_hold) begin
-        // //     $display("FAIL: P changed while data register CEs were low");
-        // //     $finish;
-        // // end
-
-        // // $display("DSP WRAPPER CONTROL-SIGNAL TEST PASSED");
         $finish;
     end
 endmodule

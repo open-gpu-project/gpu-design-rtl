@@ -72,10 +72,10 @@ module alu_lane #(
     logic [17:0] AccIn2_d3;
     logic [17:0] AccIn2_d2;
     logic [17:0] AccIn2_d1;
-    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2_d3[17]}};
+    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2_d2[17]}};
     assign mode2_18b_input.A = X1Sext;
     assign mode2_18b_input.B = mode1_18b_input.B;
-    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2_d3, MODE2_C_PAD_LO};
+    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2_d2, MODE2_C_PAD_LO};
     assign mode2_18b_input.D = 0;
     assign mode2_Y1 = dsp_data_out_reg.P[FXP18_LOC+17:FXP18_LOC];
 
@@ -100,7 +100,9 @@ module alu_lane #(
     assign mode4_24b_input.C = {MODE4_C_PAD_HI, Acc1Acc2In[23:0], MODE4_C_PAD_LO};
     assign mode4_24b_input.D = 0;
     // FIXME(kevin): Figure this part out...
-    assign mode4_Y1Y2 = 24'bx;
+    // assign mode4_Y1Y2 = 24'bx;
+    assign mode4_Y1Y2 = dsp_data_out_reg.P[23:0];
+
 
     // Registered control signals
     xu_priv::dsp_ctl dsp_control_reg;
