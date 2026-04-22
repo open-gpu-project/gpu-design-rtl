@@ -2,3 +2,4 @@ CMakeUserPresets.json
 build/
 eda/
 .venv/
+sim_build

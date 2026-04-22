@@ -1,0 +1,11 @@
+`verilator_config
+
+lint_off -rule WIDTH           -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule BLKANDNBLK      -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule UNOPTFLAT       -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule UNUSEDSIGNAL    -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule CASEINCOMPLETE  -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule INITIALDLY      -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule STMTDLY         -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule CASEX           -file "*/design/libraries/unisim/DSP48E1.sv"
+lint_off -rule LATCH           -file "*/design/libraries/unisim/DSP48E1.sv"
