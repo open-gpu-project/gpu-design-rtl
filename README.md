@@ -41,7 +41,11 @@ We use `uv` to manage our Python version and packages.
 3. Follow on-screen instructions to activate the virtual environment
 4. Download and install packages with `uv sync`
 
-To add a package to the project, you should:
+You can alternatively choose to **not use a virtual environment.** You can run Python tools and scripts directly with `uv run <...>`.
+
+For example, you can just do `uv run cocotb-config --version` without activating the virtual environment. This is very useful when writing build scripts.
+
+To add a package to the project:
 1. `uv add [package name here]`
 2. `uv lock` (just in case)
 
