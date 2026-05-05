@@ -2,3 +2,5 @@ CMakeUserPresets.json
 build/
 eda/
 .venv/
+.DS_Store
+**/.DS_Store
