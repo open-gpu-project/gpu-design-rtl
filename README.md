@@ -33,10 +33,24 @@ Repository will contain:
 - On MacOS: `brew install universal-ctags`
 - On Linux: Download and install from source: [universal-ctags/ctags](https://github.com/universal-ctags/ctags)
 
+## Setting up your Python Environment
+
+We use `uv` to manage our Python version and packages.
+1. Install [uv](https://github.com/astral-sh/uv).
+2. Create the virtual environment with `uv venv`
+3. Follow on-screen instructions to activate the virtual environment
+4. Download and install packages with `uv sync`
+
+To add a package to the project, you should:
+1. `uv add [package name here]`
+2. `uv lock` (just in case)
+
+**Do not use pip to modify the package list.**
+
 ## Setting up your C++ Environment
 
 1. Install Ninja and CMake. For CMake, try to install the latest version, you can grab the `.sh` install file for **Linux** here: https://cmake.org/download/ (and .msi for **Windows**). On **MacOS**, use brew.
-1. Download and install LLVM-19. **On Linux**, this can be installed with the LLVM install script by running:
+2. Download and install LLVM-19. **On Linux**, this can be installed with the LLVM install script by running:
    ```bash
    wget https://apt.llvm.org/llvm.sh
    chmod +x llvm.sh
@@ -46,17 +60,17 @@ Repository will contain:
    ```sh
    brew install llvm@19
    ```
-2. Confirm by running `clang-19`
-3. Set up VCPKG by cloning the repository and running:
+3. Confirm by running `clang-19`
+4. Set up VCPKG by cloning the repository and running:
    ```bash
    git clone https://github.com/microsoft/vcpkg.git
    cd vcpkg
    ./bootstrap-vcpkg.sh
    ```
    (on Windows this will be a `.bat` file instead and you may need to download Visual Studio). Note that the `vcpkg/` directory is now your `VCPKG_ROOT`. **Make sure you add it to your path.** For more information see [the official setup guide](https://learn.microsoft.com/en-gb/vcpkg/get_started/get-started).
-4. Confirm by running `vcpkg --version`
-5. Open this repository in VSCode and download the recommended workspace extensions (it should prompt you, or you can go to the extensions panel and install it).
-6. Copy over `CMakeUserPresets.template.json` into `CMakeUserPresets.json` and fill in the required paths under the `"environment"` key.
-7. Reload VSCode
-8. Set the CMake preset to be `default`
-9. Run the configure and build command from the VSCode command palette or the CMake tool sidebar
+5. Confirm by running `vcpkg --version`
+6. Open this repository in VSCode and download the recommended workspace extensions (it should prompt you, or you can go to the extensions panel and install it).
+7. Copy over `CMakeUserPresets.template.json` into `CMakeUserPresets.json` and fill in the required paths under the `"environment"` key.
+8. Reload VSCode
+9. Set the CMake preset to be `default`
+10. Run the configure and build command from the VSCode command palette or the CMake tool sidebar
