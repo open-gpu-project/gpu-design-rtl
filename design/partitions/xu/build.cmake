@@ -14,9 +14,11 @@ add_verilog_library(
       svlib_unisim
 )
 
-add_verilator_executable(
-   xu_sim
-   TOP_MODULE xu_top
+add_cocotb_verilator(
+   simpart_xu
+   TOP_MODULE alu_lane
    LINK_LIBRARIES svpart_xu
    VERILATOR_ARGS --trace
 )
+
+add_cocotb_test(simpart_xu design.partitions.xu.dv.test_alu_lane)
