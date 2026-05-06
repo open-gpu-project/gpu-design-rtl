@@ -24,7 +24,9 @@
         "dv": "test",
         "integration": "connection",
         "libraries": "lib",
-        "scripts": "scripts"
+        "scripts": "scripts",
+        "cmake": "ci",
+        "docs": "docs",
     },
 
     // Verilog HDL configuration

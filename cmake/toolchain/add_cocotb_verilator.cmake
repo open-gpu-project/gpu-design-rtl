@@ -40,14 +40,14 @@ function(add_cocotb_verilator name)
 
    # For debugging, print out what we would verilate with
    message(STATUS "Adding Verilator executable ${name}")
-   message(STATUS "   top module ${ARG_TOP_MODULE}")
-   message(STATUS "   sources:")
+   message(DEBUG "   top module ${ARG_TOP_MODULE}")
+   message(DEBUG "   sources:")
    foreach(_src ${_v_sources})
-      message(STATUS "     ${_src}")
+      message(DEBUG "     ${_src}")
    endforeach()
-   message(STATUS "   include directories:")
+   message(DEBUG "   include directories:")
    foreach(_inc ${_v_incdirs})
-      message(STATUS "     ${_inc}")
+      message(DEBUG "     ${_inc}")
    endforeach()
 
    # Output directory for Verilator-generated C++ sources
@@ -137,6 +137,6 @@ function(add_cocotb_verilator name)
    target_link_libraries(
       ${name}
       PRIVATE
-      "${COCOTB_LIB_DIR}/libcocotbvpi_verilator${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${COCOTB_LIB_DIR}/libcocotbvpi_verilator.so"
    )
 endfunction()

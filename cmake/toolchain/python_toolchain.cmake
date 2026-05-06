@@ -15,3 +15,8 @@ macro(uv_run)
       COMMAND ${UV_EXECUTABLE} run ${_UV_RUN_COMMAND}
    )
 endmacro()
+
+include("${CMAKE_CURRENT_LIST_DIR}/sync_uv_if_needed.cmake")
+
+# Re-create the virtual environment if needed
+sync_uv_if_needed()
