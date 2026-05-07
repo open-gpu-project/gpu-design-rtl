@@ -1,7 +1,7 @@
 import os
+from pathlib import Path
 
 from cocotb_tools.runner import Verilator, _Command
-from pathlib import Path
 
 out_file = os.getenv("TEST_EXECUTABLE", None)
 assert out_file is not None, "TEST_EXECUTABLE environment variable is not set"
@@ -10,17 +10,16 @@ assert toplevel is not None, "TEST_TOPLEVEL environment variable is not set"
 test_module = os.getenv("COCOTB_TEST_MODULE", None)
 assert test_module is not None, "COCOTB_TEST_MODULE environment variable is not set"
 
+
 class MyVerilatorRunner(Verilator):
+
    def __init__(self, *args, **kwargs):
       super().__init__(*args, **kwargs)
-   
+
    def _test_command(self) -> list[_Command]:
-        return [
-            [str(out_file)]
-            + (["--trace"] if self.waves or self.gui else [])
-            + self.test_args
-            + self.plusargs
-        ]
+      return [[str(out_file)] + (["--trace"] if self.waves or self.gui else []) + self.test_args +
+              self.plusargs]
+
 
 cwd = Path(__file__).parent
 build_dir = cwd / "build"
@@ -32,11 +31,11 @@ if results.exists():
 
 runner = MyVerilatorRunner()
 runner.test(
-   test_module,
-   hdl_toplevel=toplevel,
-   hdl_toplevel_lang="verilog",
-   build_dir=build_dir,
-   test_dir=build_dir,
+    test_module,
+    hdl_toplevel=toplevel,
+    hdl_toplevel_lang="verilog",
+    build_dir=build_dir,
+    test_dir=build_dir,
 )
 
 if not results.exists():

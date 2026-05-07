@@ -8,6 +8,8 @@ eda/
 # Python environment files
 .venv/
 __pycache__/
+.mypy_cache/
+.pytest_cache/
 
 # CMake files
 CMakeUserPresets.json
@@ -16,3 +18,4 @@ Testing/
 
 # CocoTB test results
 results.xml
+*.vcd

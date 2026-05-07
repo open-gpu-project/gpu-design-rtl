@@ -15,6 +15,14 @@
    // C++ specific rules
    "C_Cpp.autoAddFileAssociations": false,
 
+   // Python specific rules
+   "python.analysis.typeCheckingMode": "strict",
+   "python.analysis.diagnosticSeverityOverrides": {
+      "reportUnusedVariable": "information",
+      "reportUnknownMemberType": "information",
+      "reportUnknownVariableType": "information",
+   },
+
    // Material Icon Theme configuration
    "material-icon-theme.folders.theme": "classic",
     "material-icon-theme.folders.associations": {
