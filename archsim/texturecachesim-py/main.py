@@ -1,5 +1,5 @@
+from pathlib import Path
 import itertools
-
 import cv2
 import numpy as np
 import cache
@@ -28,13 +28,14 @@ else:
     print(f"Number of sets: {nSets}, number of ways: {nWays}, policy: {policy}, show_intermediate: {show_intermediate}")
 
 # Load 16-bit PNG
-img_bgr = cv2.imread("test1.png", cv2.IMREAD_UNCHANGED)
+script_dir = Path(__file__).resolve().parent
+img_bgr = cv2.imread(str(script_dir / "test1.png"), cv2.IMREAD_UNCHANGED)
 img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
 list = img.tolist()
 
 textureSizes = {}
-with open("texsizes.txt") as f:
+with open(str(script_dir / "texsizes.txt")) as f:
     for line in f.readlines():
         values = line.strip().split()
 
