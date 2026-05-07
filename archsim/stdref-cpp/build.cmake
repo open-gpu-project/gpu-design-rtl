@@ -9,6 +9,7 @@ target_compile_definitions(
    stdref-cpp PRIVATE
    IMGUI_DEFINE_MATH_OPERATORS
    _CRT_SECURE_NO_WARNINGS
+   PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 target_link_libraries(
