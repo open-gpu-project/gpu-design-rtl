@@ -1,2 +1,0 @@
-# Unified Shader Core
-
