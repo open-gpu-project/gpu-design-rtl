@@ -12,8 +12,11 @@ target_compile_definitions(
    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
+find_package(lodepng CONFIG REQUIRED)
+
 target_link_libraries(
    stdref-cpp
    PRIVATE
    glfw
+   lodepng
 )

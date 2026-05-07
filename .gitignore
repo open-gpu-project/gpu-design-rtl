@@ -1,2 +1,18 @@
+# OS files
+.DS_Store
+**/.DS_Store
+.git
+.claude
+eda/
+
+# Python environment files
+.venv/
+__pycache__/
+
+# CMake files
 CMakeUserPresets.json
 build/
+Testing/
+
+# CocoTB test results
+results.xml
