@@ -7,9 +7,32 @@
    "editor.indentSize": "tabSize",
    "editor.tabSize": 3,
    "editor.detectIndentation": false,
+   "[systemverilog]": {
+      "editor.tabSize": 4,
+      "editor.detectIndentation": true,
+   },
 
    // C++ specific rules
    "C_Cpp.autoAddFileAssociations": false,
+
+   // Material Icon Theme configuration
+   "material-icon-theme.folders.theme": "classic",
+    "material-icon-theme.folders.associations": {
+        "design": "sandbox",
+        "design/partitions": "ui",
+        "rtl": "core",
+        "dv": "test",
+        "integration": "connection",
+        "libraries": "lib",
+        "scripts": "scripts",
+        "cmake": "ci",
+        "docs": "docs",
+    },
+
+    // Verilog HDL configuration
+    "verilog.linting.linter": "verilator",
+    "verilog.linting.verilator.runAtFileLocation": false,
+    "verilog.linting.verilator.arguments": "-F design/scripts/lint.f",
 
    // Misc configuration
    "git.enableCommitSigning": false,

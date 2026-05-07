@@ -4,6 +4,7 @@
       "glfw3",
       "tinyobjloader",
       "stb",
-      "lodepng"
+      "lodepng",
+      "opengl-registry"
    ]
 }

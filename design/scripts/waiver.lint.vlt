@@ -1,0 +1,4 @@
+`verilator_config
+
+lint_off -file "*/libraries/unisim/*.sv"
+lint_off -rule INITIALDLY -file "*/libraries/unisim/*.sv"

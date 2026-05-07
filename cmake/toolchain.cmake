@@ -1,0 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/toolchain/python_toolchain.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/toolchain/verilog_toolchain.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/toolchain/add_verilog_library.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/toolchain/add_cocotb_verilator.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/toolchain/add_cocotb_test.cmake)
