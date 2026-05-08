@@ -5,11 +5,37 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "cocotb>=2.0.1",
-    "pytest>=9.0.3",
+   "cocotb>=2.0.1",
+   "pytest>=9.0.3",
+   "pyvcd>=0.4.1",
 ]
 
-[tool.autopep8]
+[dependency-groups]
+dev = [
+   "isort>=8.0.1",
+   "mypy>=2.0.0",
+   "yapf>=0.43.0",
+]
+
+[tool.yapf]
+based_on_style = "google"
+column_limit = 100
+indent_width = 3
+spaces_before_comment = 3
+split_before_logical_operator = true
+
+[tool.isort]
 profile = "black"
-indent_size = 3
-ignore = ["E121"]
+line_length = 100
+known_first_party = ["xbnsim"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_decorators = true
+
+[[tool.mypy.overrides]]
+module = "vcd.*"
+ignore_missing_imports = true
