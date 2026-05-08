@@ -74,6 +74,13 @@ function(add_cocotb_verilator name)
    if(ARG_TRACE)
       list(APPEND _vargs --trace)
    endif()
+   set(_trace_enabled ${ARG_TRACE})
+   if(NOT _trace_enabled)
+      list(FIND ARG_VERILATOR_ARGS "--trace" _trace_arg_index)
+      if(NOT _trace_arg_index EQUAL -1)
+         set(_trace_enabled TRUE)
+      endif()
+   endif()
    foreach(_inc ${_v_incdirs})
       list(APPEND _vargs "-I${_inc}")
    endforeach()
@@ -123,6 +130,9 @@ function(add_cocotb_verilator name)
 
    # Add generated module sources to the executable
    target_sources(${name} PRIVATE ${_sim_srcs} ${_support_srcs})
+   if(_trace_enabled)
+      target_compile_definitions(${name} PRIVATE VM_TRACE=1 VM_TRACE_VCD=1)
+   endif()
 
    # Expose the output dir (for generated headers) and Verilator's include dir
    target_include_directories(

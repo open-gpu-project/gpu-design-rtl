@@ -37,6 +37,7 @@ runner.test(
    hdl_toplevel_lang="verilog",
    build_dir=build_dir,
    test_dir=build_dir,
+   waves=True,
 )
 
 if not results.exists():
