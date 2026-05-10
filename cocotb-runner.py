@@ -1,4 +1,6 @@
 import os
+import sys
+import xml.etree.ElementTree as ET
 
 from cocotb_tools.runner import Verilator, _Command
 from pathlib import Path
@@ -41,6 +43,22 @@ runner.test(
 )
 
 if not results.exists():
-   exit(1)
-else:
-   exit(0)
+   sys.exit(1)
+
+try:
+   results_tree = ET.parse(results)
+except ET.ParseError as err:
+   print(f"Failed to parse cocotb results XML '{results}': {err}", file=sys.stderr)
+   sys.exit(1)
+
+failed_count = 0
+for testsuite in results_tree.iter("testsuite"):
+   failed_count += int(testsuite.attrib.get("failures", "0"))
+   failed_count += int(testsuite.attrib.get("errors", "0"))
+failed_count += sum(1 for _ in results_tree.iter("failure"))
+failed_count += sum(1 for _ in results_tree.iter("error"))
+
+if failed_count:
+   sys.exit(1)
+
+sys.exit(0)
