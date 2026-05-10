@@ -33,12 +33,12 @@ if results.exists():
 
 runner = MyVerilatorRunner()
 runner.test(
-   test_module,
-   hdl_toplevel=toplevel,
-   hdl_toplevel_lang="verilog",
-   build_dir=build_dir,
-   test_dir=build_dir,
-   waves=True,
+    test_module,
+    hdl_toplevel=toplevel,
+    hdl_toplevel_lang="verilog",
+    build_dir=build_dir,
+    test_dir=build_dir,
+    waves=True,
 )
 
 if not results.exists():
