@@ -101,7 +101,7 @@ module alu_lane #(
     assign mode4_24b_input.D = 0;
     // FIXME(kevin): Figure this part out...
     // assign mode4_Y1Y2 = 24'bx;
-    assign mode4_Y1Y2 = dsp_data_out_reg.P[23:0];
+    assign mode4_Y1Y2 = dsp_data_out_reg.P[FXP24_LOC + 23:FXP24_LOC];
 
 
     // Registered control signals
