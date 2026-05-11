@@ -2,7 +2,9 @@
 `include "xu_priv.svh"
 
 module alu (
-    input logic clk,
+    input logic dsp_clk,
+    input logic fab_in_clk,
+    input logic fab_out_clk,
     input logic rst,
     input logic [1:0] mode,
 
@@ -30,11 +32,11 @@ assign alu_ctl.mode = mode;
 xu_priv::dsp_casc_out l1dsp_casc_out;
 
 alu_lane alu_lane_0(
-    .dsp_clk      (clk      ),
+    .dsp_clk      (dsp_clk      ),
     .dsp_rst      (rst      ),
-    .fab_in_clk   (clk   ),
+    .fab_in_clk   (fab_in_clk   ),
     .fab_in_rst   (rst   ),
-    .fab_out_clk  (clk  ),
+    .fab_out_clk  (fab_out_clk  ),
     .fab_out_rst  (rst  ),
     .alu_ctl      (alu_ctl      ),
     .X1           (l0x1           ),
@@ -49,11 +51,11 @@ alu_lane alu_lane_0(
 );
 
 alu_lane alu_lane_1(
-    .dsp_clk      (clk      ),
+    .dsp_clk      (dsp_clk      ),
     .dsp_rst      (rst      ),
-    .fab_in_clk   (clk   ),
+    .fab_in_clk   (fab_in_clk   ),
     .fab_in_rst   (rst   ),
-    .fab_out_clk  (clk  ),
+    .fab_out_clk  (fab_out_clk  ),
     .fab_out_rst  (rst  ),
     .alu_ctl      (alu_ctl      ),
     .X1           (l1x1           ),

@@ -4,6 +4,8 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
+LANE_LATENCY = 3
+
 
 def pack_dsp_ctl(
     *,
@@ -67,7 +69,6 @@ def alu_snapshot(dut):
 async def test_18b_add(dut):
    cocotb.log.info(f"dut = {dut}")
 
-   PIPELINE_LATENCY = 5
    expected_l0y1 = deque()
    expected_l0y2 = deque()
    expected_l1y1 = deque()
@@ -86,16 +87,26 @@ async def test_18b_add(dut):
        (0x00000F, 0x00010, 0x00001, 0x00001, 0x000000, 0x00000, 0x00000, 0x00000),
    ]
 
-   # Create a clock signal
-   cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.dsp_clk, 5, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_in_clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_out_clk, 10, unit="ns").start())
 
    dut.rst.value = 1
    dut.mode.value = 0
    dut.l0dsp_control.value = 0
    dut.l1dsp_control.value = 0
    dut.l1dsp_casc_in.value = 0
+   dut.l0x1.value = 0
+   dut.l0x2.value = 0
+   dut.l0acc1.value = 0
+   dut.l0acc2.value = 0
+   dut.l1x1.value = 0
+   dut.l1x2.value = 0
+   dut.l1acc1.value = 0
+   dut.l1acc2.value = 0
 
-   await RisingEdge(dut.clk)
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
@@ -140,9 +151,10 @@ async def test_18b_add(dut):
       expected_l1y1.append((l1x1 + l1acc1) & 0x3FFFF)
       expected_l1y2.append((l1x2 + l1acc2) & 0x3FFFF)
 
-      await RisingEdge(dut.clk)
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
 
-      if cycle >= PIPELINE_LATENCY:
+      if cycle >= LANE_LATENCY:
          exp_l0y1 = expected_l0y1.popleft()
          exp_l0y2 = expected_l0y2.popleft()
          exp_l1y1 = expected_l1y1.popleft()
@@ -154,8 +166,10 @@ async def test_18b_add(dut):
             assert_signal_eq(dut.l1y2, exp_l1y2, "l1y2")
          except AssertionError as err:
             raise AssertionError(f"{err}\n{alu_snapshot(dut)}") from err
+      await Timer(1, unit="step")
 
-   for _ in range(PIPELINE_LATENCY):
+   for _ in range(LANE_LATENCY):
+      await RisingEdge(dut.fab_in_clk)
       await ReadOnly()
 
       exp_l0y1 = expected_l0y1.popleft()
@@ -166,14 +180,13 @@ async def test_18b_add(dut):
       assert_signal_eq(dut.l0y2, exp_l0y2, "l0y2 (pipeline)") if exp_l0y2 is not None else None
       assert_signal_eq(dut.l1y1, exp_l1y1, "l1y1 (pipeline)") if exp_l1y1 is not None else None
       assert_signal_eq(dut.l1y2, exp_l1y2, "l1y2 (pipeline)") if exp_l1y2 is not None else None
-      await RisingEdge(dut.clk)
+      await Timer(1, unit="step")
 
 
 @cocotb.test()
 async def test_18b_fma(dut):
    cocotb.log.info(f"dut = {dut}")
 
-   PIPELINE_LATENCY = 6
    expected_l0y1 = deque()
    expected_l1y1 = deque()
 
@@ -190,16 +203,26 @@ async def test_18b_fma(dut):
        (0x000F00, 0x00010, 0x00000, 0x00100, 0x000000, 0x00000, 0x00000, 0x00100),
    ]
 
-   # Create a clock signal
-   cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.dsp_clk, 5, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_in_clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_out_clk, 10, unit="ns").start())
 
    dut.rst.value = 1
    dut.mode.value = 1
    dut.l0dsp_control.value = 0
    dut.l1dsp_control.value = 0
    dut.l1dsp_casc_in.value = 0
+   dut.l0x1.value = 0
+   dut.l0x2.value = 0
+   dut.l0acc1.value = 0
+   dut.l0acc2.value = 0
+   dut.l1x1.value = 0
+   dut.l1x2.value = 0
+   dut.l1acc1.value = 0
+   dut.l1acc2.value = 0
 
-   await RisingEdge(dut.clk)
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
@@ -228,21 +251,24 @@ async def test_18b_fma(dut):
    )
 
    for cycle, test_input in enumerate(test_data):
-      l0x1, l0x2, _, l0acc2, l1x1, l1x2, _, l1acc2 = test_input
+      l0x1, l0x2, l0acc1, l0acc2, l1x1, l1x2, l1acc1, l1acc2 = test_input
       dut.l0x1.value = l0x1
       dut.l0x2.value = l0x2
+      dut.l0acc1.value = l0acc1
       dut.l0acc2.value = l0acc2
 
       dut.l1x1.value = l1x1
       dut.l1x2.value = l1x2
+      dut.l1acc1.value = l1acc1
       dut.l1acc2.value = l1acc2
 
       expected_l0y1.append((((l0x1 * l0x2 >> 8) + l0acc2)) & 0x3FFFF)
       expected_l1y1.append((((l1x1 * l1x2 >> 8) + l1acc2)) & 0x3FFFF)
 
-      await RisingEdge(dut.clk)
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
 
-      if cycle >= PIPELINE_LATENCY:
+      if cycle >= LANE_LATENCY:
          exp_l0y1 = expected_l0y1.popleft()
          exp_l1y1 = expected_l1y1.popleft()
          try:
@@ -250,22 +276,23 @@ async def test_18b_fma(dut):
             assert_signal_eq(dut.l1y1, exp_l1y1, "l1y1")
          except AssertionError as err:
             raise AssertionError(f"{err}\n{alu_snapshot(dut)}") from err
+      await Timer(1, unit="step")
 
-   for _ in range(PIPELINE_LATENCY):
+   for _ in range(LANE_LATENCY):
+      await RisingEdge(dut.fab_in_clk)
       await ReadOnly()
 
       exp_l0y1 = expected_l0y1.popleft()
       assert_signal_eq(dut.l0y1, exp_l0y1, "l0y1 (pipeline)") if exp_l0y1 is not None else None
       exp_l1y1 = expected_l1y1.popleft()
       assert_signal_eq(dut.l1y1, exp_l1y1, "l1y1 (pipeline)") if exp_l1y1 is not None else None
-      await RisingEdge(dut.clk)
+      await Timer(1, unit="step")
 
 
 @cocotb.test()
 async def test_24b_add(dut):
    cocotb.log.info(f"dut = {dut}")
 
-   PIPELINE_LATENCY = 5
    expected_l0y = deque()
    expected_l1y = deque()
 
@@ -282,16 +309,26 @@ async def test_24b_add(dut):
        (0x000F01, 0x00010, 0x00000, 0x00100, 0x000000, 0x00000, 0x00000, 0x00100),
    ]
 
-   # Create a clock signal
-   cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.dsp_clk, 5, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_in_clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_out_clk, 10, unit="ns").start())
 
    dut.rst.value = 1
    dut.mode.value = 2
    dut.l0dsp_control.value = 0
    dut.l1dsp_control.value = 0
    dut.l1dsp_casc_in.value = 0
+   dut.l0x1.value = 0
+   dut.l0x2.value = 0
+   dut.l0acc1.value = 0
+   dut.l0acc2.value = 0
+   dut.l1x1.value = 0
+   dut.l1x2.value = 0
+   dut.l1acc1.value = 0
+   dut.l1acc2.value = 0
 
-   await RisingEdge(dut.clk)
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
@@ -334,9 +371,10 @@ async def test_24b_add(dut):
       expected_l0y.append(((l0x1 << 18) + l0x2 + (l0acc1 << 18) + (l0acc2)) & 0xFFFFFF)
       expected_l1y.append(((l1x1 << 18) + l1x2 + (l1acc1 << 18) + (l1acc2)) & 0xFFFFFF)
 
-      await RisingEdge(dut.clk)
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
 
-      if cycle >= PIPELINE_LATENCY:
+      if cycle >= LANE_LATENCY:
          exp_l0y = expected_l0y.popleft() & 0xFFFFFF
          exp_l0y1 = exp_l0y >> 18
          exp_l0y2 = exp_l0y & 0x3FFFF
@@ -356,8 +394,10 @@ async def test_24b_add(dut):
             assert actual_l1y2 == exp_l1y2, f"Lane 1 Y2: expected 0x{exp_l1y2:x}, got 0x{actual_l1y2:x}"
          except AssertionError as err:
             raise AssertionError(f"{err}\n{alu_snapshot(dut)}") from err
+      await Timer(1, unit="step")
 
-   for _ in range(PIPELINE_LATENCY):
+   while expected_l0y:
+      await RisingEdge(dut.fab_in_clk)
       await ReadOnly()
 
       exp_l0y = expected_l0y.popleft() & 0xFFFFFF
@@ -375,15 +415,16 @@ async def test_24b_add(dut):
       actual_l1y2 = int(dut.l1y2.value) & 0xFFFFFF
       assert actual_l1y1 == exp_l1y1, f"Lane 1 Y1: expected 0x{exp_l1y1:x}, got 0x{actual_l1y1:x}"
       assert actual_l1y2 == exp_l1y2, f"Lane 1 Y2: expected 0x{exp_l1y2:x}, got 0x{actual_l1y2:x}"
-      await RisingEdge(dut.clk)
+      await Timer(1, unit="step")
 
 
 @cocotb.test()
 async def test_24b_fma(dut):
    cocotb.log.info(f"dut = {dut}")
 
-   PIPELINE_LATENCY = 6
-   expected_y = deque()
+   PIPELINE_LATENCY = LANE_LATENCY + 2
+   expected_l0y = deque()
+   expected_l1y = deque()
 
    # (a * bhi) + (a * blo + acc1acc2)
    test_data = [
@@ -397,16 +438,26 @@ async def test_24b_fma(dut):
        (0x000001 << 6, 0x00000, 0x00000, 0x00100, 0x000001, 0x00000, 0x00000, 0x00100),
    ]
 
-   # Create a clock signal
-   cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.dsp_clk, 5, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_in_clk, 10, unit="ns").start())
+   cocotb.start_soon(Clock(dut.fab_out_clk, 10, unit="ns").start())
 
    dut.rst.value = 1
    dut.mode.value = 3
    dut.l0dsp_control.value = 0
    dut.l1dsp_control.value = 0
    dut.l1dsp_casc_in.value = 0
+   dut.l0x1.value = 0
+   dut.l0x2.value = 0
+   dut.l0acc1.value = 0
+   dut.l0acc2.value = 0
+   dut.l1x1.value = 0
+   dut.l1x2.value = 0
+   dut.l1acc1.value = 0
+   dut.l1acc2.value = 0
 
-   await RisingEdge(dut.clk)
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
@@ -447,16 +498,19 @@ async def test_24b_fma(dut):
       dut.l1acc2.value = l1acc2
 
       acc24 = ((l1acc1 << 18) + l1acc2) & 0xFFFFFF
-      lane1_full = l1x1 * l1x2 + (acc24 << 8)
-      lane0_full = l0x1 * l0x2 + lane1_full
-      expected_y.append((lane0_full >> 8) & 0xFFFFFF)
+      expected_l0y.append((l0x1 * l0x2 >> 8) & 0xFFFFFF)
+      expected_l1y.append(((l1x1 * l1x2 + (acc24 << 8)) >> 8) & 0xFFFFFF)
 
-      await RisingEdge(dut.clk)
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
 
       if cycle >= PIPELINE_LATENCY:
-         exp_l0y = expected_y.popleft() & 0xFFFFFF
+         exp_l0y = expected_l0y.popleft() & 0xFFFFFF
          exp_l0y1 = exp_l0y >> 18
          exp_l0y2 = exp_l0y & 0x3FFFF
+         exp_l1y = expected_l1y.popleft() & 0xFFFFFF
+         exp_l1y1 = exp_l1y >> 18
+         exp_l1y2 = exp_l1y & 0x3FFFF
 
          try:
             actual_l0y1 = int(dut.l0y1.value) & 0xFFFFFF
@@ -464,13 +518,20 @@ async def test_24b_fma(dut):
             assert actual_l0y1 == exp_l0y1, f"Lane 0 Y1: expected 0x{exp_l0y1:x}, got 0x{actual_l0y1:x}"
             assert actual_l0y2 == exp_l0y2, f"Lane 0 Y2: expected 0x{exp_l0y2:x}, got 0x{actual_l0y2:x}"
 
+            actual_l1y1 = int(dut.l1y1.value) & 0xFFFFFF
+            actual_l1y2 = int(dut.l1y2.value) & 0xFFFFFF
+            assert actual_l1y1 == exp_l1y1, f"Lane 1 Y1: expected 0x{exp_l1y1:x}, got 0x{actual_l1y1:x}"
+            assert actual_l1y2 == exp_l1y2, f"Lane 1 Y2: expected 0x{exp_l1y2:x}, got 0x{actual_l1y2:x}"
+
          except AssertionError as err:
             raise AssertionError(f"{err}\n{alu_snapshot(dut)}") from err
+      await Timer(1, unit="step")
 
-   for _ in range(PIPELINE_LATENCY):
+   while expected_l0y:
+      await RisingEdge(dut.fab_in_clk)
       await ReadOnly()
 
-      exp_l0y = expected_y.popleft() & 0xFFFFFF
+      exp_l0y = expected_l0y.popleft() & 0xFFFFFF
       exp_l0y1 = exp_l0y >> 18
       exp_l0y2 = exp_l0y & 0x3FFFF
       actual_l0y1 = int(dut.l0y1.value) & 0xFFFFFF
@@ -478,4 +539,12 @@ async def test_24b_fma(dut):
       assert actual_l0y1 == exp_l0y1, f"Lane 0 Y1: expected 0x{exp_l0y1:x}, got 0x{actual_l0y1:x}"
       assert actual_l0y2 == exp_l0y2, f"Lane 0 Y2: expected 0x{exp_l0y2:x}, got 0x{actual_l0y2:x}"
 
-      await RisingEdge(dut.clk)
+      exp_l1y = expected_l1y.popleft() & 0xFFFFFF
+      exp_l1y1 = exp_l1y >> 18
+      exp_l1y2 = exp_l1y & 0x3FFFF
+      actual_l1y1 = int(dut.l1y1.value) & 0xFFFFFF
+      actual_l1y2 = int(dut.l1y2.value) & 0xFFFFFF
+      assert actual_l1y1 == exp_l1y1, f"Lane 1 Y1: expected 0x{exp_l1y1:x}, got 0x{actual_l1y1:x}"
+      assert actual_l1y2 == exp_l1y2, f"Lane 1 Y2: expected 0x{exp_l1y2:x}, got 0x{actual_l1y2:x}"
+
+      await Timer(1, unit="step")

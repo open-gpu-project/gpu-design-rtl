@@ -10,7 +10,7 @@ module alu_lane #(
     // (18 bit) fixed point location for LERP factor
     parameter int LERP_FXP18_LOC = 16,
     // Number of cycles of latency through the lane
-    parameter int LANE_LATENCY = 4
+    parameter int LANE_LATENCY = 3
 ) (
     // Clocks and resets
     input logic dsp_clk,
@@ -56,10 +56,12 @@ module alu_lane #(
     xu_priv::dsp_input mode1_18b_input;
     logic[17:0] mode1_Y1;
     logic[17:0] mode1_Y2;
+    logic[17:0] mode1_Y1_d1;
+    logic[17:0] mode1_Y2_d1;
     logic [47:0] Acc1PadAcc2In_d1;
     assign mode1_18b_input.A = {X1, 6'b0};
     assign mode1_18b_input.B = X2;
-    assign mode1_18b_input.C = Acc1PadAcc2In_d1;
+    assign mode1_18b_input.C = Acc1PadAcc2In;
     assign mode1_18b_input.D = 0;
     assign mode1_Y1 = dsp_data_out_reg.P[41:24];
     assign mode1_Y2 = dsp_data_out_reg.P[17:0];
@@ -72,22 +74,28 @@ module alu_lane #(
     logic [17:0] AccIn2_d3;
     logic [17:0] AccIn2_d2;
     logic [17:0] AccIn2_d1;
-    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2_d2[17]}};
+    assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2_d1[17]}};
     assign mode2_18b_input.A = X1Sext;
     assign mode2_18b_input.B = mode1_18b_input.B;
-    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2_d2, MODE2_C_PAD_LO};
+    assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2_d1, MODE2_C_PAD_LO};
     assign mode2_18b_input.D = 0;
     assign mode2_Y1 = dsp_data_out_reg.P[FXP18_LOC+17:FXP18_LOC];
 
     // Motivation: 24-bit addition (X1:X2 + Acc1:Acc2)
     xu_priv::dsp_input mode3_24b_input;
     logic[23:0] mode3_Y1Y2;
+    logic[17:0] mode3_Y1;
+    logic[17:0] mode3_Y2;
+    logic[17:0] mode3_Y1_d1;
+    logic[17:0] mode3_Y2_d1;
     logic[35:0] Acc1Acc2In_d1;
     assign mode3_24b_input.A = X1Zext;
     assign mode3_24b_input.B = X2;
-    assign mode3_24b_input.C = {12'b0, Acc1Acc2In_d1};
+    assign mode3_24b_input.C = {12'b0, Acc1Acc2In};
     assign mode3_24b_input.D = 0;
     assign mode3_Y1Y2 = dsp_data_out_reg.P[23:0];
+    assign mode3_Y1 = {12'b0, mode3_Y1Y2[23:18]};
+    assign mode3_Y2 = mode3_Y1Y2[17:0];
 
     // Motivation: 24-bit multiplication + addition;
     xu_priv::dsp_input mode4_24b_input;
@@ -132,6 +140,7 @@ module alu_lane #(
             muxed_OPMODE <= dsp_control.OPMODE;
             muxed_ALUMODE <= dsp_control.ALUMODE;
         end
+        op_mux_sel <= ~op_mux_sel;
     end
 
     // Assign muxed control signals
@@ -180,12 +189,20 @@ module alu_lane #(
     always_ff @(posedge fab_out_clk)
     if (fab_out_rst) begin
         dsp_data_out_reg <= 0;
+        mode1_Y1_d1 <= 0;
+        mode1_Y2_d1 <= 0;
+        mode3_Y1_d1 <= 0;
+        mode3_Y2_d1 <= 0;
         // alu_mode_reg <= '{default:2'b0};
         for (int i = 0; i < LANE_LATENCY; i++) begin
-            alu_mode_reg[i] <= 2'b0;
+            alu_mode_reg[i] <= alu_ctl.mode;
         end
     end else begin
         dsp_data_out_reg <= dsp_data_out;
+        mode1_Y1_d1 <= mode1_Y1;
+        mode1_Y2_d1 <= mode1_Y2;
+        mode3_Y1_d1 <= mode3_Y1;
+        mode3_Y2_d1 <= mode3_Y2;
         // alu_mode_reg <= {alu_mode_reg[LANE_LATENCY-2:0], alu_ctl.mode};
         for (int i = LANE_LATENCY-1; i > 0; i--) begin
             alu_mode_reg[i] <= alu_mode_reg[i-1];
@@ -197,16 +214,16 @@ module alu_lane #(
     // FIXME(kevin): Need to manually optimize mux tree here
     always_comb case (alu_mode_reg[LANE_LATENCY-1])
         2'b00: begin
-            Y1 = mode1_Y1;
-            Y2 = mode1_Y2;
+            Y1 = mode1_Y1_d1;
+            Y2 = mode1_Y2_d1;
         end
         2'b01: begin
             Y1 = mode2_Y1;
             Y2 = '0;
         end
         2'b10: begin
-            Y1 = { 12'b0, mode3_Y1Y2[23:18] };
-            Y2 = mode3_Y1Y2[17:0];
+            Y1 = mode3_Y1_d1;
+            Y2 = mode3_Y2_d1;
         end
         2'b11: begin
             Y1 = { 12'b0, mode4_Y1Y2[23:18] };
