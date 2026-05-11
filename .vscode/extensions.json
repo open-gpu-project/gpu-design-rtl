@@ -4,6 +4,7 @@
       "ms-vscode.cpptools",
       "pkief.material-icon-theme",
       "mshr-h.veriloghdl",
-      "kylinideteam.cmake-intellisence"
+      "kylinideteam.cmake-intellisence",
+      "surfer-project.surfer"
    ]
 }

@@ -38,6 +38,13 @@ function(pytest_test)
    endforeach()
    list(JOIN _resolved_paths ":" _pythonpath_value)
 
+   # Add the current source directory to PYTHONPATH too
+   if(_pythonpath_value)
+      set(_pythonpath_value "${_pythonpath_value}:${CMAKE_SOURCE_DIR}")
+   else()
+      set(_pythonpath_value "${CMAKE_SOURCE_DIR}")
+   endif()
+
    add_test(
       NAME ${_PT_NAME}
       COMMAND ${UV_EXECUTABLE} run pytest ${_PT_ARGS} ${_PT_TESTS}
