@@ -31,12 +31,14 @@ assign alu_ctl.mode = mode;
 
 xu_priv::dsp_casc_out l1dsp_casc_out;
 
-alu_lane alu_lane_0(
+alu_lane #(
+    .MODE4_HIGH_LANE(1'b1)
+) alu_lane_0(
     .dsp_clk      (dsp_clk      ),
     .dsp_rst      (rst      ),
     .fab_in_clk   (fab_in_clk   ),
     .fab_in_rst   (rst   ),
-    .fab_out_clk  (fab_out_clk  ),
+    .fab_out_clk  (~fab_out_clk  ),
     .fab_out_rst  (rst  ),
     .alu_ctl      (alu_ctl      ),
     .X1           (l0x1           ),
@@ -50,7 +52,9 @@ alu_lane alu_lane_0(
     .Y2           (l0y2           )
 );
 
-alu_lane alu_lane_1(
+alu_lane #(
+    .MODE4_HIGH_LANE(1'b0)
+) alu_lane_1(
     .dsp_clk      (dsp_clk      ),
     .dsp_rst      (rst      ),
     .fab_in_clk   (fab_in_clk   ),

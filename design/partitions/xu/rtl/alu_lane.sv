@@ -10,7 +10,9 @@ module alu_lane #(
     // (18 bit) fixed point location for LERP factor
     parameter int LERP_FXP18_LOC = 16,
     // Number of cycles of latency through the lane
-    parameter int LANE_LATENCY = 3
+    parameter int LANE_LATENCY = 4,
+    // Mode 4 uses two lanes: high lane exposes P[6:0], low lane exposes P[24:8].
+    parameter bit MODE4_HIGH_LANE = 1'b0
 ) (
     // Clocks and resets
     input logic dsp_clk,
@@ -59,6 +61,7 @@ module alu_lane #(
     logic[17:0] mode1_Y1_d1;
     logic[17:0] mode1_Y2_d1;
     logic [47:0] Acc1PadAcc2In_d1;
+    logic [47:0] mode1_C_dsp_d1;
     assign mode1_18b_input.A = {X1, 6'b0};
     assign mode1_18b_input.B = X2;
     assign mode1_18b_input.C = Acc1PadAcc2In;
@@ -100,6 +103,8 @@ module alu_lane #(
     // Motivation: 24-bit multiplication + addition;
     xu_priv::dsp_input mode4_24b_input;
     logic[23:0] mode4_Y1Y2;
+    logic[17:0] mode4_Y2;
+    logic[17:0] mode4_Y2_d1;
     logic[FXP24_LOC-1:0] MODE4_C_PAD_LO = 0;
     logic[48-FXP24_LOC-24-1:0] MODE4_C_PAD_HI;
     assign MODE4_C_PAD_HI = {$bits(MODE4_C_PAD_HI){Acc1Acc2In[23]}};
@@ -109,7 +114,9 @@ module alu_lane #(
     assign mode4_24b_input.D = 0;
     // FIXME(kevin): Figure this part out...
     // assign mode4_Y1Y2 = 24'bx;
-    assign mode4_Y1Y2 = dsp_data_out_reg.P[FXP24_LOC + 23:FXP24_LOC];
+    // assign mode4_Y1Y2 = dsp_data_out_reg.P[FXP24_LOC + 23:FXP24_LOC];
+    assign mode4_Y2 = MODE4_HIGH_LANE ? { 3'b0, dsp_data_out_reg.P[14:0] } :
+                                        { 9'b0, dsp_data_out_reg.P[16:8] };
 
 
     // Registered control signals
@@ -129,7 +136,7 @@ module alu_lane #(
     if(dsp_rst) begin
         muxed_OPMODE <= 0;
         muxed_ALUMODE <= 0;
-        op_mux_sel <= 1'b0;
+        op_mux_sel <= MODE4_HIGH_LANE ? 1'b1 : 1'b0;
     end else begin
         if(op_mux_sel) begin
             // X = 0, Y = 0, Z = PCIN
@@ -153,6 +160,15 @@ module alu_lane #(
 
     // Input datapath to DSP
     xu_priv::dsp_input dsp_data_in;
+
+    // always_ff @(posedge dsp_clk) begin
+    //     if (dsp_rst) begin
+    //         mode1_C_dsp_d1 <= 48'b0;
+    //     end else begin
+    //         mode1_C_dsp_d1 <= Acc1PadAcc2In;
+    //         dsp_data_in <= mode1_18b_input;
+    //     end
+    // end
 
     always_ff @(posedge fab_in_clk) begin
         
@@ -193,6 +209,7 @@ module alu_lane #(
         mode1_Y2_d1 <= 0;
         mode3_Y1_d1 <= 0;
         mode3_Y2_d1 <= 0;
+        mode4_Y2_d1 <= 0;
         // alu_mode_reg <= '{default:2'b0};
         for (int i = 0; i < LANE_LATENCY; i++) begin
             alu_mode_reg[i] <= alu_ctl.mode;
@@ -203,6 +220,7 @@ module alu_lane #(
         mode1_Y2_d1 <= mode1_Y2;
         mode3_Y1_d1 <= mode3_Y1;
         mode3_Y2_d1 <= mode3_Y2;
+        mode4_Y2_d1 <= mode4_Y2;
         // alu_mode_reg <= {alu_mode_reg[LANE_LATENCY-2:0], alu_ctl.mode};
         for (int i = LANE_LATENCY-1; i > 0; i--) begin
             alu_mode_reg[i] <= alu_mode_reg[i-1];
@@ -210,32 +228,104 @@ module alu_lane #(
         alu_mode_reg[0] <= alu_ctl.mode;
     end
 
+    logic [17:0] Y1_out;
+    logic [17:0] Y2_out;
     // Connect outputs
     // FIXME(kevin): Need to manually optimize mux tree here
     always_comb case (alu_mode_reg[LANE_LATENCY-1])
         2'b00: begin
-            Y1 = mode1_Y1_d1;
-            Y2 = mode1_Y2_d1;
+            Y1_out = mode1_Y1_d1;
+            Y2_out = mode1_Y2_d1;
         end
         2'b01: begin
-            Y1 = mode2_Y1;
-            Y2 = '0;
+            Y1_out = mode2_Y1;
+            Y2_out = '0;
         end
         2'b10: begin
-            Y1 = mode3_Y1_d1;
-            Y2 = mode3_Y2_d1;
+            Y1_out = mode3_Y1_d1;
+            Y2_out = mode3_Y2_d1;
         end
         2'b11: begin
-            Y1 = { 12'b0, mode4_Y1Y2[23:18] };
-            Y2 = mode4_Y1Y2[17:0];
+            Y1_out = '0;
+            Y2_out = MODE4_HIGH_LANE ? mode4_Y2 : mode4_Y2_d1;
         end
     endcase
+
+
+    xu_priv::dsp_input dsp_data_in_actual;
+    xu_priv::dsp_input dsp_data_in_d1;
+    logic [17:0] Y1_out_d1;
+    logic [17:0] Y2_out_d1;
+
+    logic [17:0] Y1_out_d2;
+    logic [17:0] Y2_out_d2;
+
+    logic [17:0] Y1_out_d3;
+    logic [17:0] Y2_out_d3;
+
+    always_ff @(posedge dsp_clk ) begin
+        dsp_data_in_d1 <= dsp_data_in;
+
+        Y1_out_d1 <= Y1_out;
+        Y2_out_d1 <= Y2_out;
+
+        Y1_out_d2 <= Y1_out_d1;
+        Y2_out_d2 <= Y2_out_d1;
+
+        Y1_out_d3 <= Y1_out_d2;
+        Y2_out_d3 <= Y2_out_d2;
+    end
+
+    always_comb begin
+        if (alu_ctl.mode == 2'b00 && MODE4_HIGH_LANE) begin
+            Y1 = Y1_out_d1;
+            Y2 = Y2_out_d1;
+        end else if (alu_ctl.mode == 2'b00 && !MODE4_HIGH_LANE) begin 
+            Y1 = Y1_out_d2;
+            Y2 = Y2_out_d2;    
+
+        end else if (alu_ctl.mode == 2'b01 && MODE4_HIGH_LANE) begin 
+            Y1 = Y1_out_d3;
+            Y2 = Y2_out_d3;
+        end else if (alu_ctl.mode == 2'b01 && !MODE4_HIGH_LANE) begin 
+            Y1 = Y1_out_d2;
+            Y2 = Y2_out_d2;   
+
+        end else if (alu_ctl.mode == 2'b10 && MODE4_HIGH_LANE) begin
+            Y1 = Y1_out_d1;
+            Y2 = Y2_out_d1;
+        end else if (alu_ctl.mode == 2'b10 && !MODE4_HIGH_LANE) begin 
+            Y1 = Y1_out_d2;
+            Y2 = Y2_out_d2;
+
+        end else if (alu_ctl.mode == 2'b11 && MODE4_HIGH_LANE) begin
+            Y1 = Y1_out_d3;
+            Y2 = Y2_out_d3;
+        end else if (alu_ctl.mode == 2'b11 && !MODE4_HIGH_LANE) begin 
+            Y1 = Y1_out_d2;
+            Y2 = Y2_out_d2;
+
+        end else begin
+            Y1 = Y1_out;
+            Y2 = Y2_out;
+        end
+    end
+
+    always_comb begin
+        if (alu_ctl.mode == 2'b00 || alu_ctl.mode == 2'b10) begin
+            dsp_data_in_actual.A = dsp_data_in.A;
+            dsp_data_in_actual.B = dsp_data_in.B;
+            dsp_data_in_actual.C = dsp_data_in_d1.C;
+        end else begin
+            dsp_data_in_actual = dsp_data_in;
+        end
+    end
 
     // Instantiate DSP wrapper
     alu_dsp_wrapper alu_dsp_wrapper_inst (
         .clk(dsp_clk),
         .rst(dsp_rst),
-        .dsp_data_in(dsp_data_in),
+        .dsp_data_in(dsp_data_in_actual),
         .dsp_control(dsp_control_muxed),
         .dsp_casc_in(dsp_casc_in),
         .dsp_casc_out(dsp_casc_out),

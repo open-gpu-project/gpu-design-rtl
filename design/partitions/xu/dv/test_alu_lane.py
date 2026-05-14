@@ -4,7 +4,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
-LANE_LATENCY = 3
+LANE_LATENCY = 4
 
 def pack_dsp_ctl(
     *,
@@ -23,6 +23,10 @@ def pack_dsp_ctl(
            ((CEA & 0x3) << 7) | ((CEB & 0x3) << 5) | ((CEC & 0x1) << 4) | ((CED & 0x1) << 3) |
            ((CEM & 0x1) << 2) | ((CEP & 0x1) << 1) | ((CEAD & 0x1) << 0))
 
+def pack_dsp_casc(*, PC=0, MULTSIGN=0, CARRYCASC=0):
+   return (((PC & 0xFFFFFFFFFFFF) << 2) |
+           ((MULTSIGN & 0x1) << 1) |
+           ((CARRYCASC & 0x1) << 0))
 
 def drive_all(value, *signals):
    for sig in signals:
@@ -125,6 +129,7 @@ async def test_18b_add(dut):
        CEP=1,
        CEAD=1,
    )
+   dut.dsp_casc_in.value = pack_dsp_casc(PC=51966)
 
    for cycle, test_input in enumerate(test_data):
       X1, X2, AccIn1, AccIn2 = test_input
@@ -207,6 +212,7 @@ async def test_18b_fma(dut):
        CEP=1,
        CEAD=1,
    )
+   dut.dsp_casc_in.value = pack_dsp_casc(PC=47806)
 
    for cycle, test_input in enumerate(test_data):
       X1, X2, AccIn1, AccIn2 = test_input
@@ -245,6 +251,7 @@ async def test_24b_add(dut):
 
    test_data = [
    #    X1       X2      AccIn1  AccIn2
+       (0x00003F, 0x3FFFF, 0x0003F, 0x3FFFF),
        (0x000001, 0x00000, 0x00000, 0x00100),
        (0x000100, 0x00002, 0x00000, 0x00100),
        (0x000301, 0x00004, 0x00000, 0x00100),
@@ -284,6 +291,8 @@ async def test_24b_add(dut):
        CEP=1,
        CEAD=1,
    )
+   dut.dsp_casc_in.value = pack_dsp_casc(PC=48879)
+
 
    for cycle, test_input in enumerate(test_data):
       X1, X2, AccIn1, AccIn2 = test_input
