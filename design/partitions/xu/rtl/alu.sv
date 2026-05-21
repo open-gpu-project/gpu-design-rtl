@@ -38,7 +38,7 @@ alu_lane #(
     .dsp_rst      (rst      ),
     .fab_in_clk   (fab_in_clk   ),
     .fab_in_rst   (rst   ),
-    .fab_out_clk  (~fab_out_clk  ),
+    .fab_out_clk  (fab_out_clk  ),
     .fab_out_rst  (rst  ),
     .alu_ctl      (alu_ctl      ),
     .X1           (l0x1           ),

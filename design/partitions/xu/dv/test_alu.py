@@ -4,8 +4,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge, Timer
 
-LANE_LATENCY = 4
-
+LANE_LATENCY = 5
 
 def pack_dsp_ctl(
     *,
@@ -256,7 +255,7 @@ async def test_18b_fma(dut):
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
-       INMODE=0,
+       INMODE=0b10001,
        ALUMODE=0,
        OPMODE=0b0110101,
        CEA=0b11,
@@ -268,7 +267,7 @@ async def test_18b_fma(dut):
        CEAD=1,
    )
    dut.l1dsp_control.value = pack_dsp_ctl(
-       INMODE=0,
+       INMODE=0b10001,
        ALUMODE=0,
        OPMODE=0b0110101,
        CEA=0b11,
@@ -485,7 +484,7 @@ async def test_24b_fma(dut):
 
    dut.rst.value = 0
    dut.l0dsp_control.value = pack_dsp_ctl(
-       INMODE=0,
+       INMODE=0b10001,
        ALUMODE=0,
        OPMODE=0b1010101,
        CEA=0b11,
