@@ -303,7 +303,11 @@ module RAMB36E1 (CASCADEOUTA, CASCADEOUTB, DBITERR, DOADO, DOBDO, DOPADOP, DOPBD
     input [3:0] WEA;
     input [7:0] WEBWE;
 
-    tri0 GSR = glbl.GSR;
+    `ifdef VERILATOR
+        tri0 GSR = 1'b0;
+    `else
+        tri0 GSR = glbl.GSR;
+    `endif
 
     wire [3:0] dangle_out4;
     wire [31:0] dangle_out32;
@@ -1324,6 +1328,7 @@ module RAMB36E1 (CASCADEOUTA, CASCADEOUTB, DBITERR, DOADO, DOBDO, DOPADOP, DOPBD
     wire ram_extension_b_wire = (RAM_EXTENSION_B == "UPPER") ? 1 : 0;
 `endif //  `ifdef XIL_TIMING
     
+`ifndef VERILATOR
     specify
 
         (CASCADEINA *> DOADO) = (0:0:0, 0:0:0);
@@ -1446,6 +1451,7 @@ module RAMB36E1 (CASCADEOUTA, CASCADEOUTB, DBITERR, DOADO, DOBDO, DOPADOP, DOPBD
    specparam PATHPULSE$ = 0;
 
     endspecify
+`endif
 
 endmodule // RAMB36E1
 

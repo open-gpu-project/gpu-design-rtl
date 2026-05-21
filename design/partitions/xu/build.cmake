@@ -5,6 +5,7 @@ add_verilog_library(
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu_dsp_wrapper.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu_lane.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu.sv
+      ${CMAKE_CURRENT_LIST_DIR}/rtl/bram_wrapper.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/top.sv
    
    INCLUDE_DIRECTORIES
@@ -16,18 +17,27 @@ add_verilog_library(
 
 add_cocotb_verilator(
    simpart_xu
-   TOP_MODULE alu_lane
+   TOP_MODULE top
    LINK_LIBRARIES svpart_xu
    VERILATOR_ARGS --trace
 )
 
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_alu_lane)
+add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu)
 
 add_cocotb_verilator(
-   simpart_xu_alu
+   simpart_alu
    TOP_MODULE alu
    LINK_LIBRARIES svpart_xu
    VERILATOR_ARGS --trace
 )
 
-add_cocotb_test(simpart_xu_alu design.partitions.xu.dv.test_alu)
+add_cocotb_test(simpart_alu design.partitions.xu.dv.test_alu)
+
+add_cocotb_verilator(
+   simpart_alu_lane
+   TOP_MODULE alu_lane
+   LINK_LIBRARIES svpart_xu
+   VERILATOR_ARGS --trace
+)
+
+add_cocotb_test(simpart_alu_lane design.partitions.xu.dv.test_alu_lane)
