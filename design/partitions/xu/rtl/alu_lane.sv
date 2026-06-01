@@ -10,7 +10,7 @@ module alu_lane #(
     // (18 bit) fixed point location for LERP factor
     parameter int LERP_FXP18_LOC = 16,
     // Number of cycles of latency through the lane
-    parameter int LANE_LATENCY = 4,
+    parameter int LANE_LATENCY = 5,
     // Mode 4 uses two lanes: high lane exposes P[6:0], low lane exposes P[24:8].
     parameter bit MODE4_HIGH_LANE = 1'b0
 ) (
@@ -72,7 +72,7 @@ module alu_lane #(
     logic[48-FXP18_LOC-18-1:0] MODE2_C_PAD_HI;
     logic [17:0] AccIn2_d1;
     assign MODE2_C_PAD_HI = {$bits(MODE2_C_PAD_HI){AccIn2[17]}};
-    assign mode2_18b_input.A = X1Sext;
+    assign mode2_18b_input.A = X1Sext; // Sign extend 24 bit not 18 bit
     assign mode2_18b_input.B = mode1_18b_input.B;
     assign mode2_18b_input.C = {MODE2_C_PAD_HI, AccIn2, MODE2_C_PAD_LO};
     assign mode2_18b_input.D = 0;
@@ -135,8 +135,8 @@ module alu_lane #(
             // X ^ Z
             muxed_ALUMODE <= 4'b0100;
         end else begin
-            muxed_OPMODE <= dsp_control.OPMODE;
-            muxed_ALUMODE <= dsp_control.ALUMODE;
+            muxed_OPMODE <= dsp_control_reg.OPMODE;
+            muxed_ALUMODE <= dsp_control_reg.ALUMODE;
         end
         op_mux_sel <= ~op_mux_sel;
     end
@@ -144,7 +144,7 @@ module alu_lane #(
     // Assign muxed control signals
     xu_priv::dsp_ctl dsp_control_muxed;
     always_comb begin
-        dsp_control_muxed = dsp_control_reg;
+        dsp_control_muxed = dsp_control_reg; // ensure inmode goes in before opmode/alumode
         dsp_control_muxed.OPMODE = muxed_OPMODE;
         dsp_control_muxed.ALUMODE = muxed_ALUMODE;
     end
@@ -229,7 +229,7 @@ module alu_lane #(
     // FIXME(kevin): Need to manually optimize mux tree here
     logic [17:0] Y1_out;
     logic [17:0] Y2_out;
-    logic [17:0] Y1_r1, Y2_r1;
+    // logic [17:0] Y1_r1, Y2_r1;
     always_comb case (alu_mode_reg[LANE_LATENCY-2])
         2'b00: begin
             Y1_out = mode1_Y1;
@@ -253,13 +253,11 @@ module alu_lane #(
     if (fab_out_rst) begin
         Y1 <= 0;
         Y2 <= 0;
-        Y1_r1 <= 0;
-        Y2_r1 <= 0;
+        // Y1_r1 <= 0;
+        // Y2_r1 <= 0;
     end else begin
-        Y1 <= Y1_r1;
-        Y2 <= Y2_r1;
-        Y1_r1 <= Y1_out;
-        Y2_r1 <= Y2_out;  
+        Y1 <= Y1_out;
+        Y2 <= Y2_out;
     end
     end
 

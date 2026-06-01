@@ -8,24 +8,29 @@ module alu_acc_reg #(
     input logic ce,
     input logic [WIDTH-1:0] d,
     output logic [WIDTH-1:0] q,
-    input logic [3:0] depth
+    input logic [5:0] depth
 );
 
-wire [3:0] ADDR = 4'(depth - 1);
+always_comb begin
+    assert (depth <= 32) 
+        else   $error("Depth must be less than or equal to 32 for SRLC32E");
+end
+
+
+wire [4:0] ADDR = 5'(depth - 1);
+wire [WIDTH-1:0] srl_q31_unused;
 
 genvar i;
 generate
     for (i = 0; i < WIDTH; i++) begin : gen_srl
-        SRL16E 
+        SRLC32E 
         #(
-            .INIT (16'b0 )
+            .INIT (32'b0 )
         )
-        u_SRL16E(
+        u_SRLC32E(
             .Q   (q[i]   ),
-            .A0  (ADDR[0]  ),
-            .A1  (ADDR[1]  ),
-            .A2  (ADDR[2]  ),
-            .A3  (ADDR[3]  ),
+            .Q31 (srl_q31_unused[i]),
+            .A   (ADDR),
             .CE  (ce  ),
             .CLK (clk ),
             .D   (d[i]   )

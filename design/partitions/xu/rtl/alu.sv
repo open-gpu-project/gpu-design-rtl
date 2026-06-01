@@ -72,6 +72,5 @@ alu_lane #(
     .Y1           (l1y1           ),
     .Y2           (l1y2           )
 );
-
     
 endmodule

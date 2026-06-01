@@ -4,7 +4,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
-LANE_LATENCY = 5
+LANE_LATENCY = 4
 
 def pack_dsp_ctl(
     *,
