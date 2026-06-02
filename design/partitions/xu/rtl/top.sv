@@ -53,8 +53,6 @@ assign l1y2_o = l1y2;
 // assign bram_di_b = bram_load_mode ? DI_B : l1acc;
 
 // l0y*_d3 aligns previous ALU output with next dependent ALU input for ACC bypass.
-// logic [17:0] l0y1_d1, l0y1_d2, l0y1_d3, l0y2_d1, l0y2_d2, l0y2_d3;
-// logic [17:0] l1y1_d1, l1y1_d2, l1y1_d3, l1y2_d1, l1y2_d2, l1y2_d3;
 logic [35:0] l0acc_in_d1, l0acc_in_d2, l0acc_in_d3;
 logic [35:0] l1acc_in_d1, l1acc_in_d2, l1acc_in_d3;
 always_ff @(posedge dsp_clk_div2) begin
@@ -66,10 +64,10 @@ always_ff @(posedge dsp_clk_div2) begin
         l1acc_in_d2 <= 36'b0;
         l1acc_in_d3 <= 36'b0;
     end else begin
-        l0acc_in_d1 <= l0acc_in;
+        l0acc_in_d1 <= xu_ctl_in.bypass_acc ? l0acc_in : l0acc_out;
         l0acc_in_d2 <= l0acc_in_d1;
         l0acc_in_d3 <= l0acc_in_d2;
-        l1acc_in_d1 <= l1acc_in;
+        l1acc_in_d1 <= xu_ctl_in.bypass_acc ? l1acc_in : l1acc_out;
         l1acc_in_d2 <= l1acc_in_d1;
         l1acc_in_d3 <= l1acc_in_d2;
     end
@@ -124,15 +122,15 @@ alu u_alu(
     .l0x2           (l0x2),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
-    .l0acc1         (xu_ctl_pipe_out[2].bypass_acc ? l0acc_in_d3[35:18] : l0acc_out[35:18]         ),
-    .l0acc2         (xu_ctl_pipe_out[2].bypass_acc ? l0acc_in_d3[17:0] : l0acc_out[17:0]         ),
+    .l0acc1         (l0acc_in_d3[35:18]         ),
+    .l0acc2         (l0acc_in_d3[17:0]        ),
     .l0dsp_control  (xu_ctl_pipe_out[2].l0dsp_control  ),
     .l1x1           (l1x1           ),
     .l1x2           (l1x2           ),
     .l1y1           (l1y1           ),
     .l1y2           (l1y2           ),
-    .l1acc1         (xu_ctl_pipe_out[2].bypass_acc ? l1acc_in_d3[35:18] : l1acc_out[35:18]         ),
-    .l1acc2         (xu_ctl_pipe_out[2].bypass_acc ? l1acc_in_d3[17:0] : l1acc_out[17:0]         ),
+    .l1acc1         (l1acc_in_d3[35:18]         ),
+    .l1acc2         (l1acc_in_d3[17:0]        ),
     .l1dsp_control  (xu_ctl_pipe_out[2].l1dsp_control  ),
     .l1dsp_casc_in  (l1dsp_casc_in  ),
     .l0dsp_casc_out (l0dsp_casc_out )

@@ -29,7 +29,7 @@ always_comb begin
             l1acc_in = {l1y1, l1y2};
         end
         2'b11: begin
-            l0acc_in = {12'b0, l0y1[14:0], l1y2[8:0]};
+            l0acc_in = {12'b0, l0y1[14:0], l1y2[8:0]}; // l0acc also gets result from fma for 24bit addition use, does not affect fma calculation even if set to any value
             l1acc_in = {12'b0, l0y1[14:0], l1y2[8:0]};
         end
 	    endcase
