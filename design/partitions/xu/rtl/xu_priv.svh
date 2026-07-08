@@ -52,8 +52,9 @@ package xu_priv;
         logic[1:0] mode;
         logic [1:0] slice_sel_24bit;
         logic mode1_sel_low;
-        logic [5:0] addr_srl;
-        logic acc_ce;
+        logic [4:0] acc_raddr;
+        logic [4:0] acc_waddr;
+        logic acc_we;
         logic bypass_acc;
     } xu_ctl;
 

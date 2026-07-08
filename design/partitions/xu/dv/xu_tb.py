@@ -23,7 +23,7 @@ BRAM36_MASK = (1 << 36) - 1
 
 CLK_NAME = "dsp_clk_div2"
 BRAM_IDLE_ADDR = 0x3FF
-ACC_ADDR_SRL = 11
+ACC_DEPTH = 32
 BRAM_READ_LATENCY = 1
 
 
@@ -60,13 +60,20 @@ def pack_xu_ctl(
     mode=0,
     slice_sel_24bit=0,
     mode1_sel_low=0,
-    addr_srl=ACC_ADDR_SRL,
-    acc_ce=0,
+    acc_raddr=0,
+    acc_waddr=0,
+    acc_we=0,
     bypass_acc=0,
 ):
-   return (((l0dsp_control & ((1 << 25) - 1)) << 38) | ((l1dsp_control & ((1 << 25) - 1)) << 13) |
-           ((mode & 0x3) << 11) | ((slice_sel_24bit & 0x3) << 9) | ((mode1_sel_low & 0x1) << 8) |
-           ((addr_srl & 0x3F) << 2) | ((acc_ce & 0x1) << 1) | (bypass_acc & 0x1))
+   """Pack the xu_priv::xu_ctl struct (67 bits, MSB-first field order):
+
+    l0dsp_control[66:42] l1dsp_control[41:17] mode[16:15] slice_sel_24bit[14:13]
+    mode1_sel_low[12] acc_raddr[11:7] acc_waddr[6:2] acc_we[1] bypass_acc[0]
+    """
+   return (((l0dsp_control & ((1 << 25) - 1)) << 42) | ((l1dsp_control & ((1 << 25) - 1)) << 17) |
+           ((mode & 0x3) << 15) | ((slice_sel_24bit & 0x3) << 13) | ((mode1_sel_low & 0x1) << 12) |
+           ((acc_raddr & 0x1F) << 7) | ((acc_waddr & 0x1F) << 2) | ((acc_we & 0x1) << 1) |
+           (bypass_acc & 0x1))
 
 
 def drive_xu_ctl(dut, **kwargs):
@@ -270,8 +277,6 @@ def snapshot_debug(dut, actual):
        "l1x2",
        "l0acc_in",
        "l1acc_in",
-       "l0acc_in_d3",
-       "l1acc_in_d3",
        "l0acc_out",
        "l1acc_out",
        "l0dsp_casc_out",

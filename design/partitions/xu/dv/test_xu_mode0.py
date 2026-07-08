@@ -8,7 +8,6 @@ from design.partitions.xu.dv.xu_models import (
 from design.partitions.xu.dv.xu_models import pack18_pair as pack_bram_word
 from design.partitions.xu.dv.xu_models import unpack18_pair as unpack_bram_word
 from design.partitions.xu.dv.xu_tb import (
-    ACC_ADDR_SRL,
     BRAM_READ_LATENCY,
     HALF_MASK,
     WORD_MASK,
@@ -38,19 +37,20 @@ BYPASS_START_CYCLE = NUM_PRELOAD_ISSUES
 # During early bring-up, leave as None to only check that latency is constant.
 EXPECTED_PASS_LATENCY = 8
 EXPECTED_ADD_LATENCY = 8
-EXPECTED_ACC_LATENCY_AFTER_LANE = 12
-EXPECTED_READ_TO_ACC_LATENCY = 19
+EXPECTED_ACC_LATENCY_AFTER_LANE = 4
+EXPECTED_READ_TO_ACC_LATENCY = 11
 
 
-def drive_add_mode(dut, *, acc_ce=1, bypass_acc=0):
+def drive_add_mode(dut, *, acc_raddr=0, acc_waddr=0, acc_we=1, bypass_acc=0):
    add_ctl = dsp_add_ctl()
    drive_xu_ctl(
        dut,
        l0dsp_control=add_ctl,
        l1dsp_control=add_ctl,
        mode=0,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=acc_ce,
+       acc_raddr=acc_raddr,
+       acc_waddr=acc_waddr,
+       acc_we=acc_we,
        bypass_acc=bypass_acc,
    )
 
@@ -392,8 +392,20 @@ async def test_xu_bram_lane_acc_integration(dut):
    observed_acc_latencies = []
    observed_read_to_acc_latencies = []
 
+   # Ops that must see acc=0 read the never-written slot ZERO_SLOT
+   # (Verilator zero-initializes the unreset reg-file array).
+   ZERO_SLOT = 31
+
    for cycle in range(TEST_CYCLES):
-      drive_add_mode(dut, bypass_acc=(cycle >= BYPASS_START_CYCLE))
+      # Preload op k writes acc slot k; add op k reads slot k back
+      # (RAW distance 8 >= MIN_RAW_DISTANCE, so no forwarding needed).
+      if cycle < NUM_PRELOAD_ISSUES:
+         drive_add_mode(dut, acc_raddr=ZERO_SLOT, acc_waddr=cycle, acc_we=1)
+      elif cycle < NUM_PRELOAD_ISSUES + NUM_ADD_ISSUES:
+         offset = cycle - NUM_PRELOAD_ISSUES
+         drive_add_mode(dut, acc_raddr=offset, acc_waddr=NUM_PRELOAD_ISSUES + offset, acc_we=1)
+      else:
+         drive_add_mode(dut, acc_raddr=ZERO_SLOT, acc_we=0)
 
       expected = drive_issue_for_cycle(dut, cycle, lines)
       if expected is not None:

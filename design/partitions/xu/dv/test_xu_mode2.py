@@ -5,7 +5,6 @@ from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
 from design.partitions.xu.dv.xu_models import pack18_pair as pack_bram_word
 from design.partitions.xu.dv.xu_tb import (
-    ACC_ADDR_SRL,
     HALF_MASK,
     WORD_MASK,
     drive_xu_ctl,
@@ -162,7 +161,7 @@ def dsp_add_ctl():
    )
 
 
-def drive_mode2_add(dut, *, slice_sel_24bit, acc_ce, bypass_acc=0):
+def drive_mode2_add(dut, *, slice_sel_24bit, acc_raddr=31, acc_waddr=0, acc_we=0):
    ctl = dsp_add_ctl()
    drive_xu_ctl(
        dut,
@@ -170,9 +169,10 @@ def drive_mode2_add(dut, *, slice_sel_24bit, acc_ce, bypass_acc=0):
        l1dsp_control=ctl,
        mode=2,
        slice_sel_24bit=slice_sel_24bit,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=acc_ce,
-       bypass_acc=bypass_acc,
+       acc_raddr=acc_raddr,
+       acc_waddr=acc_waddr,
+       acc_we=acc_we,
+       bypass_acc=0,
    )
 
 
@@ -357,22 +357,20 @@ def drive_cycle(dut, cycle, *, preload_sels, add_sels, preload_l0, preload_l1, a
    if cycle < NUM_PRELOAD:
       offset = cycle
       sel = preload_sels[offset]
-      drive_mode2_add(dut, slice_sel_24bit=sel, acc_ce=1, bypass_acc=0)
+      # Preload offset k writes acc reg-file slot k.
+      drive_mode2_add(dut, slice_sel_24bit=sel, acc_waddr=offset, acc_we=1)
       drive_bram_read(dut, PRELOAD_LO_BASE + offset, PRELOAD_HI_BASE + offset)
       return expected_preload_transaction(cycle, offset, sel, preload_l0, preload_l1)
 
    if cycle < NUM_PRELOAD + NUM_ADDS:
       offset = cycle - NUM_PRELOAD
       sel = add_sels[offset]
-      # Use bypass for the add phase. The preloaded mode-2 outputs are visible
-      # on l*acc_in_d3 at the ALU-input stage before they are available from
-      # l*acc_out. This allows the add burst to start immediately after the
-      # preload burst instead of waiting for the ACC SRL/register read path.
-      drive_mode2_add(dut, slice_sel_24bit=sel, acc_ce=1, bypass_acc=1)
+      # Add offset k reads preload k back from slot k (RAW distance 8).
+      drive_mode2_add(dut, slice_sel_24bit=sel, acc_raddr=offset)
       drive_bram_read(dut, ADD_LO_BASE + offset, ADD_HI_BASE + offset)
       return expected_add_transaction(cycle, offset, sel, preload_l0, preload_l1, add_l0, add_l1)
 
-   drive_mode2_add(dut, slice_sel_24bit=0, acc_ce=0, bypass_acc=0)
+   drive_mode2_add(dut, slice_sel_24bit=0)
    drive_bram_idle(dut)
    return None
 
@@ -390,10 +388,8 @@ def snapshot_debug(dut, cycle, actual):
        "l1acc_in_raw": int(dut.l1acc_in.value) & WORD_MASK,
        "l0acc_out_raw": int(dut.l0acc_out.value) & WORD_MASK,
        "l1acc_out_raw": int(dut.l1acc_out.value) & WORD_MASK,
-       "l0acc_in_d3_raw": int(dut.l0acc_in_d3.value) & WORD_MASK,
-       "l1acc_in_d3_raw": int(dut.l1acc_in_d3.value) & WORD_MASK,
-       "l0acc_in_d3_24": int(dut.l0acc_in_d3.value) & VAL24_MASK,
-       "l1acc_in_d3_24": int(dut.l1acc_in_d3.value) & VAL24_MASK,
+       "l0acc_out_raw": int(dut.l0acc_out.value) & WORD_MASK,
+       "l1acc_out_raw": int(dut.l1acc_out.value) & WORD_MASK,
    }
 
 

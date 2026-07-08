@@ -4,7 +4,6 @@ import cocotb
 from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
 from design.partitions.xu.dv.xu_tb import (
-    ACC_ADDR_SRL,
     HALF_MASK,
     WORD_MASK,
     drive_xu_ctl,
@@ -218,7 +217,7 @@ def dsp_fma_ctl(*, opmode=0b0110101):
    )
 
 
-def drive_mode2_preload(dut, *, slice_sel_24bit, acc_ce=1):
+def drive_mode2_preload(dut, *, slice_sel_24bit, acc_waddr=0, acc_we=1, acc_raddr=31):
    ctl = dsp_add_ctl()
    drive_xu_ctl(
        dut,
@@ -226,22 +225,24 @@ def drive_mode2_preload(dut, *, slice_sel_24bit, acc_ce=1):
        l1dsp_control=ctl,
        mode=2,
        slice_sel_24bit=slice_sel_24bit,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=acc_ce,
+       acc_raddr=acc_raddr,
+       acc_waddr=acc_waddr,
+       acc_we=acc_we,
        bypass_acc=0,
    )
 
 
-def drive_mode3_fma(dut, *, slice_sel_24bit, bypass_acc=1, acc_ce=1):
+def drive_mode3_fma(dut, *, slice_sel_24bit, acc_raddr=31, acc_waddr=0, acc_we=0):
    drive_xu_ctl(
        dut,
        l0dsp_control=dsp_fma_ctl(opmode=0b1010101),
        l1dsp_control=dsp_fma_ctl(),
        mode=3,
        slice_sel_24bit=slice_sel_24bit,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=acc_ce,
-       bypass_acc=bypass_acc,
+       acc_raddr=acc_raddr,
+       acc_waddr=acc_waddr,
+       acc_we=acc_we,
+       bypass_acc=0,
    )
 
 
@@ -428,18 +429,22 @@ def drive_cycle(dut, cycle, *, preload_sels, fma_sels, acc_values, a_values, b_v
    if cycle < NUM_PRELOAD:
       offset = cycle
       sel = preload_sels[offset]
-      drive_mode2_preload(dut, slice_sel_24bit=sel, acc_ce=1)
+      # Preload offset k writes acc reg-file slot k.
+      drive_mode2_preload(dut, slice_sel_24bit=sel, acc_waddr=offset, acc_we=1)
       drive_bram_read(dut, PRELOAD_LO_BASE + offset, PRELOAD_HI_BASE + offset)
       return expected_preload_transaction(cycle, offset, sel, acc_values)
 
    if cycle < NUM_PRELOAD + NUM_FMA:
       offset = cycle - NUM_PRELOAD
       sel = fma_sels[offset]
-      drive_mode3_fma(dut, slice_sel_24bit=sel, bypass_acc=1, acc_ce=1)
+      # FMA offset k reads preload k back from slot k (RAW distance 8) and
+      # writes its own result to slot NUM_PRELOAD+k.
+      drive_mode3_fma(dut, slice_sel_24bit=sel, acc_raddr=offset,
+                      acc_waddr=NUM_PRELOAD + offset, acc_we=1)
       drive_bram_read(dut, FMA_LO_BASE + offset, FMA_HI_BASE + offset)
       return expected_fma_transaction(cycle, offset, sel, acc_values, a_values, b_values)
 
-   drive_mode3_fma(dut, slice_sel_24bit=0, bypass_acc=0, acc_ce=0)
+   drive_mode3_fma(dut, slice_sel_24bit=0)
    drive_bram_idle(dut)
    return None
 
@@ -455,8 +460,7 @@ def snapshot_debug(dut, cycle, actual):
        "l1x2": int(dut.l1x2.value),
        "l0acc_in_raw": int(dut.l0acc_in.value) & WORD_MASK,
        "l1acc_in_raw": int(dut.l1acc_in.value) & WORD_MASK,
-       "l0acc_in_d3_raw": int(dut.l0acc_in_d3.value) & WORD_MASK,
-       "l1acc_in_d3_raw": int(dut.l1acc_in_d3.value) & WORD_MASK,
+
        "l0acc_out_raw": int(dut.l0acc_out.value) & WORD_MASK,
        "l1acc_out_raw": int(dut.l1acc_out.value) & WORD_MASK,
        "l0dsp_casc_out": int(dut.l0dsp_casc_out.value),

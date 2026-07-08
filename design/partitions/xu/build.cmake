@@ -1,7 +1,7 @@
 add_verilog_library(
    svpart_xu
    SOURCES
-      ${CMAKE_CURRENT_LIST_DIR}/rtl/alu_acc_reg.sv
+      ${CMAKE_CURRENT_LIST_DIR}/rtl/acc_reg_file.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu_dsp_wrapper.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu_lane.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/alu.sv
@@ -44,6 +44,15 @@ add_cocotb_verilator(
 )
 
 add_cocotb_test(simpart_lane_input_logic design.partitions.xu.dv.test_lane_input_logic)
+
+add_cocotb_verilator(
+   simpart_acc_reg_file
+   TOP_MODULE acc_reg_file
+   LINK_LIBRARIES svpart_xu
+   VERILATOR_ARGS --trace
+)
+
+add_cocotb_test(simpart_acc_reg_file design.partitions.xu.dv.test_acc_reg_file)
 
 add_cocotb_verilator(
    simpart_xu

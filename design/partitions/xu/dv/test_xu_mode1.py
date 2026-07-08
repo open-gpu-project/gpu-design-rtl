@@ -6,7 +6,6 @@ from cocotb.triggers import ReadOnly, RisingEdge, Timer
 from design.partitions.xu.dv.xu_models import pack18_pair as pack_bram_word
 from design.partitions.xu.dv.xu_models import unpack18_pair as unpack_bram_word
 from design.partitions.xu.dv.xu_tb import (
-    ACC_ADDR_SRL,
     HALF_MASK,
     WORD_MASK,
     check_parallel_bram_read_burst,
@@ -196,20 +195,21 @@ def dsp_fma_ctl():
    )
 
 
-def drive_pass_mode0(dut):
+def drive_pass_mode0(dut, *, acc_waddr=0, acc_we=0, acc_raddr=31):
    ctl = dsp_pass_ctl()
    drive_xu_ctl(
        dut,
        l0dsp_control=ctl,
        l1dsp_control=ctl,
        mode=0,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=0,
+       acc_raddr=acc_raddr,
+       acc_waddr=acc_waddr,
+       acc_we=acc_we,
        bypass_acc=0,
    )
 
 
-def drive_mode1_fma(dut, *, mode1_sel_low, bypass_acc):
+def drive_mode1_fma(dut, *, mode1_sel_low, acc_raddr=31):
    ctl = dsp_fma_ctl()
    drive_xu_ctl(
        dut,
@@ -217,9 +217,9 @@ def drive_mode1_fma(dut, *, mode1_sel_low, bypass_acc):
        l1dsp_control=ctl,
        mode=1,
        mode1_sel_low=mode1_sel_low,
-       addr_srl=ACC_ADDR_SRL,
-       acc_ce=0,
-       bypass_acc=bypass_acc,
+       acc_raddr=acc_raddr,
+       acc_we=0,
+       bypass_acc=0,
    )
 
 
@@ -422,8 +422,8 @@ def drive_cycle(dut, cycle, lines):
     are not valid yet for the selected high/low mode.
     """
    if cycle < NUM_ACC_PRELOAD:
-      # Preload/prime the bypass path with pass-through mode-0 data.
-      drive_pass_mode0(dut)
+      # Preload acc reg-file slot `cycle` with pass-through mode-0 data.
+      drive_pass_mode0(dut, acc_waddr=cycle, acc_we=1)
       drive_bram_read(dut, ACC_A_BASE + cycle, ACC_B_BASE + cycle)
       return None
 
@@ -431,16 +431,17 @@ def drive_cycle(dut, cycle, lines):
       offset = cycle - FMA_START_CYCLE
       mode1_sel_low = offset & 1
 
+      # FMA offset N reads preload N back from slot N (RAW distance 8).
       drive_mode1_fma(
           dut,
           mode1_sel_low=mode1_sel_low,
-          bypass_acc=1,
+          acc_raddr=offset,
       )
       drive_bram_read(dut, PORT_A_BASE + offset, PORT_B_BASE + offset)
       return expected_fma_transaction(cycle, lines)
 
    # Drain the pipeline. Keep legal control values but stop issuing useful data.
-   drive_mode1_fma(dut, mode1_sel_low=1, bypass_acc=0)
+   drive_mode1_fma(dut, mode1_sel_low=1)
    drive_bram_idle(dut)
    return None
 
@@ -454,10 +455,8 @@ def snapshot_debug(dut, cycle, actual):
        "l0x2": int(dut.l0x2.value),
        "l1x1": int(dut.l1x1.value),
        "l1x2": int(dut.l1x2.value),
-       "l0acc_in_d3": int(dut.l0acc_in_d3.value) & WORD_MASK,
-       "l1acc_in_d3": int(dut.l1acc_in_d3.value) & WORD_MASK,
-       "l0acc2_d3": int(dut.l0acc_in_d3.value) & HALF_MASK,
-       "l1acc2_d3": int(dut.l1acc_in_d3.value) & HALF_MASK,
+       "l0acc_out": int(dut.l0acc_out.value) & WORD_MASK,
+       "l1acc_out": int(dut.l1acc_out.value) & WORD_MASK,
    }
 
 

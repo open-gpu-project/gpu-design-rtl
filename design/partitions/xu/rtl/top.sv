@@ -52,26 +52,20 @@ assign l1y2_o = l1y2;
 // assign bram_di_a = bram_load_mode ? DI_A : l0acc;
 // assign bram_di_b = bram_load_mode ? DI_B : l1acc;
 
-// l0y*_d3 aligns previous ALU output with next dependent ALU input for ACC bypass.
-logic [35:0] l0acc_in_d1, l0acc_in_d2, l0acc_in_d3;
-logic [35:0] l1acc_in_d1, l1acc_in_d2, l1acc_in_d3;
-always_ff @(posedge dsp_clk_div2) begin
-    if (rst) begin
-        l0acc_in_d1 <= 36'b0;
-        l0acc_in_d2 <= 36'b0;
-        l0acc_in_d3 <= 36'b0;
-        l1acc_in_d1 <= 36'b0;
-        l1acc_in_d2 <= 36'b0;
-        l1acc_in_d3 <= 36'b0;
-    end else begin
-        l0acc_in_d1 <= l0acc_in;
-        l0acc_in_d2 <= l0acc_in_d1;
-        l0acc_in_d3 <= l0acc_in_d2;
-        l1acc_in_d1 <= l1acc_in;
-        l1acc_in_d2 <= l1acc_in_d1;
-        l1acc_in_d3 <= l1acc_in_d2;
-    end
-end
+// Accumulator timing (cycle i = interval after dsp_clk_div2 edge i; an op's
+// ctl and BRAM address are driven during cycle i):
+//
+//   cycle:     i          i+3                 i+8                edge i+9
+//   producer:  issue      reads acc (tap[2])  l*acc_in valid     RF[waddr]
+//                                             we/waddr (tap[7])  committed
+//
+//   consumer issued at j reads the RF asynchronously during cycle j+3:
+//     j - i == 5  -> result not yet committed: use bypass_acc to forward the
+//                    combinational l*acc_in (producer's result is on it now)
+//     j - i >= 6  -> read the committed RF slot
+//
+// The bypass path is combinational (alu Y -> lane_output_logic -> mux -> alu
+// input reg); acceptable for now, revisit at floorplanning.
 
 xu_priv::xu_ctl xu_ctl_pipe_out [7:0];
 xu_ctl_pipe u_xu_ctl_pipe(
@@ -122,15 +116,15 @@ alu u_alu(
     .l0x2           (l0x2),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
-    .l0acc1         (xu_ctl_pipe_out[2].bypass_acc ? l0acc_in_d3[35:18] : l0acc_out[35:18]),
-    .l0acc2         (xu_ctl_pipe_out[2].bypass_acc ? l0acc_in_d3[17:0]  : l0acc_out[17:0] ),
+    .l0acc1         (l0acc_sel[35:18]),
+    .l0acc2         (l0acc_sel[17:0] ),
     .l0dsp_control  (xu_ctl_pipe_out[2].l0dsp_control  ),
     .l1x1           (l1x1           ),
     .l1x2           (l1x2           ),
     .l1y1           (l1y1           ),
     .l1y2           (l1y2           ),
-    .l1acc1         (xu_ctl_pipe_out[2].bypass_acc ? l1acc_in_d3[35:18] : l1acc_out[35:18]),
-    .l1acc2         (xu_ctl_pipe_out[2].bypass_acc ? l1acc_in_d3[17:0]  : l1acc_out[17:0] ),
+    .l1acc1         (l1acc_sel[35:18]),
+    .l1acc2         (l1acc_sel[17:0] ),
     .l1dsp_control  (xu_ctl_pipe_out[2].l1dsp_control  ),
     .l1dsp_casc_in  (l1dsp_casc_in  ),
     .l0dsp_casc_out (l0dsp_casc_out )
@@ -150,34 +144,40 @@ lane_output_logic u_lane_output_logic(
 wire [35:0] l0acc_in;
 wire [35:0] l0acc_out;
 
-alu_acc_reg 
+acc_reg_file
 #(
-    .WIDTH (36)
+    .WIDTH (36),
+    .DEPTH (32)
 )
-u_alu_acc_reg_l0(
-    .clk (dsp_clk_div2 ),
-    .rst (rst ),
-    .ce  (xu_ctl_pipe_out[7].acc_ce  ),
-    .d   (l0acc_in   ),
-    .q   (l0acc_out   ),
-    .depth (xu_ctl_pipe_out[2].addr_srl)
+u_acc_reg_file_l0(
+    .clk   (dsp_clk_div2),
+    .we    (xu_ctl_pipe_out[7].acc_we   ),
+    .waddr (xu_ctl_pipe_out[7].acc_waddr),
+    .wdata (l0acc_in),
+    .raddr (xu_ctl_pipe_out[2].acc_raddr),
+    .rdata (l0acc_out)
 );
 
 wire [35:0] l1acc_in;
 wire [35:0] l1acc_out;
 
-alu_acc_reg 
+acc_reg_file
 #(
-    .WIDTH (36)
+    .WIDTH (36),
+    .DEPTH (32)
 )
-u_alu_acc_reg_l1(
-    .clk (dsp_clk_div2 ),
-    .rst (rst ),
-    .ce  (xu_ctl_pipe_out[7].acc_ce  ),
-    .d   (l1acc_in   ),
-    .q   (l1acc_out   ),
-    .depth (xu_ctl_pipe_out[2].addr_srl)
+u_acc_reg_file_l1(
+    .clk   (dsp_clk_div2),
+    .we    (xu_ctl_pipe_out[7].acc_we   ),
+    .waddr (xu_ctl_pipe_out[7].acc_waddr),
+    .wdata (l1acc_in),
+    .raddr (xu_ctl_pipe_out[2].acc_raddr),
+    .rdata (l1acc_out)
 );
 
-    
+// Forward the in-flight result past the register file for dependency distance
+// FWD_DISTANCE (see timing comment above).
+wire [35:0] l0acc_sel = xu_ctl_pipe_out[2].bypass_acc ? l0acc_in : l0acc_out;
+wire [35:0] l1acc_sel = xu_ctl_pipe_out[2].bypass_acc ? l1acc_in : l1acc_out;
+
 endmodule
