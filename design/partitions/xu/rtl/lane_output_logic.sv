@@ -29,8 +29,10 @@ always_comb begin
             l1acc_in = {l1y1, l1y2};
         end
         2'b11: begin
-            l0acc_in = {12'b0, l0y1[14:0], l1y2[8:0]}; // l0acc also gets result from fma for 24bit addition use, does not affect fma calculation even if set to any value
-            l1acc_in = {12'b0, l0y1[14:0], l1y2[8:0]};
+            // High lane exposes P[23:9] on Y2, low lane P[8:0] on Y2 (Y1 is 0 in mode 3).
+            // l0acc also gets the result so a following 24-bit op can consume it from either lane.
+            l0acc_in = {12'b0, l0y2[14:0], l1y2[8:0]};
+            l1acc_in = {12'b0, l0y2[14:0], l1y2[8:0]};
         end
 	    endcase
 	end

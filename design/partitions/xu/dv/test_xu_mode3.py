@@ -197,12 +197,17 @@ def dsp_add_ctl():
    )
 
 
-def dsp_fma_ctl():
-   """DSP48 control for multiply-add modes."""
+def dsp_fma_ctl(*, opmode=0b0110101):
+   """DSP48 control for multiply-add modes.
+
+    The low lane adds the accumulator via Z=C (OPMODE=0b0110101). The high lane
+    must instead take the low lane's cascade via Z=PCIN>>17 (OPMODE=0b1010101)
+    so the accumulator is only added once (see test_alu.test_24b_fma).
+    """
    return pack_dsp_ctl(
        INMODE=0b10001,
        ALUMODE=0,
-       OPMODE=0b0110101,
+       OPMODE=opmode,
        CEA=0b11,
        CEB=0b11,
        CEC=1,
@@ -228,11 +233,10 @@ def drive_mode2_preload(dut, *, slice_sel_24bit, acc_ce=1):
 
 
 def drive_mode3_fma(dut, *, slice_sel_24bit, bypass_acc=1, acc_ce=1):
-   ctl = dsp_fma_ctl()
    drive_xu_ctl(
        dut,
-       l0dsp_control=ctl,
-       l1dsp_control=ctl,
+       l0dsp_control=dsp_fma_ctl(opmode=0b1010101),
+       l1dsp_control=dsp_fma_ctl(),
        mode=3,
        slice_sel_24bit=slice_sel_24bit,
        addr_srl=ACC_ADDR_SRL,
