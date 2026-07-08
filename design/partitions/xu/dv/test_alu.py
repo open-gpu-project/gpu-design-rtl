@@ -6,6 +6,7 @@ from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge, Timer
 
 LANE_LATENCY = 4
 
+
 def pack_dsp_ctl(
     *,
     INMODE=0,
@@ -25,9 +26,7 @@ def pack_dsp_ctl(
 
 
 def pack_dsp_casc(*, PC=0, MULTSIGN=0, CARRYCASC=0):
-   return (((PC & 0xFFFFFFFFFFFF) << 2) |
-           ((MULTSIGN & 0x1) << 1) |
-           ((CARRYCASC & 0x1) << 0))
+   return (((PC & 0xFFFFFFFFFFFF) << 2) | ((MULTSIGN & 0x1) << 1) | ((CARRYCASC & 0x1) << 0))
 
 
 def dsp_casc_pc(casc):
@@ -75,10 +74,12 @@ def expected_18b_fma(x1, x2, acc2):
    accum = sign_extend(acc2, 18) << 8
    return ((product + accum) >> 8) & 0x3FFFF
 
+
 def expected_24b_fma(a, b, c):
    product = sign_extend(a, 24) * sign_extend(b, 24)
    accum = sign_extend(c, 24) << 8
    return ((product + accum) >> 8) & 0xFFFFFF
+
 
 def alu_snapshot(dut):
    return (f"Lane 0 X1={signal_text(dut.l0x1)} "
@@ -93,6 +94,7 @@ def alu_snapshot(dut):
            f"Lane 1 AccIn2={signal_text(dut.l1acc2)} "
            f"Lane 1 Y1={signal_text(dut.l1y1)} "
            f"Lane 1 Y2={signal_text(dut.l1y2)} ")
+
 
 @cocotb.test()
 async def test_18b_add(dut):
@@ -163,7 +165,6 @@ async def test_18b_add(dut):
        CEAD=1,
    )
    dut.l1dsp_casc_in.value = pack_dsp_casc(PC=223195676199678)
-
 
    for cycle, test_input in enumerate(test_data):
       l0x1, l0x2, l0acc1, l0acc2, l1x1, l1x2, l1acc1, l1acc2 = test_input
@@ -279,7 +280,6 @@ async def test_18b_fma(dut):
        CEAD=1,
    )
    dut.l1dsp_casc_in.value = pack_dsp_casc(PC=209936909844207)
-
 
    for cycle, test_input in enumerate(test_data):
       l0x1, l0x2, l0acc1, l0acc2, l1x1, l1x2, l1acc1, l1acc2 = test_input
@@ -454,11 +454,11 @@ async def test_24b_fma(dut):
 
    test_data = [
    #    a,       b,       c
-       (0x000200,0x000300,0x000004),
-       (0x000400,0x000500,0x000004),
-       (0x000400,0x000500,0x000004),
-       (0x000200,0x030000,0x000004),
-       (0xFFFFFF,0xFFFFFF,0xFFFFFF)
+       (0x000200, 0x000300, 0x000004),
+       (0x000400, 0x000500, 0x000004),
+       (0x000400, 0x000500, 0x000004),
+       (0x000200, 0x030000, 0x000004),
+       (0xFFFFFF, 0xFFFFFF, 0xFFFFFF)
    ]
 
    cocotb.start_soon(Clock(dut.dsp_clk, 5, unit="ns").start())
@@ -509,9 +509,8 @@ async def test_24b_fma(dut):
    )
    dut.l1dsp_casc_in.value = pack_dsp_casc(PC=223195676199678)
 
-
    for cycle, test_input in enumerate(test_data):
-      a,b,c= test_input
+      a, b, c = test_input
       l0x1 = a
       l0x2 = (sign_extend(b, 24) >> 17) & 0x3FFFF
       l0acc1 = 0
@@ -531,7 +530,7 @@ async def test_24b_fma(dut):
       dut.l1acc1.value = l1acc1
       dut.l1acc2.value = l1acc2
 
-      expected_y.append(expected_24b_fma(a,b,c))
+      expected_y.append(expected_24b_fma(a, b, c))
 
       await wait_alu_cycle(dut)
 

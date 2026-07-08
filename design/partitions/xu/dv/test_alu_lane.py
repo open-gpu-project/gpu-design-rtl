@@ -6,6 +6,7 @@ from cocotb.triggers import ReadOnly, RisingEdge, Timer
 
 LANE_LATENCY = 4
 
+
 def pack_dsp_ctl(
     *,
     INMODE=0,
@@ -23,10 +24,10 @@ def pack_dsp_ctl(
            ((CEA & 0x3) << 7) | ((CEB & 0x3) << 5) | ((CEC & 0x1) << 4) | ((CED & 0x1) << 3) |
            ((CEM & 0x1) << 2) | ((CEP & 0x1) << 1) | ((CEAD & 0x1) << 0))
 
+
 def pack_dsp_casc(*, PC=0, MULTSIGN=0, CARRYCASC=0):
-   return (((PC & 0xFFFFFFFFFFFF) << 2) |
-           ((MULTSIGN & 0x1) << 1) |
-           ((CARRYCASC & 0x1) << 0))
+   return (((PC & 0xFFFFFFFFFFFF) << 2) | ((MULTSIGN & 0x1) << 1) | ((CARRYCASC & 0x1) << 0))
+
 
 def drive_all(value, *signals):
    for sig in signals:
@@ -295,7 +296,6 @@ async def test_24b_add(dut):
        CEAD=1,
    )
    dut.dsp_casc_in.value = pack_dsp_casc(PC=48879)
-
 
    for cycle, test_input in enumerate(test_data):
       X1, X2, AccIn1, AccIn2 = test_input
