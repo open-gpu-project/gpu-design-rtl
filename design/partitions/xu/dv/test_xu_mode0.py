@@ -36,10 +36,10 @@ BYPASS_START_CYCLE = NUM_PRELOAD_ISSUES
 
 # These are not strictly checked unless you fill them in after bring-up.
 # During early bring-up, leave as None to only check that latency is constant.
-EXPECTED_PASS_LATENCY = None
-EXPECTED_ADD_LATENCY = None
-EXPECTED_ACC_LATENCY_AFTER_LANE = None
-EXPECTED_READ_TO_ACC_LATENCY = None
+EXPECTED_PASS_LATENCY = 8
+EXPECTED_ADD_LATENCY = 8
+EXPECTED_ACC_LATENCY_AFTER_LANE = 12
+EXPECTED_READ_TO_ACC_LATENCY = 19
 
 
 def drive_add_mode(dut, *, acc_ce=1, bypass_acc=0):

@@ -48,8 +48,8 @@ TEST_CYCLES = FMA_START_CYCLE + NUM_MODE1_ISSUES + PIPELINE_DRAIN_CYCLES
 
 # Leave as None during bring-up to only require constant latency.
 # Fill in once exact latency is stable.
-EXPECTED_HIGH_FMA_LATENCY = None
-EXPECTED_LOW_FMA_LATENCY = None
+EXPECTED_HIGH_FMA_LATENCY = 8
+EXPECTED_LOW_FMA_LATENCY = 8
 
 # -----------------------------------------------------------------------------
 # Transaction objects

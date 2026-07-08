@@ -39,8 +39,8 @@ ADD_LO_BASE = 128
 ADD_HI_BASE = 192
 
 # Leave as None during bring-up. Fill in once exact latency is stable.
-EXPECTED_PRELOAD_LATENCY = None
-EXPECTED_ADD_LATENCY = None
+EXPECTED_PRELOAD_LATENCY = 8
+EXPECTED_ADD_LATENCY = 8
 
 # -----------------------------------------------------------------------------
 # Transaction objects
