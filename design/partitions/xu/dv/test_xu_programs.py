@@ -241,17 +241,18 @@ async def test_acc_slots_are_registers(dut):
    src_pairs = [((0x00001, 0x00002), (0x00003, 0x00004))] * 8
    prog = program_with_18b_rows(acc_pairs, src_pairs)
 
-   write_order = [0, 1, 2, 3, 4, 5, 6, 7]
+   # Slots spread over the whole file, including 31 (no reserved zero slot).
+   slots = [0, 5, 9, 13, 18, 22, 27, 31]
    read_order = [5, 2, 7, 0, 6, 3, 1, 4]
 
-   for k in write_order:
-      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=k))
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=slots[k]))
    # Space the reads so even the last-written slot is MIN_RAW_DISTANCE away,
    # leaving the read order free to scramble.
    for _ in range(T.MIN_RAW_DISTANCE - 1):
       prog.ops.append(NOP())
    for j, k in enumerate(read_order):
-      prog.ops.append(ADD18(addr_a=SRC_A + j, addr_b=SRC_B + j, acc=Slot(k)))
+      prog.ops.append(ADD18(addr_a=SRC_A + j, addr_b=SRC_B + j, acc=Slot(slots[k])))
 
    await run_program(dut, prog)
 

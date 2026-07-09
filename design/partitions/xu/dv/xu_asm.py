@@ -39,10 +39,6 @@ from design.partitions.xu.dv.xu_tb import (
 )
 from cocotb.triggers import ReadOnly, Timer
 
-# Slot 31 is reserved: never written, reads as zero (Verilator zero-initializes
-# the unreset reg-file array). Ops without an acc operand read it.
-ZERO_SLOT = 31
-
 # Mode-3 high lane sums the low lane's cascade instead of C (Z = PCIN>>17).
 MODE3_HIGH_LANE_OPMODE = 0b1010101
 
@@ -125,14 +121,17 @@ class AsmError(Exception):
 
 
 def _dsp_ctls(op: Op) -> tuple[int, int]:
+   # Ops without an acc operand select 0 in the DSP's Y/Z mux instead of C,
+   # so no register-file slot is consumed (acc_raddr is don't-care).
+   zero_acc = op.acc is None
    if isinstance(op, FMA24):
       return (pack_dsp_ctl(INMODE=0b10001, ALUMODE=0, OPMODE=MODE3_HIGH_LANE_OPMODE,
                            CEA=0b11, CEB=0b11, CEC=1, CED=1, CEM=1, CEP=1, CEAD=1),
-              dsp_fma_ctl())
+              dsp_fma_ctl(zero_acc=zero_acc))
    if isinstance(op, FMA18):
-      ctl = dsp_fma_ctl()
+      ctl = dsp_fma_ctl(zero_acc=zero_acc)
       return ctl, ctl
-   ctl = dsp_add_ctl()
+   ctl = dsp_add_ctl(zero_acc=zero_acc)
    return ctl, ctl
 
 
@@ -175,10 +174,6 @@ class _AccModel:
       self.writes.setdefault(slot, []).append((issue, words))
 
    def read(self, slot: int, consumer_issue: int) -> tuple[int, int]:
-      if slot == ZERO_SLOT:
-         if slot in self.writes:
-            raise AsmError(f"slot {ZERO_SLOT} is reserved as the zero slot")
-         return 0, 0
       history = self.writes.get(slot)
       if not history:
          raise AsmError(f"op {consumer_issue} reads slot {slot} before any write")
@@ -226,13 +221,11 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
           mode=_mode_of(op),
           slice_sel_24bit=getattr(op, "slice_sel", 0),
           mode1_sel_low=getattr(op, "sel_low", 0),
-          acc_raddr=op.acc.index if isinstance(op.acc, Slot) else ZERO_SLOT,
-          acc_waddr=op.dst if op.dst is not None else ZERO_SLOT,
+          acc_raddr=op.acc.index if isinstance(op.acc, Slot) else 0,
+          acc_waddr=op.dst if op.dst is not None else 0,
           acc_we=int(op.dst is not None),
           bypass_acc=int(isinstance(op.acc, Fwd)),
       )
-      if op.dst == ZERO_SLOT:
-         raise AsmError(f"op {i} writes reserved zero slot {ZERO_SLOT}")
       a, b = addr_at(i)
       drives.append(CycleDrive(ctl_kwargs=ctl_kwargs, addr_a=a, addr_b=b))
 
@@ -331,9 +324,9 @@ async def load_bram(dut, bram: dict[int, int]):
 
 
 def _drive_nop(dut):
-   ctl = dsp_add_ctl()
+   ctl = dsp_add_ctl(zero_acc=True)
    drive_xu_ctl(dut, l0dsp_control=ctl, l1dsp_control=ctl, mode=0,
-                acc_raddr=ZERO_SLOT, acc_we=0, bypass_acc=0)
+                acc_raddr=0, acc_we=0, bypass_acc=0)
    drive_bram_read(dut, BRAM_IDLE_ADDR, BRAM_IDLE_ADDR)
 
 
