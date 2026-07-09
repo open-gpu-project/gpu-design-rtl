@@ -46,6 +46,17 @@ package xu_priv;
         logic[1:0] mode;
     } alu_lane_ctl;
 
+    typedef struct packed {
+        dsp_ctl l0dsp_control;
+        dsp_ctl l1dsp_control;
+        logic[1:0] mode;
+        logic [1:0] slice_sel_24bit;
+        logic mode1_sel_low;
+        logic [5:0] addr_srl;
+        logic acc_ce;
+        logic bypass_acc;
+    } xu_ctl;
+
 endpackage;
 
 `endif // INCLUDE_XU_PRIV_SVH
