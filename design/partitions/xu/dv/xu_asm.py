@@ -37,7 +37,6 @@ from design.partitions.xu.dv.xu_tb import (
     dsp_add_ctl,
     dsp_add_kwargs,
     dsp_fma_kwargs,
-    drive_bram_read,
     drive_xu_ctl,
     lane_outputs,
     pack_dsp_ctl,
@@ -350,22 +349,19 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
 
 
 async def load_bram(dut, bram: dict[int, int]):
-   dut.EN_A.value = 1
-   dut.WE_A.value = 1
+   # BRAM writes go through xu_ctl too; only the write data is a real port.
    for addr, word in sorted(bram.items()):
-      dut.ADDR_A.value = addr
+      drive_xu_ctl(dut, addr_a=addr, we_a=1)
       dut.DI_A.value = word & WORD_MASK
       await xu_edge(dut)
-   dut.WE_A.value = 0
+   drive_xu_ctl(dut)  # idle: addr defaults to BRAM_IDLE_ADDR, we=0
    dut.DI_A.value = 0
-   dut.ADDR_A.value = BRAM_IDLE_ADDR
 
 
 def _drive_nop(dut):
    ctl = dsp_add_ctl(zero_acc=True)
    drive_xu_ctl(dut, l0dsp_control=ctl, l1dsp_control=ctl, mode=0,
                 acc_raddr=0, acc_we=0)
-   drive_bram_read(dut, BRAM_IDLE_ADDR, BRAM_IDLE_ADDR)
 
 
 def emit_program(prog: Program, name: str) -> Path:
@@ -401,8 +397,7 @@ async def run_program(dut, prog: Program, name: str | None = None):
    for it in range(total):
       if it < len(cycles):
          c = cycles[it]
-         drive_xu_ctl(dut, **packed_ctl(c.ctl))
-         drive_bram_read(dut, c.addr_a, c.addr_b)
+         drive_xu_ctl(dut, addr_a=c.addr_a, addr_b=c.addr_b, **packed_ctl(c.ctl))
       else:
          _drive_nop(dut)
 

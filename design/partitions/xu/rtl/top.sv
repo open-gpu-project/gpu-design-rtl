@@ -7,13 +7,13 @@ module top #() (
     // input logic [5:0] addr_srl,
 
     // BRAM interface
-    input logic [9:0] ADDR_A,
-    input logic EN_A,
-    input logic WE_A,
+    // input logic [9:0] ADDR_A,
+    // input logic EN_A,
+    // input logic WE_A,
     input logic [35:0] DI_A,
-    input logic [9:0] ADDR_B,
-    input logic EN_B,
-    input logic WE_B,
+    // input logic [9:0] ADDR_B,
+    // input logic EN_B,
+    // input logic WE_B,
     input logic [35:0] DI_B,
     // input logic bram_load_mode,
     // Control and data signals to/from ALU
@@ -77,14 +77,14 @@ xu_ctl_delay_tap u_xu_ctl_delay_tap(
 bram_wrapper u_bram_wrapper(
     .clk    (dsp_clk_div2    ),
     .rst    (rst    ),
-    .ADDR_A (ADDR_A ),
-    .EN_A   (EN_A   ),
-    .WE_A   (WE_A   ),
+    .ADDR_A (xu_ctl_in.ADDR_A ),
+    .EN_A   (xu_ctl_in.EN_A   ),
+    .WE_A   (xu_ctl_in.WE_A   ),
     .DI_A   (DI_A),
     .DO_A   (DO_A   ),
-    .ADDR_B (ADDR_B ),
-    .EN_B   (EN_B   ),
-    .WE_B   (WE_B   ),
+    .ADDR_B (xu_ctl_in.ADDR_B ),
+    .EN_B   (xu_ctl_in.EN_B   ),
+    .WE_B   (xu_ctl_in.WE_B   ),
     .DI_B   (DI_B),
     .DO_B   (DO_B   )
 );

@@ -43,10 +43,23 @@ package xu_priv;
     } dsp_casc_out;
 
     typedef struct packed {
+        logic[17:0] X1;
+        logic[17:0] X2;
+        logic[17:0] AccIn1;
+        logic[17:0] AccIn2;
+    } alu_lane_inputs;
+
+    typedef struct packed {
         logic[1:0] mode;
     } alu_lane_ctl;
 
     typedef struct packed {
+        logic[9:0] ADDR_A;
+        logic EN_A;
+        logic WE_A;
+        logic[9:0] ADDR_B;
+        logic EN_B;
+        logic WE_B;
         dsp_ctl l0dsp_control;
         dsp_ctl l1dsp_control;
         logic[1:0] mode;
