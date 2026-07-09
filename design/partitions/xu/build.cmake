@@ -8,7 +8,7 @@ add_verilog_library(
       ${CMAKE_CURRENT_LIST_DIR}/rtl/lane_input_logic.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/bram_wrapper.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/lane_output_logic.sv
-      ${CMAKE_CURRENT_LIST_DIR}/rtl/xu_ctl_pipe.sv
+      ${CMAKE_CURRENT_LIST_DIR}/rtl/xu_ctl_delay_tap.sv
       ${CMAKE_CURRENT_LIST_DIR}/rtl/top.sv
    
    INCLUDE_DIRECTORIES

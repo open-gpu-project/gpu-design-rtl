@@ -67,13 +67,13 @@ assign l1y2_o = l1y2;
 // The bypass path is combinational (alu Y -> lane_output_logic -> mux -> alu
 // input reg); acceptable for now, revisit at floorplanning.
 
-xu_priv::xu_ctl xu_ctl_pipe_out [7:0];
-xu_ctl_pipe u_xu_ctl_pipe(
+xu_priv::xu_ctl xu_ctl_taps_out [7:0];
+xu_ctl_delay_tap u_xu_ctl_delay_tap(
     .xu_ctl_in       (xu_ctl_in       ),
     .clk             (dsp_clk_div2      ),
     .rst             (rst             ),
     .ce              (1'b1             ),
-    .xu_ctl_pipe_out (xu_ctl_pipe_out )
+    .xu_ctl_taps_out (xu_ctl_taps_out )
 );
 
 
@@ -101,9 +101,9 @@ lane_input_logic u_lane_input_logic(
     .l0x2            (l0x2            ),
     .l1x1            (l1x1            ),
     .l1x2            (l1x2            ),
-    .mode            (xu_ctl_pipe_out[2].mode            ),
-    .mode1_sel_low   (xu_ctl_pipe_out[2].mode1_sel_low   ),
-    .slice_sel_24bit (xu_ctl_pipe_out[2].slice_sel_24bit )
+    .mode            (xu_ctl_taps_out[2].mode            ),
+    .mode1_sel_low   (xu_ctl_taps_out[2].mode1_sel_low   ),
+    .slice_sel_24bit (xu_ctl_taps_out[2].slice_sel_24bit )
 );
 
 alu u_alu(
@@ -111,28 +111,28 @@ alu u_alu(
     .fab_in_clk     (dsp_clk_div2     ),
     .fab_out_clk    (dsp_clk_div2    ),
     .rst            (rst            ),
-    .mode           (xu_ctl_pipe_out[2].mode           ),
+    .mode           (xu_ctl_taps_out[2].mode           ),
     .l0x1           (l0x1),
     .l0x2           (l0x2),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
     .l0acc1         (l0acc_sel[35:18]),
     .l0acc2         (l0acc_sel[17:0] ),
-    .l0dsp_control  (xu_ctl_pipe_out[2].l0dsp_control  ),
+    .l0dsp_control  (xu_ctl_taps_out[2].l0dsp_control  ),
     .l1x1           (l1x1           ),
     .l1x2           (l1x2           ),
     .l1y1           (l1y1           ),
     .l1y2           (l1y2           ),
     .l1acc1         (l1acc_sel[35:18]),
     .l1acc2         (l1acc_sel[17:0] ),
-    .l1dsp_control  (xu_ctl_pipe_out[2].l1dsp_control  ),
+    .l1dsp_control  (xu_ctl_taps_out[2].l1dsp_control  ),
     .l1dsp_casc_in  (l1dsp_casc_in  ),
     .l0dsp_casc_out (l0dsp_casc_out )
 );
 
 lane_output_logic u_lane_output_logic(
     .fab_out_clk    (dsp_clk_div2    ),
-    .mode           (xu_ctl_pipe_out[7].mode           ),
+    .mode           (xu_ctl_taps_out[7].mode           ),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
     .l1y1           (l1y1           ),
@@ -151,10 +151,10 @@ acc_reg_file
 )
 u_acc_reg_file_l0(
     .clk   (dsp_clk_div2),
-    .we    (xu_ctl_pipe_out[7].acc_we   ),
-    .waddr (xu_ctl_pipe_out[7].acc_waddr),
+    .we    (xu_ctl_taps_out[7].acc_we   ),
+    .waddr (xu_ctl_taps_out[7].acc_waddr),
     .wdata (l0acc_in),
-    .raddr (xu_ctl_pipe_out[2].acc_raddr),
+    .raddr (xu_ctl_taps_out[2].acc_raddr),
     .rdata (l0acc_out)
 );
 
@@ -168,16 +168,16 @@ acc_reg_file
 )
 u_acc_reg_file_l1(
     .clk   (dsp_clk_div2),
-    .we    (xu_ctl_pipe_out[7].acc_we   ),
-    .waddr (xu_ctl_pipe_out[7].acc_waddr),
+    .we    (xu_ctl_taps_out[7].acc_we   ),
+    .waddr (xu_ctl_taps_out[7].acc_waddr),
     .wdata (l1acc_in),
-    .raddr (xu_ctl_pipe_out[2].acc_raddr),
+    .raddr (xu_ctl_taps_out[2].acc_raddr),
     .rdata (l1acc_out)
 );
 
 // Forward the in-flight result past the register file for dependency distance
 // FWD_DISTANCE (see timing comment above).
-wire [35:0] l0acc_sel = xu_ctl_pipe_out[2].bypass_acc ? l0acc_in : l0acc_out;
-wire [35:0] l1acc_sel = xu_ctl_pipe_out[2].bypass_acc ? l1acc_in : l1acc_out;
+wire [35:0] l0acc_sel = l0acc_out;
+wire [35:0] l1acc_sel = l1acc_out;
 
 endmodule
