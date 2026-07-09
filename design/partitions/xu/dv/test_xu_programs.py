@@ -5,10 +5,13 @@ per-cycle control words and exact-cycle output predictions, so no timing
 knowledge lives in this file (see xu_timing for the pipeline spec).
 """
 
+from pathlib import Path
+
 import cocotb
 import pytest
 
 from design.partitions.xu.dv import xu_timing as T
+from design.partitions.xu.dv import xu_vectors
 from design.partitions.xu.dv.xu_asm import (
     ADD18,
     ADD24,
@@ -273,6 +276,41 @@ async def test_latency_pin(dut):
    prog = program_with_18b_rows(acc_pairs, [])
    prog.ops.append(ADD18(addr_a=ACC_A, addr_b=ACC_B, dst=0))
    await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_vector_roundtrip(dut):
+   """emit() -> load() reproduces exactly what assemble() produced.
+
+    Guards the vector-file emitter/loader pair against drift (a field
+    forgotten in the loader, a formatting mistake in the emitter).
+    """
+   acc_pairs = [((0x12345, 0x0BEEF), (0x1CAFE, 0x0DEAD))]
+   src_pairs = [((0x01111, 0x02222), (0x03333, 0x01234))]
+   prog = program_with_18b_rows(acc_pairs, src_pairs)
+   prog.ops.append(ADD18(addr_a=ACC_A, addr_b=ACC_B, dst=3))
+   for _ in range(T.FWD_DISTANCE - 1):
+      prog.ops.append(NOP())
+   prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Fwd(), dst=7))
+   prog.ops.append(FMA18(addr_a=SRC_A, addr_b=SRC_B, acc=Slot(3)))
+
+   drives, predictions = assemble(prog)
+   path = Path("roundtrip.vectors.yaml")
+   xu_vectors.emit("roundtrip", prog.bram, drives, predictions, path)
+   bram, cycles = xu_vectors.load(path)
+
+   assert bram == prog.bram
+   assert len(cycles) == len(drives)
+   for c, d in zip(cycles, drives):
+      assert c.addr_a == d.addr_a and c.addr_b == d.addr_b
+      assert c.ctl == d.ctl
+      assert c.op == d.op_repr
+   checks = {c.cycle: c.check for c in cycles if c.check is not None}
+   assert sorted(checks) == [p.op_index for p in predictions]
+   for p in predictions:
+      chk = checks[p.op_index]
+      assert chk["at"] == p.observe_iter
+      assert tuple(chk[lane] for lane in xu_vectors.LANE_NAMES) == p.lanes
 
 
 @cocotb.test()

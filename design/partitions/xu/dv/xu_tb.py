@@ -80,10 +80,10 @@ def drive_xu_ctl(dut, **kwargs):
    dut.xu_ctl_in.value = pack_xu_ctl(**kwargs)
 
 
-def dsp_add_ctl(*, zero_acc=False):
+def dsp_add_kwargs(*, zero_acc=False):
    # zero_acc: Y mux selects 0 instead of C, so no register-file operand is
    # consumed (used for loads and NOPs; acc_raddr becomes don't-care).
-   return pack_dsp_ctl(
+   return dict(
        INMODE=0,
        ALUMODE=0,
        OPMODE=0b0000011 if zero_acc else 0b0001111,
@@ -97,9 +97,9 @@ def dsp_add_ctl(*, zero_acc=False):
    )
 
 
-def dsp_fma_ctl(*, zero_acc=False):
+def dsp_fma_kwargs(*, zero_acc=False):
    # zero_acc: Z mux selects 0 instead of C (multiply-only, no acc operand).
-   return pack_dsp_ctl(
+   return dict(
        INMODE=0b10001,
        ALUMODE=0,
        OPMODE=0b0000101 if zero_acc else 0b0110101,
@@ -111,6 +111,14 @@ def dsp_fma_ctl(*, zero_acc=False):
        CEP=1,
        CEAD=1,
    )
+
+
+def dsp_add_ctl(*, zero_acc=False):
+   return pack_dsp_ctl(**dsp_add_kwargs(zero_acc=zero_acc))
+
+
+def dsp_fma_ctl(*, zero_acc=False):
+   return pack_dsp_ctl(**dsp_fma_kwargs(zero_acc=zero_acc))
 
 
 def xu_clk(dut):

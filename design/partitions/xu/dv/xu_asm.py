@@ -1,10 +1,13 @@
 """XU program assembler.
 
 Tests write a short program of high-level ops (one op == one issue cycle);
-`assemble` lowers it into per-cycle xu_ctl control words and BRAM address
-drives, and predicts the exact-cycle lane outputs with a small golden model
-of the input gearbox, the DSP math and the accumulator register file.
-`run_program` drives the DUT and checks every prediction on its exact cycle.
+`assemble` lowers it into per-cycle xu_ctl fields and BRAM address drives,
+and predicts the exact-cycle lane outputs with a small golden model of the
+input gearbox, the DSP math and the accumulator register file.
+
+`run_program` emits the assembled program as a human-readable vector file
+(see xu_vectors), reloads it, and drives the DUT from the loaded data, so
+the file on disk is always exactly what was driven.
 
 All pipeline-depth knowledge lives in xu_timing; all arithmetic reference
 models live in xu_models.
@@ -12,9 +15,13 @@ models live in xu_models.
 
 from __future__ import annotations
 
+import inspect
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from design.partitions.xu.dv import xu_timing as T
+from design.partitions.xu.dv import xu_vectors
 from design.partitions.xu.dv.xu_models import (
     add18,
     add24,
@@ -28,7 +35,8 @@ from design.partitions.xu.dv.xu_tb import (
     VAL24_MASK,
     WORD_MASK,
     dsp_add_ctl,
-    dsp_fma_ctl,
+    dsp_add_kwargs,
+    dsp_fma_kwargs,
     drive_bram_read,
     drive_xu_ctl,
     lane_outputs,
@@ -85,9 +93,14 @@ class FMA24(Op):
    slice_sel: int = 0
 
 
-@dataclass
+@dataclass(repr=False)
 class NOP(Op):
    """Idle cycle: legal control, idle BRAM address, no acc write."""
+
+   def __repr__(self):
+      if self.addr_a is None and self.addr_b is None:
+         return "NOP()"
+      return f"NOP(addr_a={self.addr_a}, addr_b={self.addr_b})"
 
 
 @dataclass
@@ -103,9 +116,10 @@ class Program:
 
 @dataclass
 class CycleDrive:
-   ctl_kwargs: dict
+   ctl: dict  # named xu_ctl fields; l0dsp/l1dsp are DSP kwargs dicts
    addr_a: int
    addr_b: int
+   op_repr: str
 
 
 @dataclass
@@ -114,25 +128,32 @@ class Prediction:
    observe_iter: int
    lanes: tuple[int, int, int, int]
    op_repr: str
+   acc_note: str  # where the acc operand came from
+   notes: dict[str, str]  # lane output name -> operand math annotation
 
 
 class AsmError(Exception):
    pass
 
 
-def _dsp_ctls(op: Op) -> tuple[int, int]:
+def packed_ctl(ctl: dict) -> dict:
+   """Convert a named ctl dict into drive_xu_ctl/pack_xu_ctl kwargs."""
+   kw = dict(ctl)
+   kw["l0dsp_control"] = pack_dsp_ctl(**kw.pop("l0dsp"))
+   kw["l1dsp_control"] = pack_dsp_ctl(**kw.pop("l1dsp"))
+   return kw
+
+
+def _dsp_ctls(op: Op) -> tuple[dict, dict]:
    # Ops without an acc operand select 0 in the DSP's Y/Z mux instead of C,
    # so no register-file slot is consumed (acc_raddr is don't-care).
    zero_acc = op.acc is None
    if isinstance(op, FMA24):
-      return (pack_dsp_ctl(INMODE=0b10001, ALUMODE=0, OPMODE=MODE3_HIGH_LANE_OPMODE,
-                           CEA=0b11, CEB=0b11, CEC=1, CED=1, CEM=1, CEP=1, CEAD=1),
-              dsp_fma_ctl(zero_acc=zero_acc))
+      return (dict(dsp_fma_kwargs(), OPMODE=MODE3_HIGH_LANE_OPMODE),
+              dsp_fma_kwargs(zero_acc=zero_acc))
    if isinstance(op, FMA18):
-      ctl = dsp_fma_ctl(zero_acc=zero_acc)
-      return ctl, ctl
-   ctl = dsp_add_ctl(zero_acc=zero_acc)
-   return ctl, ctl
+      return dsp_fma_kwargs(zero_acc=zero_acc), dsp_fma_kwargs(zero_acc=zero_acc)
+   return dsp_add_kwargs(zero_acc=zero_acc), dsp_add_kwargs(zero_acc=zero_acc)
 
 
 def _mode_of(op: Op) -> int:
@@ -173,7 +194,8 @@ class _AccModel:
    def write(self, slot: int, issue: int, words: tuple[int, int]):
       self.writes.setdefault(slot, []).append((issue, words))
 
-   def read(self, slot: int, consumer_issue: int) -> tuple[int, int]:
+   def read(self, slot: int, consumer_issue: int) -> tuple[tuple[int, int], int]:
+      """Return ((l0_word, l1_word), writer_issue_index)."""
       history = self.writes.get(slot)
       if not history:
          raise AsmError(f"op {consumer_issue} reads slot {slot} before any write")
@@ -187,7 +209,7 @@ class _AccModel:
          raise AsmError(f"op {consumer_issue} reads slot {slot} written by op "
                         f"{latest[0]}: RAW distance {consumer_issue - latest[0]} < "
                         f"{T.MIN_RAW_DISTANCE}{hint}")
-      return committed[-1][1]
+      return committed[-1][1], committed[-1][0]
 
 
 def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
@@ -214,10 +236,8 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
    result_words: dict[int, tuple[int, int]] = {}  # op index -> l0/l1 writeback
 
    for i, op in enumerate(ops):
-      l0ctl, l1ctl = _dsp_ctls(op)
-      ctl_kwargs = dict(
-          l0dsp_control=l0ctl,
-          l1dsp_control=l1ctl,
+      l0dsp, l1dsp = _dsp_ctls(op)
+      ctl = dict(
           mode=_mode_of(op),
           slice_sel_24bit=getattr(op, "slice_sel", 0),
           mode1_sel_low=getattr(op, "sel_low", 0),
@@ -225,9 +245,11 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
           acc_waddr=op.dst if op.dst is not None else 0,
           acc_we=int(op.dst is not None),
           bypass_acc=int(isinstance(op.acc, Fwd)),
+          l0dsp=l0dsp,
+          l1dsp=l1dsp,
       )
       a, b = addr_at(i)
-      drives.append(CycleDrive(ctl_kwargs=ctl_kwargs, addr_a=a, addr_b=b))
+      drives.append(CycleDrive(ctl=ctl, addr_a=a, addr_b=b, op_repr=repr(op)))
 
       if isinstance(op, NOP):
          continue
@@ -246,10 +268,13 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          acc_words = result_words.get(p)
          if acc_words is None:
             raise AsmError(f"op {i} forwards from op {p} which has no modeled result")
+         acc_note = f"acc forwarded from op {p} (bypass_acc)"
       elif isinstance(op.acc, Slot):
-         acc_words = acc_model.read(op.acc.index, i)
+         acc_words, writer = acc_model.read(op.acc.index, i)
+         acc_note = f"acc = slot {op.acc.index} (written by op {writer})"
       else:
          acc_words = (0, 0)
+         acc_note = "no acc operand (OPMODE selects 0)"
 
       # ---- DSP math per mode ----
       if isinstance(op, ADD18):
@@ -260,6 +285,12 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
              add18(do_b_d1 & HALF_MASK, acc_words[1] & HALF_MASK),
          )
          wb = ((y[0] << 18) | y[1], (y[2] << 18) | y[3])
+         notes = {
+             "l0y1": f"0x{do_a_d1 >> 18:05x} + 0x{acc_words[0] >> 18:05x}",
+             "l0y2": f"0x{do_a_d1 & HALF_MASK:05x} + 0x{acc_words[0] & HALF_MASK:05x}",
+             "l1y1": f"0x{do_b_d1 >> 18:05x} + 0x{acc_words[1] >> 18:05x}",
+             "l1y2": f"0x{do_b_d1 & HALF_MASK:05x} + 0x{acc_words[1] & HALF_MASK:05x}",
+         }
       elif isinstance(op, FMA18):
          if op.sel_low:
             l0x1 = sign_extend(do_a_d2 & HALF_MASK, 18) & VAL24_MASK
@@ -278,6 +309,12 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
              0,
          )
          wb = (y[0], y[2])  # result stored in the low half
+         notes = {
+             "l0y1": f"(0x{l0x1:06x} * 0x{l0x2:05x} + "
+                     f"0x{acc_words[0] & HALF_MASK:05x}<<8) >> 8",
+             "l1y1": f"(0x{l1x1:06x} * 0x{l1x2:05x} + "
+                     f"0x{acc_words[1] & HALF_MASK:05x}<<8) >> 8",
+         }
       elif isinstance(op, ADD24):
          sl = _slices(do_a_d1, do_b_d1)
          l0in, l1in = _rotate(sl, op.slice_sel)
@@ -285,6 +322,12 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          res1 = add24(l1in, acc_words[1] & VAL24_MASK)
          y = (res0 >> 18, res0 & HALF_MASK, res1 >> 18, res1 & HALF_MASK)
          wb = (res0, res1)
+         notes = {
+             "l0y1": f"(0x{l0in:06x} + 0x{acc_words[0] & VAL24_MASK:06x}) >> 18",
+             "l0y2": f"(0x{l0in:06x} + 0x{acc_words[0] & VAL24_MASK:06x}) & 0x3ffff",
+             "l1y1": f"(0x{l1in:06x} + 0x{acc_words[1] & VAL24_MASK:06x}) >> 18",
+             "l1y2": f"(0x{l1in:06x} + 0x{acc_words[1] & VAL24_MASK:06x}) & 0x3ffff",
+         }
       elif isinstance(op, FMA24):
          sl = _slices(do_a_d1, do_b_d1)
          a24, b24 = _rotate(sl, op.slice_sel)
@@ -293,6 +336,11 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          res = fma24_expected(a24, b24, acc_words[1] & VAL24_MASK)
          y = (0, (res >> 9) & 0x7FFF, 0, res & 0x1FF)
          wb = (res, res)  # lane_output_logic writes the result to both lanes
+         fma24_note = f"0x{a24:06x} * 0x{b24:06x} + 0x{acc_words[1] & VAL24_MASK:06x}"
+         notes = {
+             "l0y2": f"({fma24_note}) >> 9",
+             "l1y2": f"({fma24_note}) & 0x1ff",
+         }
       else:
          raise AsmError(f"unhandled op type {type(op).__name__}")
 
@@ -306,6 +354,8 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
               observe_iter=i + T.OBSERVE_ITER_OFFSET,
               lanes=y,
               op_repr=repr(op),
+              acc_note=acc_note,
+              notes=notes,
           ))
 
    return drives, predictions
@@ -330,13 +380,27 @@ def _drive_nop(dut):
    drive_bram_read(dut, BRAM_IDLE_ADDR, BRAM_IDLE_ADDR)
 
 
-async def run_program(dut, prog: Program):
-   """Reset, load BRAM, run the program and check every prediction exact-cycle."""
+def emit_program(prog: Program, name: str) -> Path:
+   """Assemble prog and write its vector file; return the file path."""
    drives, predictions = assemble(prog)
-   by_iter = {p.observe_iter: p for p in predictions}
+   vec_dir = Path(os.environ.get("XU_VECTOR_DIR", os.getcwd()))
+   path = vec_dir / f"{name}.vectors.yaml"
+   xu_vectors.emit(name, prog.bram, drives, predictions, path)
+   return path
+
+
+async def run_program(dut, prog: Program, name: str | None = None):
+   """Emit prog's vector file, reload it, and drive/check the DUT from it.
+
+    Driving from the loaded file (not the in-memory assemble() result)
+    guarantees the file is exactly what was driven.
+    """
+   name = name or inspect.stack()[1].function
+   path = emit_program(prog, name)
+   bram, cycles = xu_vectors.load(path)
 
    await reset_dut(dut)
-   await load_bram(dut, prog.bram)
+   await load_bram(dut, bram)
 
    # Flush the gearbox and ctl pipe so the model's "idle before cycle 0"
    # assumption holds.
@@ -344,28 +408,31 @@ async def run_program(dut, prog: Program):
       _drive_nop(dut)
       await xu_edge(dut)
 
-   total = len(drives) + T.ISSUE_TO_RESULT
+   checks = {c.check["at"]: c for c in cycles if c.check is not None}
+   total = len(cycles) + T.ISSUE_TO_RESULT
    for it in range(total):
-      if it < len(drives):
-         d = drives[it]
-         drive_xu_ctl(dut, **d.ctl_kwargs)
-         drive_bram_read(dut, d.addr_a, d.addr_b)
+      if it < len(cycles):
+         c = cycles[it]
+         drive_xu_ctl(dut, **packed_ctl(c.ctl))
+         drive_bram_read(dut, c.addr_a, c.addr_b)
       else:
          _drive_nop(dut)
 
       await xu_edge(dut)
       await ReadOnly()
 
-      pred = by_iter.get(it)
-      if pred is not None:
+      chk = checks.get(it)
+      if chk is not None:
+         expected = tuple(chk.check[lane] for lane in xu_vectors.LANE_NAMES)
          actual = lane_outputs(dut)
-         if actual != pred.lanes:
+         if actual != expected:
             raise AssertionError(
-                f"op {pred.op_index} ({pred.op_repr}): output mismatch at iteration {it}\n"
-                f"expected (l0y1,l0y2,l1y1,l1y2)={tuple(hex(v) for v in pred.lanes)}\n"
+                f"cycle {chk.cycle} ({chk.op}): output mismatch at check cycle {it}\n"
+                f"expected (l0y1,l0y2,l1y1,l1y2)={tuple(hex(v) for v in expected)}\n"
                 f"actual   {tuple(hex(v) for v in actual)}\n"
+                f"vectors: {path}\n"
                 f"debug={snapshot_debug(dut, actual)}")
 
       await Timer(1, unit="step")
 
-   return predictions
+   return path
