@@ -63,17 +63,15 @@ def pack_xu_ctl(
     acc_raddr=0,
     acc_waddr=0,
     acc_we=0,
-    bypass_acc=0,
 ):
-   """Pack the xu_priv::xu_ctl struct (67 bits, MSB-first field order):
+   """Pack the xu_priv::xu_ctl struct (66 bits, MSB-first field order):
 
-    l0dsp_control[66:42] l1dsp_control[41:17] mode[16:15] slice_sel_24bit[14:13]
-    mode1_sel_low[12] acc_raddr[11:7] acc_waddr[6:2] acc_we[1] bypass_acc[0]
+    l0dsp_control[65:41] l1dsp_control[40:16] mode[15:14] slice_sel_24bit[13:12]
+    mode1_sel_low[11] acc_raddr[10:6] acc_waddr[5:1] acc_we[0]
     """
-   return (((l0dsp_control & ((1 << 25) - 1)) << 42) | ((l1dsp_control & ((1 << 25) - 1)) << 17) |
-           ((mode & 0x3) << 15) | ((slice_sel_24bit & 0x3) << 13) | ((mode1_sel_low & 0x1) << 12) |
-           ((acc_raddr & 0x1F) << 7) | ((acc_waddr & 0x1F) << 2) | ((acc_we & 0x1) << 1) |
-           (bypass_acc & 0x1))
+   return (((l0dsp_control & ((1 << 25) - 1)) << 41) | ((l1dsp_control & ((1 << 25) - 1)) << 16) |
+           ((mode & 0x3) << 14) | ((slice_sel_24bit & 0x3) << 12) | ((mode1_sel_low & 0x1) << 11) |
+           ((acc_raddr & 0x1F) << 6) | ((acc_waddr & 0x1F) << 1) | (acc_we & 0x1))
 
 
 def drive_xu_ctl(dut, **kwargs):

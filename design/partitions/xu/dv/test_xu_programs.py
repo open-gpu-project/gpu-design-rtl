@@ -19,7 +19,6 @@ from design.partitions.xu.dv.xu_asm import (
     FMA24,
     NOP,
     AsmError,
-    Fwd,
     Program,
     Slot,
     assemble,
@@ -100,16 +99,16 @@ async def test_add18_accumulate_chains(dut):
 
 
 @cocotb.test()
-async def test_fwd_distance(dut):
-   """A consumer at exactly FWD_DISTANCE takes the result via bypass_acc."""
+async def test_min_raw_distance(dut):
+   """A consumer at exactly MIN_RAW_DISTANCE reads the committed slot."""
    acc_pairs = [((0x00111, 0x00222), (0x00333, 0x00444))]
    src_pairs = [((0x01111, 0x02222), (0x03333, 0x01234))]
    prog = program_with_18b_rows(acc_pairs, src_pairs)
 
    prog.ops.append(ADD18(addr_a=ACC_A, addr_b=ACC_B, dst=0))
-   for _ in range(T.FWD_DISTANCE - 1):
+   for _ in range(T.MIN_RAW_DISTANCE - 1):
       prog.ops.append(NOP())
-   prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Fwd(), dst=1))
+   prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Slot(0), dst=1))
 
    await run_program(dut, prog)
 
@@ -269,7 +268,6 @@ async def test_latency_pin(dut):
     """
    assert T.ISSUE_TO_RESULT == 8
    assert T.ISSUE_TO_COMMIT == 9
-   assert T.FWD_DISTANCE == 5
    assert T.MIN_RAW_DISTANCE == 6
 
    acc_pairs = [((0x12345, 0x0BEEF), (0x1CAFE, 0x0DEAD))]
@@ -289,9 +287,9 @@ async def test_vector_roundtrip(dut):
    src_pairs = [((0x01111, 0x02222), (0x03333, 0x01234))]
    prog = program_with_18b_rows(acc_pairs, src_pairs)
    prog.ops.append(ADD18(addr_a=ACC_A, addr_b=ACC_B, dst=3))
-   for _ in range(T.FWD_DISTANCE - 1):
+   for _ in range(T.MIN_RAW_DISTANCE - 1):
       prog.ops.append(NOP())
-   prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Fwd(), dst=7))
+   prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Slot(3), dst=7))
    prog.ops.append(FMA18(addr_a=SRC_A, addr_b=SRC_B, acc=Slot(3)))
 
    drives, predictions = assemble(prog)
@@ -315,21 +313,16 @@ async def test_vector_roundtrip(dut):
 
 @cocotb.test()
 async def test_assembler_rejects_hazards(dut):
-   """Assemble-time legality: RAW too close, read-before-write, bad forward."""
-   # RAW distance 5 through the reg file must be rejected (needs Fwd).
+   """Assemble-time legality: RAW too close, read of an unwritten register."""
+   # RAW distance 5 must be rejected: the result is still in flight and the
+   # XU has no forwarding path.
    prog = Program()
    prog.ops = [ADD18(dst=0)] + [NOP()] * 4 + [ADD18(acc=Slot(0))]
-   with pytest.raises(AsmError, match="RAW distance 5"):
+   with pytest.raises(AsmError, match="no forwarding path"):
       assemble(prog)
 
    # Reading a never-written slot must be rejected.
    prog = Program()
    prog.ops = [ADD18(acc=Slot(3))]
    with pytest.raises(AsmError, match="before any write"):
-      assemble(prog)
-
-   # Forwarding from a NOP must be rejected.
-   prog = Program()
-   prog.ops = [NOP()] * 5 + [ADD18(acc=Fwd())]
-   with pytest.raises(AsmError, match="not a computing op"):
       assemble(prog)

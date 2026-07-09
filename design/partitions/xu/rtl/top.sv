@@ -59,13 +59,10 @@ assign l1y2_o = l1y2;
 //   producer:  issue      reads acc (tap[2])  l*acc_in valid     RF[waddr]
 //                                             we/waddr (tap[7])  committed
 //
-//   consumer issued at j reads the RF asynchronously during cycle j+3:
-//     j - i == 5  -> result not yet committed: use bypass_acc to forward the
-//                    combinational l*acc_in (producer's result is on it now)
-//     j - i >= 6  -> read the committed RF slot
-//
-// The bypass path is combinational (alu Y -> lane_output_logic -> mux -> alu
-// input reg); acceptable for now, revisit at floorplanning.
+//   consumer issued at j reads the RF asynchronously during cycle j+3, so it
+//   needs j - i >= 6 from the producer of its slot. There is no forwarding
+//   path: the issue schedule must keep dependent ops >= 6 apart (trivially
+//   true under 8-strand round-robin, where same-strand ops are 8 apart).
 
 xu_priv::xu_ctl xu_ctl_taps_out [7:0];
 xu_ctl_delay_tap u_xu_ctl_delay_tap(
@@ -116,15 +113,15 @@ alu u_alu(
     .l0x2           (l0x2),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
-    .l0acc1         (l0acc_sel[35:18]),
-    .l0acc2         (l0acc_sel[17:0] ),
+    .l0acc1         (l0acc_out[35:18]),
+    .l0acc2         (l0acc_out[17:0] ),
     .l0dsp_control  (xu_ctl_taps_out[2].l0dsp_control  ),
     .l1x1           (l1x1           ),
     .l1x2           (l1x2           ),
     .l1y1           (l1y1           ),
     .l1y2           (l1y2           ),
-    .l1acc1         (l1acc_sel[35:18]),
-    .l1acc2         (l1acc_sel[17:0] ),
+    .l1acc1         (l1acc_out[35:18]),
+    .l1acc2         (l1acc_out[17:0] ),
     .l1dsp_control  (xu_ctl_taps_out[2].l1dsp_control  ),
     .l1dsp_casc_in  (l1dsp_casc_in  ),
     .l0dsp_casc_out (l0dsp_casc_out )
@@ -174,10 +171,5 @@ u_acc_reg_file_l1(
     .raddr (xu_ctl_taps_out[2].acc_raddr),
     .rdata (l1acc_out)
 );
-
-// Forward the in-flight result past the register file for dependency distance
-// FWD_DISTANCE (see timing comment above).
-wire [35:0] l0acc_sel = l0acc_out;
-wire [35:0] l1acc_sel = l1acc_out;
 
 endmodule

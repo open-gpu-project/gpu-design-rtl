@@ -55,7 +55,6 @@ package xu_priv;
         logic [4:0] acc_raddr;
         logic [4:0] acc_waddr;
         logic acc_we;
-        logic bypass_acc;
     } xu_ctl;
 
 endpackage;

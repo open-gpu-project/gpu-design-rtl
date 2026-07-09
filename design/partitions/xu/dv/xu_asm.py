@@ -53,20 +53,20 @@ MODE3_HIGH_LANE_OPMODE = 0b1010101
 
 @dataclass(frozen=True)
 class Slot:
-   """Read the accumulator register-file slot written >= MIN_RAW_DISTANCE ago."""
+   """Read the accumulator register-file slot written >= MIN_RAW_DISTANCE ago.
+
+    There is no forwarding path in the XU: the schedule must keep a consumer
+    at least MIN_RAW_DISTANCE issue slots after its producer (trivially true
+    under 8-strand round-robin issue). assemble() rejects closer reads.
+    """
    index: int
-
-
-@dataclass(frozen=True)
-class Fwd:
-   """Forward the result of the op issued exactly FWD_DISTANCE cycles earlier."""
 
 
 @dataclass
 class Op:
    addr_a: int | None = None
    addr_b: int | None = None
-   acc: Slot | Fwd | None = None
+   acc: Slot | None = None
    dst: int | None = None
 
 
@@ -198,17 +198,16 @@ class _AccModel:
       """Return ((l0_word, l1_word), writer_issue_index)."""
       history = self.writes.get(slot)
       if not history:
-         raise AsmError(f"op {consumer_issue} reads slot {slot} before any write")
+         raise AsmError(f"op {consumer_issue} reads slot {slot} before any write "
+                        f"(uninitialized register)")
       committed = [w for w in history if consumer_issue - w[0] >= T.MIN_RAW_DISTANCE]
       latest = history[-1]
       if consumer_issue - latest[0] < T.MIN_RAW_DISTANCE:
-         if consumer_issue - latest[0] == T.FWD_DISTANCE:
-            hint = " (use acc=Fwd())"
-         else:
-            hint = ""
          raise AsmError(f"op {consumer_issue} reads slot {slot} written by op "
                         f"{latest[0]}: RAW distance {consumer_issue - latest[0]} < "
-                        f"{T.MIN_RAW_DISTANCE}{hint}")
+                        f"{T.MIN_RAW_DISTANCE} and the XU has no forwarding path; "
+                        f"schedule dependent ops >= {T.MIN_RAW_DISTANCE} apart "
+                        f"(8-strand round-robin gives distance 8)")
       return committed[-1][1], committed[-1][0]
 
 
@@ -233,7 +232,6 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
    drives: list[CycleDrive] = []
    predictions: list[Prediction] = []
    acc_model = _AccModel()
-   result_words: dict[int, tuple[int, int]] = {}  # op index -> l0/l1 writeback
 
    for i, op in enumerate(ops):
       l0dsp, l1dsp = _dsp_ctls(op)
@@ -244,7 +242,6 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
           acc_raddr=op.acc.index if isinstance(op.acc, Slot) else 0,
           acc_waddr=op.dst if op.dst is not None else 0,
           acc_we=int(op.dst is not None),
-          bypass_acc=int(isinstance(op.acc, Fwd)),
           l0dsp=l0dsp,
           l1dsp=l1dsp,
       )
@@ -261,15 +258,7 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
       do_a_d2, do_b_d2 = bram_do(t - T.GEARBOX_D2)
 
       # ---- acc operand ----
-      if isinstance(op.acc, Fwd):
-         p = i - T.FWD_DISTANCE
-         if p < 0 or isinstance(ops[p], NOP):
-            raise AsmError(f"op {i} forwards from op {p}, which is not a computing op")
-         acc_words = result_words.get(p)
-         if acc_words is None:
-            raise AsmError(f"op {i} forwards from op {p} which has no modeled result")
-         acc_note = f"acc forwarded from op {p} (bypass_acc)"
-      elif isinstance(op.acc, Slot):
+      if isinstance(op.acc, Slot):
          acc_words, writer = acc_model.read(op.acc.index, i)
          acc_note = f"acc = slot {op.acc.index} (written by op {writer})"
       else:
@@ -344,7 +333,6 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
       else:
          raise AsmError(f"unhandled op type {type(op).__name__}")
 
-      result_words[i] = wb
       if op.dst is not None:
          acc_model.write(op.dst, i, wb)
 
@@ -376,7 +364,7 @@ async def load_bram(dut, bram: dict[int, int]):
 def _drive_nop(dut):
    ctl = dsp_add_ctl(zero_acc=True)
    drive_xu_ctl(dut, l0dsp_control=ctl, l1dsp_control=ctl, mode=0,
-                acc_raddr=0, acc_we=0, bypass_acc=0)
+                acc_raddr=0, acc_we=0)
    drive_bram_read(dut, BRAM_IDLE_ADDR, BRAM_IDLE_ADDR)
 
 

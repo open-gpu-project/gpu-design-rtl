@@ -22,9 +22,9 @@ Verified event table for an op issued in cycle i:
 Dependency distances between a producer issued at i and a consumer at j:
 
   j - i >= MIN_RAW_DISTANCE (6): consumer reads the committed reg-file slot.
-  j - i == FWD_DISTANCE (5): the result is on the combinational l*acc_in
-      exactly when the consumer reads; assert bypass_acc to forward it.
-  j - i < 5: impossible, the result does not exist yet.
+  j - i < 6: illegal. The XU has no forwarding path; the issue schedule must
+      keep dependent ops >= MIN_RAW_DISTANCE apart (trivially satisfied by
+      8-strand round-robin issue, where same-strand ops are 8 apart).
 
 Mode-1 operand taps (relative to FMA issue cycle i):
   sel_low=0 (high): x1 = row addressed at i (d1 tap, high half),
@@ -45,8 +45,7 @@ ISSUE_TO_CONSUME = CTL_INPUT_TAP + 1  # acc + lane inputs read in cycle i+3
 ISSUE_TO_RESULT = CTL_OUTPUT_TAP + 1  # y / l*acc_in valid in cycle i+8
 ISSUE_TO_COMMIT = ISSUE_TO_RESULT + 1  # reg-file slot readable from edge i+9
 
-# Dependency distances
-FWD_DISTANCE = ISSUE_TO_RESULT - ISSUE_TO_CONSUME  # == 5
+# Minimum legal producer->consumer issue distance (no forwarding path).
 MIN_RAW_DISTANCE = ISSUE_TO_COMMIT - ISSUE_TO_CONSUME  # == 6
 
 # In the scoreboard loop convention (drive during iteration c, sample just
