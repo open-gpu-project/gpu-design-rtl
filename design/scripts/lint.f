@@ -13,7 +13,7 @@
 -Wno-MODDUP
 
 # Waivers
-linter.lint.vlt
+waiver.lint.vlt
 ../libraries/unisim/waiver.sim.vlt
 
 # Add module search paths
