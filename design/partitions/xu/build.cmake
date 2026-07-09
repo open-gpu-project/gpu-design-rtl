@@ -22,7 +22,7 @@ add_cocotb_verilator(
    simpart_alu_lane
    TOP_MODULE alu_lane
    LINK_LIBRARIES svpart_xu
-   VERILATOR_ARGS --trace
+   VERILATOR_ARGS --trace --trace-structs
 )
 
 add_cocotb_test(simpart_alu_lane design.partitions.xu.dv.test_alu_lane)
@@ -31,7 +31,7 @@ add_cocotb_verilator(
    simpart_alu
    TOP_MODULE alu
    LINK_LIBRARIES svpart_xu
-   VERILATOR_ARGS --trace
+   VERILATOR_ARGS --trace --trace-structs
 )
 
 add_cocotb_test(simpart_alu design.partitions.xu.dv.test_alu)
@@ -40,7 +40,7 @@ add_cocotb_verilator(
    simpart_lane_input_logic
    TOP_MODULE lane_input_logic
    LINK_LIBRARIES svpart_xu
-   VERILATOR_ARGS --trace
+   VERILATOR_ARGS --trace --trace-structs
 )
 
 add_cocotb_test(simpart_lane_input_logic design.partitions.xu.dv.test_lane_input_logic)
@@ -49,7 +49,7 @@ add_cocotb_verilator(
    simpart_acc_reg_file
    TOP_MODULE acc_reg_file
    LINK_LIBRARIES svpart_xu
-   VERILATOR_ARGS --trace
+   VERILATOR_ARGS --trace --trace-structs
 )
 
 add_cocotb_test(simpart_acc_reg_file design.partitions.xu.dv.test_acc_reg_file)
@@ -58,7 +58,7 @@ add_cocotb_verilator(
    simpart_xu
    TOP_MODULE top
    LINK_LIBRARIES svpart_xu
-   VERILATOR_ARGS --trace
+   VERILATOR_ARGS --trace --trace-structs
 )
 
 add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_programs)
