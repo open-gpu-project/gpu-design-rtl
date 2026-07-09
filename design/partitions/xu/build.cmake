@@ -61,8 +61,5 @@ add_cocotb_verilator(
    VERILATOR_ARGS --trace
 )
 
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_mode0)
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_mode1)
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_mode2)
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_mode3)
+add_cocotb_test(simpart_xu design.partitions.xu.dv.test_xu_programs)
 

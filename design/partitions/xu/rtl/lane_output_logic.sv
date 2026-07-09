@@ -21,8 +21,10 @@ always_comb begin
             l1acc_in = {l1y1, l1y2};
         end
         2'b01: begin
+            // FMA result is on y1; store it in the low half so a later mode-1
+            // op can consume it as AccIn2 (which reads the low half).
             l0acc_in = {l0y2, l0y1};
-            l1acc_in = {l1y1, l1y2};
+            l1acc_in = {l1y2, l1y1};
         end
         2'b10: begin
             l0acc_in = {l0y1, l0y2};

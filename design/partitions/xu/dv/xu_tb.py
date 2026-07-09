@@ -1,8 +1,8 @@
 """Shared cocotb helpers for XU tests.
 
-Put this file beside test_xu_mode*.py in design/partitions/xu/dv/.
-The mode tests should contain test intent only; this file contains boring DUT IO,
-packing, clock/reset, scoreboard, and debug helpers.
+Tests (test_xu_programs.py and friends) should contain test intent only; this
+file contains boring DUT IO, packing, clock/reset, scoreboard, and debug
+helpers. run_stream_test remains available for exploratory bring-up.
 """
 
 from __future__ import annotations
