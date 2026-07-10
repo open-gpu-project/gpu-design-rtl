@@ -235,6 +235,45 @@ async def test_fma24_rotations_and_consume(dut):
 
 
 @cocotb.test()
+async def test_eight_strand_round_robin(dut):
+   """8 strands issued round-robin, each running ADD18 -> FMA18 -> ADD18.
+
+    Strand s owns register slots {4s .. 4s+3} (slot = {strand[2:0], reg[1:0]})
+    and issues in cycle 8*round + s, so every same-strand dependency is
+    distance 8 > MIN_RAW_DISTANCE and needs no scheduling knowledge.
+
+    This schedule also exposes the FMA18 high-tap coupling: x2 comes from the
+    row addressed one cycle later, i.e. the *next strand's* fetch (strand 7
+    takes the first row of the following round). The golden model follows the
+    address stream, so the check verifies the hardware does exactly that.
+    """
+   n = 8
+   # Round 0 rows: accumulator seeds. Round 1 rows: FMA multiplicands in the
+   # high halves. Round 2 rows: final addend.
+   acc_pairs = [((0x00100 + s, 0x00010 + s), (0x00200 + s, 0x00020 + s)) for s in range(n)]
+   fma_pairs = [((0x00300 + 0x10 * s, 0), (0x00500 + 0x10 * s, 0)) for s in range(n)]
+   prog = program_with_18b_rows(acc_pairs, fma_pairs)
+   R2_A, R2_B = 32, 40
+   for s in range(n):
+      prog.set_bram_word(R2_A + s, pack18_pair(0x00050 + s, 0x00060 + s))
+      prog.set_bram_word(R2_B + s, pack18_pair(0x00070 + s, 0x00080 + s))
+
+   # Round 0: s.r0 = load(seed row)
+   for s in range(n):
+      prog.ops.append(ADD18(addr_a=ACC_A + s, addr_b=ACC_B + s, dst=4 * s))
+   # Round 1: s.r1 = fma(own row, next fetch's row, s.r0)
+   for s in range(n):
+      prog.ops.append(FMA18(addr_a=SRC_A + s, addr_b=SRC_B + s, acc=Slot(4 * s),
+                            dst=4 * s + 1))
+   # Round 2: s.r2 = add(addend row, s.r1) -- consumes the FMA writeback
+   for s in range(n):
+      prog.ops.append(ADD18(addr_a=R2_A + s, addr_b=R2_B + s, acc=Slot(4 * s + 1),
+                            dst=4 * s + 2))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
 async def test_acc_slots_are_registers(dut):
    """Slots written in one order and read back in a scrambled order."""
    acc_pairs = [((0x00100 * (k + 1) & 0x3FFFF, 0x00011 * (k + 1) & 0x3FFFF),
