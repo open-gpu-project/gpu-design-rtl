@@ -47,7 +47,8 @@ package xu_priv;
         logic[17:0] X2;
         logic[17:0] AccIn1;
         logic[17:0] AccIn2;
-    } alu_lane_inputs;
+        xu_priv::dsp_ctl dsp_control;
+    } alu_lane_input;
 
     typedef struct packed {
         logic[1:0] mode;
