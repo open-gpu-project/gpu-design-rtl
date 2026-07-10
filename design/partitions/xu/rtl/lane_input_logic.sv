@@ -112,23 +112,27 @@ always_comb begin
         end
         2'b11: begin
             unique case (slice_sel_24bit)
+                // The low lane's b chunk is bits [16:0] and must be zero
+                // extended: bit 17 already belongs to the high lane's chunk
+                // (value[23:17]), and an 18-bit signed interpretation would
+                // subtract 2^17 when b[17] is set (counting it twice).
                 0: begin
                     l0x1 = slice1_24b;                          // 24bit a
                     l0x2 = sign_extend_mode4_upper(slice2_24b); // upper 7bit b sign extended
                     l1x1 = slice1_24b;                          // 24bit a
-                    l1x2 = slice2_24b[17:0];                    // lower 17bit b
-                end 
+                    l1x2 = {1'b0, slice2_24b[16:0]};            // lower 17bit b, unsigned
+                end
                 1: begin
                     l0x1 = slice2_24b;
                     l0x2 = sign_extend_mode4_upper(slice3_24b);
                     l1x1 = slice2_24b;
-                    l1x2 = slice3_24b[17:0];
+                    l1x2 = {1'b0, slice3_24b[16:0]};
                 end
                 2: begin
                     l0x1 = slice3_24b;
                     l0x2 = sign_extend_mode4_upper(slice1_24b);
                     l1x1 = slice3_24b;
-                    l1x2 = slice1_24b[17:0];
+                    l1x2 = {1'b0, slice1_24b[16:0]};
                 end
                 default: begin
                     l0x1 = 24'hx;

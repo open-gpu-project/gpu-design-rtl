@@ -5,6 +5,7 @@ per-cycle control words and exact-cycle output predictions, so no timing
 knowledge lives in this file (see xu_timing for the pipeline spec).
 """
 
+import random
 from pathlib import Path
 
 import cocotb
@@ -232,6 +233,176 @@ async def test_fma24_rotations_and_consume(dut):
                 acc=Slot(8 + k), dst=16 + k))
 
    await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_add18_signed(dut):
+   """Mode 0 with negative operands: two's-complement wrap in both halves.
+
+    Covers -1 + 1 = 0, wrap at both 18-bit extremes, and negative results.
+    """
+   acc_pairs = [
+       ((-1, -0x20000), (0x1FFFF, -5)),
+       ((-0x20000, -1), (5, -0x1F000)),
+       ((0x1FFFF, -0x100), (-1, -1)),
+       ((-42, 42), (0x1F000, -0x20000)),
+   ]
+   src_pairs = [
+       ((1, -1), (1, 5)),
+       ((-1, 2), (-5, 0x1F000)),
+       ((-0x20000, 0x100), (-1, 1)),
+       ((-42, -43), (0x1000, -1)),
+   ]
+   prog = program_with_18b_rows(acc_pairs, src_pairs)
+
+   for k in range(4):
+      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=k))
+   for _ in range(T.MIN_RAW_DISTANCE - 4):
+      prog.ops.append(NOP())
+   for k in range(4):
+      prog.ops.append(ADD18(addr_a=SRC_A + k, addr_b=SRC_B + k, acc=Slot(k), dst=4 + k))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_fma18_signed(dut):
+   """Mode 1 with signed multiplicands and accumulators, both operand taps.
+
+    Covers neg*pos, pos*neg, neg*neg, negative acc, and negative results
+    (the >>8 must be an arithmetic shift).
+    """
+   acc_los = [(-2, -0x8000), (0x1FFFF, -1), (-0x100, 7), (3, -0x1F000),
+              (-1, -1), (0x55, -0x55), (-0x4000, 0x4000), (1, 1)]
+   acc_pairs = [((0, a), (0, b)) for a, b in acc_los]
+   # High ops multiply hi(N) * hi(N+1); low ops multiply lo(N-1) * lo(N).
+   src_pairs = [((-0x300 + 0x40 * k, 0x155 - 0x66 * k),
+                 (0x2AA - 0x55 * k, -0x211 + 0x33 * k)) for k in range(8)]
+   prog = program_with_18b_rows(acc_pairs, src_pairs)
+
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=k))
+   for k in range(8):
+      prog.ops.append(
+          FMA18(addr_a=SRC_A + k, addr_b=SRC_B + k, sel_low=k & 1, acc=Slot(k)))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_add24_signed(dut):
+   """Mode 2 with negative 24-bit operands through all slice rotations."""
+   prog = Program()
+
+   preload = [(-1, -0x800000), (0x7FFFFF, -1), (-0x1234, 0x7FFFFF),
+              (-0x800000, -0x800000), (100, -100), (-0x400000, 0x3FFFFF)]
+   addend = [(1, -1), (1, 0x7FFFFF), (0x1234, 1), (-1, -0x800000), (-200, 100),
+             (-0x400000, 0x400000)]
+   sels = [k % 3 for k in range(6)]
+
+   load_72_rows(prog, [
+       make_mode2_slices(l0, l1, sels[k], dummy=0xAB0000 + k)
+       for k, (l0, l1) in enumerate(preload)
+   ],
+                base_index=0)
+   load_72_rows(prog, [
+       make_mode2_slices(l0, l1, sels[k], dummy=0xCD0000 + k)
+       for k, (l0, l1) in enumerate(addend)
+   ],
+                base_index=8)
+
+   for k in range(6):
+      prog.ops.append(
+          ADD24(addr_a=LO_72 + k, addr_b=HI_72 + k, slice_sel=sels[k], dst=k))
+   for k in range(6):
+      prog.ops.append(
+          ADD24(addr_a=LO_72 + 8 + k, addr_b=HI_72 + 8 + k, slice_sel=sels[k],
+                acc=Slot(k), dst=8 + k))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_fma24_signed(dut):
+   """Mode 3 with signed a, b and acc through all rotations.
+
+    Covers sign extension into the DSP cascade and negative results split
+    across the two lanes' Y2 packing.
+    """
+   prog = Program()
+
+   acc_vals = [(-3, -3), (0x7FFFFF, 0x7FFFFF), (-0x800000, -0x800000), (1, 1),
+               (-0x1000, -0x1000), (0, 0)]
+   ab_vals = [(-0x1000, 0x14), (0x100, -0x20), (-0x40, -0x30), (0x7FFFFF, 2),
+              (-1, -1), (0x400, -0x400)]
+   sels = [k % 3 for k in range(6)]
+
+   load_72_rows(prog, [
+       make_mode2_slices(l0, l1, sels[k], dummy=0x110000 + k)
+       for k, (l0, l1) in enumerate(acc_vals)
+   ],
+                base_index=0)
+   load_72_rows(prog, [
+       make_mode3_slices(a, b, sels[k], dummy=0x220000 + k)
+       for k, (a, b) in enumerate(ab_vals)
+   ],
+                base_index=8)
+
+   for k in range(6):
+      prog.ops.append(
+          ADD24(addr_a=LO_72 + k, addr_b=HI_72 + k, slice_sel=sels[k], dst=k))
+   for k in range(6):
+      prog.ops.append(
+          FMA24(addr_a=LO_72 + 8 + k, addr_b=HI_72 + 8 + k, slice_sel=sels[k],
+                acc=Slot(k), dst=8 + k))
+
+   await run_program(dut, prog)
+
+
+def random_program(rng: random.Random, *, n_ops=48, n_rows=48, n_slots=32) -> Program:
+   """Constrained-random legal program: random ops, operands, slots and BRAM.
+
+    Random 36-bit BRAM contents cover the signed value space of every mode.
+    Register reads are only generated at legal RAW distances; the assembler
+    re-checks legality when the program is lowered.
+    """
+   prog = Program()
+   for addr in range(n_rows):
+      prog.set_bram_word(addr, rng.getrandbits(36))
+
+   last_write: dict[int, int] = {}
+   for i in range(n_ops):
+      kind = rng.choice(("add18", "fma18", "add24", "fma24", "nop"))
+      if kind == "nop":
+         prog.ops.append(NOP())
+         continue
+      ready = [s for s, w in last_write.items() if i - w >= T.MIN_RAW_DISTANCE]
+      kwargs = dict(
+          addr_a=rng.randrange(n_rows),
+          addr_b=rng.randrange(n_rows),
+          acc=Slot(rng.choice(ready)) if ready and rng.random() < 0.7 else None,
+          dst=rng.randrange(n_slots) if rng.random() < 0.8 else None,
+      )
+      if kind == "add18":
+         op = ADD18(**kwargs)
+      elif kind == "fma18":
+         op = FMA18(**kwargs, sel_low=rng.randint(0, 1))
+      elif kind == "add24":
+         op = ADD24(**kwargs, slice_sel=rng.randrange(3))
+      else:
+         op = FMA24(**kwargs, slice_sel=rng.randrange(3))
+      prog.ops.append(op)
+      if op.dst is not None:
+         last_write[op.dst] = i
+   return prog
+
+
+@cocotb.test()
+async def test_random_programs(dut):
+   """Constrained-random programs checked exact-cycle against the golden model."""
+   for seed in range(8):
+      prog = random_program(random.Random(seed))
+      await run_program(dut, prog, name=f"test_random_programs_seed{seed}")
 
 
 @cocotb.test()

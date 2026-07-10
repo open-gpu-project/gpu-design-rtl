@@ -74,22 +74,24 @@ def mode2_expected(p_a, p_b, slice_sel):
 
 
 def mode3_expected(p_a, p_b, slice_sel):
+   # The low lane's b chunk is the unsigned 17-bit slice [16:0], zero
+   # extended; bit 17 belongs to the high lane's chunk.
    slice1, slice2, slice3 = mode2_slices(p_a, p_b)
    if slice_sel == 0:
       l0x1 = slice1
       l0x2 = sign_extend_mode4_upper(slice2)
       l1x1 = slice1
-      l1x2 = slice2 & HALF_MASK
+      l1x2 = slice2 & 0x1FFFF
    elif slice_sel == 1:
       l0x1 = slice2
       l0x2 = sign_extend_mode4_upper(slice3)
       l1x1 = slice2
-      l1x2 = slice3 & HALF_MASK
+      l1x2 = slice3 & 0x1FFFF
    else:
       l0x1 = slice3
       l0x2 = sign_extend_mode4_upper(slice1)
       l1x1 = slice3
-      l1x2 = slice1 & HALF_MASK
+      l1x2 = slice1 & 0x1FFFF
    return (l0x1, l0x2, l1x1, l1x2)
 
 
