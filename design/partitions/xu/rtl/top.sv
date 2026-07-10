@@ -24,12 +24,12 @@ module top #() (
     // input xu_priv::dsp_ctl l1dsp_control,
     input xu_priv::xu_ctl xu_ctl_in,
     input xu_priv::dsp_casc_in l1dsp_casc_in,
-    output xu_priv::dsp_casc_out l0dsp_casc_out,
+    output xu_priv::dsp_casc_out l0dsp_casc_out
     
-    output [17:0] l0y1_o,
-    output [17:0] l0y2_o,
-    output [17:0] l1y1_o,
-    output [17:0] l1y2_o
+    // output [17:0] l0y1_o,
+    // output [17:0] l0y2_o,
+    // output [17:0] l1y1_o,
+    // output [17:0] l1y2_o
 
     // input logic pipe_ce
 );
@@ -44,10 +44,10 @@ wire [35:0] bram_di_b;
 wire [23:0] l0x1, l1x1;
 wire [17:0] l0x2, l1x2;
 
-assign l0y1_o = l0y1;
-assign l0y2_o = l0y2;
-assign l1y1_o = l1y1;
-assign l1y2_o = l1y2;
+// assign l0y1_o = l0y1;
+// assign l0y2_o = l0y2;
+// assign l1y1_o = l1y1;
+// assign l1y2_o = l1y2;
 
 // assign bram_di_a = bram_load_mode ? DI_A : l0acc;
 // assign bram_di_b = bram_load_mode ? DI_B : l1acc;

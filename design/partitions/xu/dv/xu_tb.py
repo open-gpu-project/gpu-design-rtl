@@ -150,10 +150,10 @@ async def reset_dut(dut):
 
 def lane_outputs(dut):
    return (
-       int(dut.l0y1_o.value) & HALF_MASK,
-       int(dut.l0y2_o.value) & HALF_MASK,
-       int(dut.l1y1_o.value) & HALF_MASK,
-       int(dut.l1y2_o.value) & HALF_MASK,
+       int(dut.l0y1.value) & HALF_MASK,
+       int(dut.l0y2.value) & HALF_MASK,
+       int(dut.l1y1.value) & HALF_MASK,
+       int(dut.l1y2.value) & HALF_MASK,
    )
 
 
