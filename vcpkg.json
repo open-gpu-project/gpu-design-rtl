@@ -2,6 +2,23 @@
    "dependencies": [
       "glm",
       "glfw3",
-      "opengl-registry"
+      "opengl-registry",
+      "magic-enum",
+      "cpptrace",
+      "fmt",
+      "tomlplusplus",
+      "catch2"
+   ],
+   "overrides": [
+      {
+         "name": "fmt",
+         "version": "8.1.1",
+         "port-version": 2
+      },
+      {
+         "name": "tomlplusplus",
+         "version": "2.5.0",
+         "port-version": 3
+      }
    ]
 }

@@ -1,15 +1,27 @@
 {
-  "version": 4,
-  "configurations": [
-    {
-      "name": "Windows-Clang",
-      "configurationProvider": "ms-vscode.cmake-tools",
-      "intelliSenseMode": "windows-clang-x64",
-      "compilerPath": "C:/Program Files/LLVM/bin/clang++.exe",
-      "cStandard": "c17",
-      "cppStandard": "c++17",
-      "compileCommands": "${workspaceFolder}/out/build/default/compile_commands.json"
-
-    }
-  ]
+    "version": 4,
+    "configurations": [
+        {
+            "name": "Windows-Clang",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "intelliSenseMode": "windows-clang-x64",
+            "compilerPath": "C:/Program Files/LLVM/bin/clang++.exe",
+            "cStandard": "c23",
+            "cppStandard": "c++23",
+            "compileCommands": [
+                "${workspaceFolder}/out/build/default/compile_commands.json"
+            ]
+        },
+        {
+            "name": "Mac-Clang",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "intelliSenseMode": "macos-clang-x64",
+            "compilerPath": "/opt/homebrew/opt/llvm/bin/clang++",
+            "cStandard": "c23",
+            "cppStandard": "c++23",
+            "compileCommands": [
+                "${workspaceFolder}/out/build/default/compile_commands.json"
+            ]
+        }
+    ]
 }
