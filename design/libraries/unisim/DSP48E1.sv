@@ -833,8 +833,10 @@ module DSP48E1 #(
        endcase
     endgenerate 
 
+`ifdef DSP48E1_DEBUG_WIRES
 always @(a_o_mux)
     $display("%t a_o_mux[24:0] %d",$time,a_o_mux[24:0]);
+`endif
 
 
     generate 
@@ -895,9 +897,11 @@ always @(a_o_mux)
 // new  
     
    assign a_preaddsub = qinmode_o_mux[1]? 25'b0:(qinmode_o_mux[0]?qa_o_reg1[24:0]:qa_o_mux[24:0]);
+`ifdef DSP48E1_DEBUG_WIRES
    always @(a_preaddsub)
    $display("%t a_preaddsub[24:0] %d qinmode_o_mux[1] %d qinmode_o_mux[0] %d qa_o_reg1[24:0] %d qa_o_mux[24:0] %d",
        $time,a_preaddsub[24:0],qinmode_o_mux[1],qinmode_o_mux[0],qa_o_reg1[24:0],qa_o_mux[24:0]);
+`endif
 
 //*********************************************************
 //*** Input register B with 2 level deep of registers
@@ -1015,9 +1019,11 @@ always @(a_o_mux)
 //*********************************************************
 // new  
       assign ad_addsub = qinmode_o_mux[3]?(-a_preaddsub + (qinmode_o_mux[2]?qd_o_mux:25'b0)):(a_preaddsub + (qinmode_o_mux[2]?qd_o_mux:25'b0));
+`ifdef DSP48E1_DEBUG_WIRES
 always @(ad_addsub)
     $display("%t ad_addsub[24:0] %d qinmode_o_mux[3] %d a_preaddsub[24:0] %d qinmode_o_mux[2] %d qd_o_mux[24:0] %d",
         $time,ad_addsub[24:0],qinmode_o_mux[3],a_preaddsub[24:0],qinmode_o_mux[2],qd_o_mux[24:0]);
+`endif
 
     always @(posedge clk_in) begin
   if (rstd_in)
@@ -1029,10 +1035,14 @@ always @(ad_addsub)
     generate
        case (ADREG)
           0 : always @(ad_addsub) begin qad_o_mux <= ad_addsub; 
+`ifdef DSP48E1_DEBUG_WIRES
               $display("%t ADREG0 qad_o_mux %d",$time,qad_o_mux);
+`endif
           end
           1 : always @(qad_o_reg1) begin qad_o_mux <= qad_o_reg1;
+`ifdef DSP48E1_DEBUG_WIRES
               $display("%t ADREG1 qad_o_mux %d",$time,qad_o_reg1);
+`endif
           end
        endcase
     endgenerate
@@ -1062,8 +1072,10 @@ always @(ad_addsub)
                     (carryinsel_in == 3'b010) ? 43'bx :
                     {{18{ad_mult[24]}}, ad_mult[24:0]} * {{25{b_mult[17]}}, b_mult};
    
+`ifdef DSP48E1_DEBUG_WIRES
 always @(mult_o)
     $display("%t mult_o %d",$time,mult_o);
+`endif
 //   always @(*) begin
 //     if ((USE_MULT == "NONE") || (USE_SIMD == "TWO24") || (USE_SIMD == "FOUR12"))
 //       mult_o = 43'b0;
@@ -1127,7 +1139,9 @@ always @(mult_o)
             default : begin
                 end
   endcase
+`ifdef DSP48E1_DEBUG_WIRES
   $display("%t qopmode_o_mux[1:0] %d qx_o_mux %d",$time,qopmode_o_mux[1:0],qx_o_mux);
+`endif
     end
 
 
@@ -1519,7 +1533,9 @@ always @(mult_o)
   wire tmp_carrycascout_in;
 
   always @ (qx_o_mux or qy_o_mux or qz_o_mux or qalumode_o_mux[0]) begin
+`ifdef DSP48E1_DEBUG_WIRES
     $display("%t ALU qx_o_mux %d qx_o_mux %d qz_o_mux %d",$time,qx_o_mux,qy_o_mux,qz_o_mux);
+`endif
     if (qalumode_o_mux[0]) begin
        co = ((qx_o_mux & qy_o_mux)|((~qz_o_mux) & qy_o_mux)|(qx_o_mux & (~qz_o_mux)));
        s  = (~qz_o_mux) ^ qx_o_mux ^ qy_o_mux;
@@ -1570,8 +1586,10 @@ always @(mult_o)
 //ALUMODE = 0010 ����ʵ�� - (Z + X + Y + CIN) - 1 = not (Z + X + Y + CIN)��
   assign alu_o  = qalumode_o_mux[1] ? ~{s3[11:0],s2[11:0],s1[11:0],s0[11:0]} :
                                 {s3[11:0],s2[11:0],s1[11:0],s0[11:0]};
+`ifdef DSP48E1_DEBUG_WIRES
   always @(alu_o)
       $display("%t alu_o %d",$time,alu_o);
+`endif
   // COMPUTE CARRYCASCOUT
   assign carrycascout_o = cout3;
   

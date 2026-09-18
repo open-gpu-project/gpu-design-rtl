@@ -8,13 +8,13 @@ module bram_wrapper(
 
     input logic [9:0] ADDR_A,
     input logic EN_A,
-    input logic WE_A,
+    input logic [3:0] WE_A,
     input logic [35:0] DI_A,
     output logic [35:0] DO_A,
 
     input logic [9:0] ADDR_B,
     input logic EN_B,
-    input logic WE_B,
+    input logic [3:0] WE_B,
     input logic [35:0] DI_B,
     output logic [35:0] DO_B
 );
@@ -231,11 +231,23 @@ RAMB36E1_inst (
    .RDADDRECC(RDADDRECC),         // 9-bit output: ECC read address
    .SBITERR(SBITERR),             // 1-bit output: Single bit error status
    // Port A Data: 32-bit (each) output: Port A data
-   .DOADO(DO_A[31:0]),                 // 32-bit output: A port data/LSB data
-   .DOPADOP(DO_A[35:32]),             // 4-bit output: A port parity/LSB parity
+   .DOADO({DO_A[34:27],
+    DO_A[25:18],
+    DO_A[16:9],
+    DO_A[7:0]}),                 // 32-bit output: A port data/LSB data
+   .DOPADOP({DO_A[35],
+    DO_A[26],
+    DO_A[17],
+    DO_A[8]}),             // 4-bit output: A port parity/LSB parity
    // Port B Data: 32-bit (each) output: Port B data
-   .DOBDO(DO_B[31:0]),                 // 32-bit output: B port data/MSB data
-   .DOPBDOP(DO_B[35:32]),             // 4-bit output: B port parity/MSB parity
+   .DOBDO({DO_B[34:27],
+    DO_B[25:18],
+    DO_B[16:9],
+    DO_B[7:0]}),                 // 32-bit output: B port data/MSB data
+   .DOPBDOP({DO_B[35],
+    DO_B[26],
+    DO_B[17],
+    DO_B[8]}),             // 4-bit output: B port parity/MSB parity
    // Cascade Signals: 1-bit (each) input: BRAM cascade ports (to create 64kx1)
    .CASCADEINA(1'b0),       // 1-bit input: A port cascade
    .CASCADEINB(1'b0),       // 1-bit input: B port cascade
@@ -250,10 +262,16 @@ RAMB36E1_inst (
    .REGCEAREGCE(1'b1),     // 1-bit input: A port register enable/Register enable
    .RSTRAMARSTRAM(rst), // 1-bit input: A port set/reset
    .RSTREGARSTREG(rst), // 1-bit input: A port register set/reset
-   .WEA({4{WE_A}}),                     // 4-bit input: A port write enable
+   .WEA(WE_A),                     // 4-bit input: A port write enable
    // Port A Data: 32-bit (each) input: Port A data
-   .DIADI(DI_A[31:0]),                 // 32-bit input: A port data/LSB data
-   .DIPADIP(DI_A[35:32]),             // 4-bit input: A port parity/LSB parity
+   .DIADI({DI_A[34:27],
+    DI_A[25:18],
+    DI_A[16:9],
+    DI_A[7:0]}),                 // 32-bit input: A port data/LSB data
+   .DIPADIP({DI_A[35],
+    DI_A[26],
+    DI_A[17],
+    DI_A[8]}),             // 4-bit input: A port parity/LSB parity
    // Port B Address/Control Signals: 16-bit (each) input: Port B address and control signals (write port
    // when RAM_MODE="SDP")
    .ADDRBWRADDR({1'b0,ADDR_B,5'b00000}),     // 16-bit input: B port address/Write address
@@ -262,10 +280,10 @@ RAMB36E1_inst (
    .REGCEB(1'b1),               // 1-bit input: B port register enable
    .RSTRAMB(rst),             // 1-bit input: B port set/reset
    .RSTREGB(rst),             // 1-bit input: B port register set/reset
-   .WEBWE({8{WE_B}}),                 // 8-bit input: B port write enable/Write enable
+   .WEBWE({4'b0,WE_B}),                 // 8-bit input: B port write enable/Write enable
    // Port B Data: 32-bit (each) input: Port B data
-   .DIBDI(DI_B[31:0]),                 // 32-bit input: B port data/MSB data
-   .DIPBDIP(DI_B[35:32])              // 4-bit input: B port parity/MSB parity
+   .DIBDI({DI_B[34:27],DI_B[25:18],DI_B[16:9],DI_B[7:0]}),                 // 32-bit input: B port data/MSB data
+   .DIPBDIP({DI_B[35],DI_B[26],DI_B[17],DI_B[8]})              // 4-bit input: B port parity/MSB parity
 );
 
 // End of RAMB36E1_inst instantiation

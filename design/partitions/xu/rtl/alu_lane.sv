@@ -14,6 +14,7 @@ module alu_lane #(
     // Mode 4 uses two lanes: high lane exposes P[6:0], low lane exposes P[24:8].
     parameter bit MODE4_HIGH_LANE = 1'b0
 ) (
+    // input logic [7:0] debug_test_id,
     // Clocks and resets
     input logic dsp_clk,
     input logic dsp_rst,
@@ -107,6 +108,20 @@ module alu_lane #(
     // assign mode4_Y1Y2 = 24'bx;
     assign mode4_Y2 = MODE4_HIGH_LANE ? { 3'b0, dsp_data_out_reg.P[14:0] } :
                                         { 9'b0, dsp_data_out_reg.P[16:8] };
+    
+    xu_priv::dsp_input mode5_18b_input;
+    logic[17:0] mode5_Y1;
+    logic[17:0] mode5_Y2;
+    assign mode5_18b_input.A = {X1 ^ 24'h020000, 6'b0};
+    assign mode5_18b_input.B = X2 ^ 18'h20000;
+
+    logic [47:0] Acc1PadAcc2In_mode5;
+    assign Acc1PadAcc2In_mode5 = {5'b0, 1'b1, AccIn1^ 18'h20000, 5'b0, 1'b1, AccIn2^ 18'h20000};
+
+    assign mode5_18b_input.C = Acc1PadAcc2In_mode5;
+    assign mode5_18b_input.D = 0;
+    assign mode5_Y1 = {17'b0, dsp_data_out_reg.P[42]};
+    assign mode5_Y2 = {17'b0,dsp_data_out_reg.P[18]};
 
 
     // Registered control signals
@@ -161,10 +176,12 @@ module alu_lane #(
         end else begin
             // FIXME(kevin): Need to manually optimize mux tree here
             case (alu_ctl.mode)
-                2'b00: dsp_data_in <= mode1_18b_input;
-                2'b01: dsp_data_in <= mode2_18b_input;
-                2'b10: dsp_data_in <= mode3_24b_input;
-                2'b11: dsp_data_in <= mode4_24b_input;
+                xu_priv::ADD18: dsp_data_in <= mode1_18b_input;
+                xu_priv::FMA18: dsp_data_in <= mode2_18b_input;
+                xu_priv::ADD24: dsp_data_in <= mode3_24b_input;
+                xu_priv::FMA24: dsp_data_in <= mode4_24b_input;
+                xu_priv::CMP18: dsp_data_in <= mode5_18b_input;
+                default: dsp_data_in <= 0;
             endcase
         end
     end
@@ -181,7 +198,7 @@ module alu_lane #(
     end
 
     // Output datapath from DSP
-    logic[1:0] alu_mode_reg[LANE_LATENCY-1:0];
+    logic[2:0] alu_mode_reg[LANE_LATENCY-1:0];
     xu_priv::dsp_output dsp_data_out;
 
     generate
@@ -213,7 +230,7 @@ module alu_lane #(
 
     always_ff @(posedge fab_out_clk)
     if (fab_out_rst) begin
-        alu_mode_reg <= '{default:2'b0};
+        alu_mode_reg <= '{default:3'b0};
         for (int i = 0; i < LANE_LATENCY; i++) begin
             alu_mode_reg[i] <= alu_ctl.mode;
         end
@@ -231,21 +248,29 @@ module alu_lane #(
     logic [17:0] Y2_out;
     // logic [17:0] Y1_r1, Y2_r1;
     always_comb case (alu_mode_reg[LANE_LATENCY-2])
-        2'b00: begin
+        xu_priv::ADD18: begin
             Y1_out = mode1_Y1;
             Y2_out = mode1_Y2;
         end
-        2'b01: begin
+        xu_priv::FMA18: begin
             Y1_out = mode2_Y1;
             Y2_out = '0;
         end
-        2'b10: begin
+        xu_priv::ADD24: begin
             Y1_out = mode3_Y1;
             Y2_out = mode3_Y2;
         end
-        2'b11: begin
+        xu_priv::FMA24: begin
             Y1_out = '0;
             Y2_out = mode4_Y2;
+        end
+        xu_priv::CMP18: begin
+            Y1_out = mode5_Y1;
+            Y2_out = mode5_Y2;
+        end
+        default: begin
+            Y1_out = 0;
+            Y2_out = 0;
         end
     endcase
 

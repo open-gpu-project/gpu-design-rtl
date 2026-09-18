@@ -67,6 +67,13 @@ class Op:
    addr_b: int | None = None
    acc: Slot | None = None
    dst: int | None = None
+   zero_bram_operands: int = field(default=0, repr=False)
+   l0_wb_valid: int = field(default=0, repr=False)
+   l1_wb_valid: int = field(default=0, repr=False)
+   wb_we_a: int = field(default=0xF, repr=False)
+   wb_we_b: int = field(default=0xF, repr=False)
+   wb_addr_a: int = field(default=0, repr=False)
+   wb_addr_b: int = field(default=0, repr=False)
 
 
 @dataclass
@@ -184,18 +191,17 @@ def _rotate(sl: tuple[int, int, int], sel: int) -> tuple[int, int]:
 
 
 class _AccModel:
-   """Per-lane register-file model with commit-time tracking."""
+   """Per-lane, per-bank register-file model with commit-time tracking."""
 
    def __init__(self):
-      # slot -> list of (writer_issue_index, (l0_word, l1_word))
-      self.writes: dict[int, list[tuple[int, tuple[int, int]]]] = {}
+      # slot -> lane -> bank -> list of (writer_issue_index, 18-bit value)
+      self.writes: dict[int, list[list[tuple[int, int]]]] = {}
 
-   def write(self, slot: int, issue: int, words: tuple[int, int]):
-      self.writes.setdefault(slot, []).append((issue, words))
+   def _slot(self, slot: int) -> list[list[tuple[int, int]]]:
+      return self.writes.setdefault(slot, [[], [], [], []])
 
-   def read(self, slot: int, consumer_issue: int) -> tuple[tuple[int, int], int]:
-      """Return ((l0_word, l1_word), writer_issue_index)."""
-      history = self.writes.get(slot)
+   def _read_bank(self, slot: int, bank: int, consumer_issue: int) -> tuple[int, int]:
+      history = self.writes.get(slot, [[], [], [], []])[bank]
       if not history:
          raise AsmError(f"op {consumer_issue} reads slot {slot} before any write "
                         f"(uninitialized register)")
@@ -209,13 +215,54 @@ class _AccModel:
                         f"(8-strand round-robin gives distance 8)")
       return committed[-1][1], committed[-1][0]
 
+   def write_full(self, slot: int, issue: int, words: tuple[int, int]):
+      banks = self._slot(slot)
+      banks[0].append((issue, (words[0] >> 18) & HALF_MASK))
+      banks[1].append((issue, words[0] & HALF_MASK))
+      banks[2].append((issue, (words[1] >> 18) & HALF_MASK))
+      banks[3].append((issue, words[1] & HALF_MASK))
+
+   def write_fma18(self, slot: int, issue: int, y: tuple[int, int, int, int], sel_low: int):
+      banks = self._slot(slot)
+      if sel_low:
+         banks[1].append((issue, y[0] & HALF_MASK))
+         banks[3].append((issue, y[2] & HALF_MASK))
+      else:
+         banks[0].append((issue, y[0] & HALF_MASK))
+         banks[2].append((issue, y[2] & HALF_MASK))
+
+   def read_full(self, slot: int, consumer_issue: int) -> tuple[tuple[int, int], int]:
+      l0_hi, w0 = self._read_bank(slot, 0, consumer_issue)
+      l0_lo, w1 = self._read_bank(slot, 1, consumer_issue)
+      l1_hi, w2 = self._read_bank(slot, 2, consumer_issue)
+      l1_lo, w3 = self._read_bank(slot, 3, consumer_issue)
+      return ((l0_hi << 18) | l0_lo, (l1_hi << 18) | l1_lo), max(w0, w1, w2, w3)
+
+   def read_fma18(self, slot: int, consumer_issue: int, sel_low: int) -> tuple[tuple[int, int], int]:
+      if sel_low:
+         l0_lo, w0 = self._read_bank(slot, 1, consumer_issue)
+         l1_lo, w1 = self._read_bank(slot, 3, consumer_issue)
+         return (l0_lo, l1_lo), max(w0, w1)
+      l0_hi, w0 = self._read_bank(slot, 0, consumer_issue)
+      l1_hi, w1 = self._read_bank(slot, 2, consumer_issue)
+      return (l0_hi << 18, l1_hi << 18), max(w0, w1)
+
 
 def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
    ops = prog.ops
    n = len(ops)
+   bram_writes: dict[int, list[tuple[int, int]]] = {
+       addr: [(-1, word & WORD_MASK)] for addr, word in prog.bram.items()
+   }
 
-   # Address stream over program + drain window (drain drives the idle addr).
-   def addr_at(cycle: int) -> tuple[int, int]:
+   def bram_word_at(addr: int, cycle: int) -> int:
+      history = bram_writes.get(addr)
+      if not history:
+         return 0
+      visible = [w for w in history if w[0] <= cycle]
+      return visible[-1][1] if visible else 0
+
+   def issued_addr_at(cycle: int) -> tuple[int, int]:
       if 0 <= cycle < n:
          op = ops[cycle]
          a = op.addr_a if op.addr_a is not None else BRAM_IDLE_ADDR
@@ -223,10 +270,23 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          return a, b
       return BRAM_IDLE_ADDR, BRAM_IDLE_ADDR
 
+   # Effective address stream after the same arbitration used by top.sv. A
+   # writeback reaching output tap 7 owns its port over the newly issued op.
+   def bram_addr_at(cycle: int) -> tuple[int, int]:
+      a, b = issued_addr_at(cycle)
+      wb_issue = cycle - T.ISSUE_TO_RESULT
+      if 0 <= wb_issue < n:
+         wb_op = ops[wb_issue]
+         if wb_op.l0_wb_valid:
+            a = wb_op.wb_addr_a
+         if wb_op.l1_wb_valid:
+            b = wb_op.wb_addr_b
+      return a, b
+
    def bram_do(cycle: int) -> tuple[int, int]:
       """DO_A/DO_B during `cycle` (valid BRAM_ADDR_TO_DO after the address)."""
-      a, b = addr_at(cycle - T.BRAM_ADDR_TO_DO)
-      return prog.bram.get(a, 0), prog.bram.get(b, 0)
+      a, b = bram_addr_at(cycle - T.BRAM_ADDR_TO_DO)
+      return bram_word_at(a, cycle), bram_word_at(b, cycle)
 
    drives: list[CycleDrive] = []
    predictions: list[Prediction] = []
@@ -241,10 +301,17 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
           acc_raddr=op.acc.index if isinstance(op.acc, Slot) else 0,
           acc_waddr=op.dst if op.dst is not None else 0,
           acc_we=int(op.dst is not None),
+          zero_bram_operands=int(op.zero_bram_operands),
+          l0_wb_valid=int(op.l0_wb_valid),
+          l1_wb_valid=int(op.l1_wb_valid),
+          wb_we_a=op.wb_we_a,
+          wb_we_b=op.wb_we_b,
+          wb_addr_a=op.wb_addr_a,
+          wb_addr_b=op.wb_addr_b,
           l0dsp=l0dsp,
           l1dsp=l1dsp,
       )
-      a, b = addr_at(i)
+      a, b = issued_addr_at(i)
       drives.append(CycleDrive(ctl=ctl, addr_a=a, addr_b=b, op_repr=repr(op)))
 
       if isinstance(op, NOP):
@@ -255,10 +322,17 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
       do_a_d1, do_b_d1 = bram_do(t - T.GEARBOX_D1)
       do_a, do_b = bram_do(t)
       do_a_d2, do_b_d2 = bram_do(t - T.GEARBOX_D2)
+      if op.zero_bram_operands:
+         do_a_d1 = do_b_d1 = 0
+         do_a = do_b = 0
+         do_a_d2 = do_b_d2 = 0
 
       # ---- acc operand ----
       if isinstance(op.acc, Slot):
-         acc_words, writer = acc_model.read(op.acc.index, i)
+         if isinstance(op, FMA18):
+            acc_words, writer = acc_model.read_fma18(op.acc.index, i, op.sel_low)
+         else:
+            acc_words, writer = acc_model.read_full(op.acc.index, i)
          acc_note = f"acc = slot {op.acc.index} (written by op {writer})"
       else:
          acc_words = (0, 0)
@@ -273,6 +347,7 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
              add18(do_b_d1 & HALF_MASK, acc_words[1] & HALF_MASK),
          )
          wb = ((y[0] << 18) | y[1], (y[2] << 18) | y[3])
+         bram_wb = wb
          notes = {
              "l0y1": f"0x{do_a_d1 >> 18:05x} + 0x{acc_words[0] >> 18:05x}",
              "l0y2": f"0x{do_a_d1 & HALF_MASK:05x} + 0x{acc_words[0] & HALF_MASK:05x}",
@@ -285,23 +360,34 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
             l0x2 = do_a_d1 & HALF_MASK
             l1x1 = sign_extend(do_b_d2 & HALF_MASK, 18) & VAL24_MASK
             l1x2 = do_b_d1 & HALF_MASK
+            l0_acc18 = acc_words[0] & HALF_MASK
+            l1_acc18 = acc_words[1] & HALF_MASK
          else:
             l0x1 = sign_extend(do_a_d1 >> 18, 18) & VAL24_MASK
             l0x2 = do_a >> 18
             l1x1 = sign_extend(do_b_d1 >> 18, 18) & VAL24_MASK
             l1x2 = do_b >> 18
+            l0_acc18 = (acc_words[0] >> 18) & HALF_MASK
+            l1_acc18 = (acc_words[1] >> 18) & HALF_MASK
          y = (
-             fma18_expected(l0x1, l0x2, acc_words[0] & HALF_MASK),
+             fma18_expected(l0x1, l0x2, l0_acc18),
              0,
-             fma18_expected(l1x1, l1x2, acc_words[1] & HALF_MASK),
+             fma18_expected(l1x1, l1x2, l1_acc18),
              0,
          )
-         wb = (y[0], y[2])  # result stored in the low half
+         if op.sel_low:
+            l0_wb = ((acc_words[0] & ~HALF_MASK) | y[0]) & WORD_MASK
+            l1_wb = ((acc_words[1] & ~HALF_MASK) | y[2]) & WORD_MASK
+         else:
+            l0_wb = ((y[0] << 18) | (acc_words[0] & HALF_MASK)) & WORD_MASK
+            l1_wb = ((y[2] << 18) | (acc_words[1] & HALF_MASK)) & WORD_MASK
+         wb = (l0_wb, l1_wb)  # FMA18 acc writes the selected 18-bit bank.
+         bram_wb = (y[0], y[2])
          notes = {
              "l0y1": f"(0x{l0x1:06x} * 0x{l0x2:05x} + "
-                     f"0x{acc_words[0] & HALF_MASK:05x}<<8) >> 8",
+                     f"0x{l0_acc18:05x}<<8) >> 8",
              "l1y1": f"(0x{l1x1:06x} * 0x{l1x2:05x} + "
-                     f"0x{acc_words[1] & HALF_MASK:05x}<<8) >> 8",
+                     f"0x{l1_acc18:05x}<<8) >> 8",
          }
       elif isinstance(op, ADD24):
          sl = _slices(do_a_d1, do_b_d1)
@@ -310,6 +396,7 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          res1 = add24(l1in, acc_words[1] & VAL24_MASK)
          y = (res0 >> 18, res0 & HALF_MASK, res1 >> 18, res1 & HALF_MASK)
          wb = (res0, res1)
+         bram_wb = wb
          notes = {
              "l0y1": f"(0x{l0in:06x} + 0x{acc_words[0] & VAL24_MASK:06x}) >> 18",
              "l0y2": f"(0x{l0in:06x} + 0x{acc_words[0] & VAL24_MASK:06x}) & 0x3ffff",
@@ -324,6 +411,7 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          res = fma24_expected(a24, b24, acc_words[1] & VAL24_MASK)
          y = (0, (res >> 9) & 0x7FFF, 0, res & 0x1FF)
          wb = (res, res)  # lane_output_logic writes the result to both lanes
+         bram_wb = wb
          fma24_note = f"0x{a24:06x} * 0x{b24:06x} + 0x{acc_words[1] & VAL24_MASK:06x}"
          notes = {
              "l0y2": f"({fma24_note}) >> 9",
@@ -333,7 +421,16 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
          raise AsmError(f"unhandled op type {type(op).__name__}")
 
       if op.dst is not None:
-         acc_model.write(op.dst, i, wb)
+         if isinstance(op, FMA18):
+            acc_model.write_fma18(op.dst, i, y, op.sel_low)
+         else:
+            acc_model.write_full(op.dst, i, wb)
+      if op.l0_wb_valid:
+         bram_writes.setdefault(op.wb_addr_a, []).append(
+             (i + T.ISSUE_TO_COMMIT, bram_wb[0] & WORD_MASK))
+      if op.l1_wb_valid:
+         bram_writes.setdefault(op.wb_addr_b, []).append(
+             (i + T.ISSUE_TO_COMMIT, bram_wb[1] & WORD_MASK))
 
       predictions.append(
           Prediction(
@@ -351,7 +448,7 @@ def assemble(prog: Program) -> tuple[list[CycleDrive], list[Prediction]]:
 async def load_bram(dut, bram: dict[int, int]):
    # BRAM writes go through xu_ctl too; only the write data is a real port.
    for addr, word in sorted(bram.items()):
-      drive_xu_ctl(dut, addr_a=addr, we_a=1)
+      drive_xu_ctl(dut, addr_a=addr, we_a=0xF)
       dut.DI_A.value = word & WORD_MASK
       await xu_edge(dut)
    drive_xu_ctl(dut)  # idle: addr defaults to BRAM_IDLE_ADDR, we=0

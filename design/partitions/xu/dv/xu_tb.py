@@ -60,18 +60,44 @@ def pack_xu_ctl(
     acc_raddr=0,
     acc_waddr=0,
     acc_we=0,
+    pred_raddr=0,
+    pred_waddr=0,
+    pred_we=0,
+    pred_enable=0,
+    pred_invert=0,
+    pred_cond=0,
+    zero_bram_operands=0,
+    l0_wb_valid=0,
+    l1_wb_valid=0,
+    wb_we_a=0,
+    wb_we_b=0,
+    wb_addr_a=0,
+    wb_addr_b=0,
 ):
-   """Pack the xu_priv::xu_ctl struct (90 bits, MSB-first field order):
+   """Pack the xu_priv::xu_ctl struct (144 bits, MSB-first field order):
 
-    ADDR_A[89:80] EN_A[79] WE_A[78] ADDR_B[77:68] EN_B[67] WE_B[66]
-    l0dsp_control[65:41] l1dsp_control[40:16] mode[15:14] slice_sel_24bit[13:12]
-    mode1_sel_low[11] acc_raddr[10:6] acc_waddr[5:1] acc_we[0]
+    ADDR_A[143:134] EN_A[133] WE_A[132:129]
+    ADDR_B[128:119] EN_B[118] WE_B[117:114]
+    l0dsp_control[113:89] l1dsp_control[88:64] mode[63:61]
+    slice_sel_24bit[60:59] mode1_sel_low[58] acc_raddr[57:53]
+    acc_waddr[52:48] acc_we[47]
+    pred_raddr[46:42] pred_waddr[41:37] pred_we[36]
+    pred_enable[35] pred_invert[34] pred_cond[33:31]
+    zero_bram_operands[30]
+    l0_wb_valid[29] l1_wb_valid[28] WB_WE_A[27:24] WB_WE_B[23:20]
+    WB_ADDR_A[19:10] WB_ADDR_B[9:0]
     """
-   return (((addr_a & 0x3FF) << 80) | ((en_a & 0x1) << 79) | ((we_a & 0x1) << 78) |
-           ((addr_b & 0x3FF) << 68) | ((en_b & 0x1) << 67) | ((we_b & 0x1) << 66) |
-           ((l0dsp_control & ((1 << 25) - 1)) << 41) | ((l1dsp_control & ((1 << 25) - 1)) << 16) |
-           ((mode & 0x3) << 14) | ((slice_sel_24bit & 0x3) << 12) | ((mode1_sel_low & 0x1) << 11) |
-           ((acc_raddr & 0x1F) << 6) | ((acc_waddr & 0x1F) << 1) | (acc_we & 0x1))
+   return (((addr_a & 0x3FF) << 134) | ((en_a & 0x1) << 133) | ((we_a & 0xF) << 129) |
+           ((addr_b & 0x3FF) << 119) | ((en_b & 0x1) << 118) | ((we_b & 0xF) << 114) |
+           ((l0dsp_control & ((1 << 25) - 1)) << 89) | ((l1dsp_control & ((1 << 25) - 1)) << 64) |
+           ((mode & 0x7) << 61) | ((slice_sel_24bit & 0x3) << 59) | ((mode1_sel_low & 0x1) << 58) |
+           ((acc_raddr & 0x1F) << 53) | ((acc_waddr & 0x1F) << 48) | ((acc_we & 0x1) << 47) |
+           ((pred_raddr & 0x1F) << 42) | ((pred_waddr & 0x1F) << 37) | ((pred_we & 0x1) << 36) |
+           ((pred_enable & 0x1) << 35) | ((pred_invert & 0x1) << 34) | ((pred_cond & 0x7) << 31) |
+           ((zero_bram_operands & 0x1) << 30) | ((l0_wb_valid & 0x1) << 29) |
+           ((l1_wb_valid & 0x1) << 28) | ((wb_we_a & 0xF) << 24) |
+           ((wb_we_b & 0xF) << 20) | ((wb_addr_a & 0x3FF) << 10) |
+           (wb_addr_b & 0x3FF))
 
 
 def drive_xu_ctl(dut, **kwargs):
@@ -159,15 +185,19 @@ def lane_outputs(dut):
 
 def acc_in_values(dut):
    return (
-       int(dut.l0acc_in.value) & VAL24_MASK,
-       int(dut.l1acc_in.value) & VAL24_MASK,
+       ((int(dut.l0acc_in_hi.value) & HALF_MASK) << 18) |
+       (int(dut.l0acc_in_lo.value) & HALF_MASK),
+       ((int(dut.l1acc_in_hi.value) & HALF_MASK) << 18) |
+       (int(dut.l1acc_in_lo.value) & HALF_MASK),
    )
 
 
 def acc_out_values(dut):
    return (
-       int(dut.l0acc_out.value) & WORD_MASK,
-       int(dut.l1acc_out.value) & WORD_MASK,
+       ((int(dut.l0acc_out_hi.value) & HALF_MASK) << 18) |
+       (int(dut.l0acc_out_lo.value) & HALF_MASK),
+       ((int(dut.l1acc_out_hi.value) & HALF_MASK) << 18) |
+       (int(dut.l1acc_out_lo.value) & HALF_MASK),
    )
 
 
@@ -178,10 +208,14 @@ def snapshot_debug(dut, actual):
        "l0x2",
        "l1x1",
        "l1x2",
-       "l0acc_in",
-       "l1acc_in",
-       "l0acc_out",
-       "l1acc_out",
+       "l0acc_in_hi",
+       "l0acc_in_lo",
+       "l1acc_in_hi",
+       "l1acc_in_lo",
+       "l0acc_out_hi",
+       "l0acc_out_lo",
+       "l1acc_out_hi",
+       "l1acc_out_lo",
        "l0dsp_casc_out",
        "l1dsp_casc_in",
    ):

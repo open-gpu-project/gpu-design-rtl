@@ -24,7 +24,8 @@ from design.partitions.xu.dv.xu_tb import HALF_MASK
 
 # Scalar ctl fields in emission order; l0dsp/l1dsp are handled separately.
 CTL_FIELDS = ("mode", "slice_sel_24bit", "mode1_sel_low", "acc_raddr", "acc_waddr",
-              "acc_we")
+              "acc_we", "zero_bram_operands", "l0_wb_valid", "l1_wb_valid",
+              "wb_we_a", "wb_we_b", "wb_addr_a", "wb_addr_b")
 LANE_NAMES = ("l0y1", "l0y2", "l1y1", "l1y2")
 
 # Binary-formatted DSP fields (bit width); the rest print as plain ints.

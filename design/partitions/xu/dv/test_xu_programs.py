@@ -40,6 +40,13 @@ SRC_B = 24  # lane 1 operand rows
 LO_72 = 32  # 72-bit gearbox rows, low words
 HI_72 = 96  # 72-bit gearbox rows, high words
 
+@cocotb.test()
+async def my_own_test(dut):
+   prog = Program()
+   prog.set_bram_word(0, pack18_pair(1, 2))
+   prog.set_bram_word(1, pack18_pair(3, 4))
+   prog.ops.append(ADD18(addr_a=0, addr_b=1, dst=0))
+   await run_program(dut, prog)
 
 def program_with_18b_rows(acc_pairs, src_pairs):
    """Load acc rows at ACC_A/ACC_B and operand rows at SRC_A/SRC_B."""
@@ -58,6 +65,18 @@ def load_72_rows(prog, rows, *, base_index=0):
       lo, hi = pack72_from_slices(s1, s2, s3)
       prog.set_bram_word(LO_72 + base_index + k, lo)
       prog.set_bram_word(HI_72 + base_index + k, hi)
+
+
+def writeback_acc_to_bram(slot, addr_a, addr_b):
+   """Separate writeback instruction: compute 0 + acc, then commit to BRAM."""
+   return ADD18(
+      acc=Slot(slot),
+      zero_bram_operands=1,
+      l0_wb_valid=1,
+      l1_wb_valid=1,
+      wb_addr_a=addr_a,
+      wb_addr_b=addr_b,
+   )
 
 
 @cocotb.test()
@@ -110,6 +129,79 @@ async def test_min_raw_distance(dut):
    for _ in range(T.MIN_RAW_DISTANCE - 1):
       prog.ops.append(NOP())
    prog.ops.append(ADD18(addr_a=SRC_A, addr_b=SRC_B, acc=Slot(0), dst=1))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_add18_acc_to_bram_writeback(dut):
+   """Write an ADD18 result to acc, then write that acc value back to BRAM.
+
+   The second op zeros the BRAM operand path and computes 0 + acc. Its lane
+   results are written to BRAM through the delayed writeback controls, and a
+   final ADD18 reads those destination rows back through the normal BRAM path.
+   """
+   wb_a = 48
+   wb_b = 64
+   prog = Program()
+   for k in range(8):
+      prog.set_bram_word(ACC_A + k, pack18_pair(0x00123 + k, 0x00045 + k))
+      prog.set_bram_word(ACC_B + k, pack18_pair(0x00234 + k, 0x00056 + k))
+
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=k))
+   for k in range(8):
+      prog.ops.append(writeback_acc_to_bram(k, wb_a + k, wb_b + k))
+   for _ in range(8):
+      prog.ops.append(NOP())
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=wb_a + k, addr_b=wb_b + k, dst=k))
+
+   await run_program(dut, prog)
+
+
+@cocotb.test()
+async def test_fma18_acc_to_bram_writeback(dut):
+   """Compute both FMA18 banks, then commit full acc rows back to BRAM."""
+   wb_a = 80
+   wb_b = 96
+   acc_pairs = [
+       ((0x00110 + k, 0x00021 + k), (0x00220 + k, 0x00041 + k))
+       for k in range(8)
+   ]
+   src_pairs = [
+       ((0x00030 + k, 0x00050 + k), (0x00070 + k, 0x00090 + k))
+       for k in range(8)
+   ]
+   prog = program_with_18b_rows(acc_pairs, src_pairs)
+
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=ACC_A + k, addr_b=ACC_B + k, dst=k))
+   # High FMA uses high(current row) * high(next row).
+   for k in range(8):
+      prog.ops.append(
+          FMA18(
+              addr_a=SRC_A + k,
+              addr_b=SRC_B + k,
+              acc=Slot(k),
+              dst=k,
+          ))
+   # Low FMA uses low(previous row) * low(current row).
+   for k in range(8):
+      prog.ops.append(
+          FMA18(
+              addr_a=SRC_A + k,
+              addr_b=SRC_B + k,
+              acc=Slot(k),
+              dst=k,
+              sel_low=1,
+          ))
+   for k in range(8):
+      prog.ops.append(writeback_acc_to_bram(k, wb_a + k, wb_b + k))
+   for _ in range(8):
+      prog.ops.append(NOP())
+   for k in range(8):
+      prog.ops.append(ADD18(addr_a=wb_a + k, addr_b=wb_b + k, dst=k))
 
    await run_program(dut, prog)
 
@@ -370,13 +462,26 @@ def random_program(rng: random.Random, *, n_ops=48, n_rows=48, n_slots=32) -> Pr
    for addr in range(n_rows):
       prog.set_bram_word(addr, rng.getrandbits(36))
 
-   last_write: dict[int, int] = {}
+   # slot -> [l0_hi, l0_lo, l1_hi, l1_lo] last writer issue cycle.
+   bank_writes: dict[int, list[int | None]] = {}
+
+   def ready_slots(*banks):
+      ready = []
+      for slot, writes in bank_writes.items():
+         if all(writes[b] is not None and i - writes[b] >= T.MIN_RAW_DISTANCE for b in banks):
+            ready.append(slot)
+      return ready
+
    for i in range(n_ops):
       kind = rng.choice(("add18", "fma18", "add24", "fma24", "nop"))
       if kind == "nop":
          prog.ops.append(NOP())
          continue
-      ready = [s for s, w in last_write.items() if i - w >= T.MIN_RAW_DISTANCE]
+      sel_low = rng.randint(0, 1)
+      if kind == "fma18":
+         ready = ready_slots(1, 3) if sel_low else ready_slots(0, 2)
+      else:
+         ready = ready_slots(0, 1, 2, 3)
       kwargs = dict(
           addr_a=rng.randrange(n_rows),
           addr_b=rng.randrange(n_rows),
@@ -386,14 +491,20 @@ def random_program(rng: random.Random, *, n_ops=48, n_rows=48, n_slots=32) -> Pr
       if kind == "add18":
          op = ADD18(**kwargs)
       elif kind == "fma18":
-         op = FMA18(**kwargs, sel_low=rng.randint(0, 1))
+         op = FMA18(**kwargs, sel_low=sel_low)
       elif kind == "add24":
          op = ADD24(**kwargs, slice_sel=rng.randrange(3))
       else:
          op = FMA24(**kwargs, slice_sel=rng.randrange(3))
       prog.ops.append(op)
       if op.dst is not None:
-         last_write[op.dst] = i
+         writes = bank_writes.setdefault(op.dst, [None, None, None, None])
+         if isinstance(op, FMA18):
+            for b in ((1, 3) if op.sel_low else (0, 2)):
+               writes[b] = i
+         else:
+            for b in range(4):
+               writes[b] = i
    return prog
 
 
@@ -432,13 +543,14 @@ async def test_eight_strand_round_robin(dut):
    # Round 0: s.r0 = load(seed row)
    for s in range(n):
       prog.ops.append(ADD18(addr_a=ACC_A + s, addr_b=ACC_B + s, dst=4 * s))
-   # Round 1: s.r1 = fma(own row, next fetch's row, s.r0)
+   # Round 1: s.r0 = fma(own row, next fetch's row, s.r0), updating only the
+   # selected 18-bit bank while preserving the other initialized bank.
    for s in range(n):
       prog.ops.append(FMA18(addr_a=SRC_A + s, addr_b=SRC_B + s, acc=Slot(4 * s),
-                            dst=4 * s + 1))
-   # Round 2: s.r2 = add(addend row, s.r1) -- consumes the FMA writeback
+                            dst=4 * s))
+   # Round 2: s.r2 = add(addend row, s.r0) -- consumes the FMA writeback
    for s in range(n):
-      prog.ops.append(ADD18(addr_a=R2_A + s, addr_b=R2_B + s, acc=Slot(4 * s + 1),
+      prog.ops.append(ADD18(addr_a=R2_A + s, addr_b=R2_B + s, acc=Slot(4 * s),
                             dst=4 * s + 2))
 
    await run_program(dut, prog)

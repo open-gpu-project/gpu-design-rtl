@@ -29,6 +29,23 @@ def pack_dsp_casc(*, PC=0, MULTSIGN=0, CARRYCASC=0):
    return (((PC & 0xFFFFFFFFFFFF) << 2) | ((MULTSIGN & 0x1) << 1) | ((CARRYCASC & 0x1) << 0))
 
 
+def pack_alu_lane_ctl(*, mode=0, dsp_ctl=0):
+   return ((mode & 0x7) << 25) | (dsp_ctl & ((1 << 25) - 1))
+
+
+def _try_drive_child(parent, child_name, value):
+   try:
+      getattr(parent, child_name).value = value
+   except AttributeError:
+      pass
+
+
+def drive_alu_ctl(dut, *, mode=0, dsp_ctl=0):
+   dut.alu_ctl.value = pack_alu_lane_ctl(mode=mode, dsp_ctl=dsp_ctl)
+   # TODO: remove this mirror once alu_lane consumes alu_ctl.dsp_control directly.
+   _try_drive_child(dut, "dsp_control", dsp_ctl)
+
+
 def drive_all(value, *signals):
    for sig in signals:
       sig.value = value
@@ -84,6 +101,7 @@ def lane_snapshot(dut):
 
 @cocotb.test()
 async def test_18b_add(dut):
+   # dut.debug_test_id.value = 1
    cocotb.log.info(f"dut = {dut}")
 
    expected_y1 = deque()
@@ -107,8 +125,7 @@ async def test_18b_add(dut):
    dut.dsp_rst.value = 1
    dut.fab_in_rst.value = 1
    dut.fab_out_rst.value = 1
-   dut.alu_ctl.value = 0
-   dut.dsp_control.value = 0
+   drive_alu_ctl(dut, mode=0, dsp_ctl=0)
    dut.dsp_casc_in.value = 0
    clear_datapath(dut)
 
@@ -118,7 +135,7 @@ async def test_18b_add(dut):
    dut.dsp_rst.value = 0
    dut.fab_in_rst.value = 0
    dut.fab_out_rst.value = 0
-   dut.dsp_control.value = pack_dsp_ctl(
+   drive_alu_ctl(dut, mode=0, dsp_ctl=pack_dsp_ctl(
        INMODE=0,
        ALUMODE=0,
        OPMODE=0b0001111,
@@ -129,7 +146,7 @@ async def test_18b_add(dut):
        CEM=1,
        CEP=1,
        CEAD=1,
-   )
+   ))
    dut.dsp_casc_in.value = pack_dsp_casc(PC=51966)
 
    # prev_acc1 = 0
@@ -171,13 +188,14 @@ async def test_18b_add(dut):
 
 @cocotb.test()
 async def test_18b_fma(dut):
+   # dut.debug_test_id.value = 2
    cocotb.log.info(f"dut = {dut}")
 
    expected_y1 = deque()
 
    test_data = [
    #    X1       X2      AccIn1  AccIn2
-       (0x000000, 0x00000, 0x00000, 0x00100),
+       (0x000000, 0x00000, 0x00000, 0x00F00),
        (0x000100, 0x00002, 0x00000, 0x00000),
        (0x000300, 0x00004, 0x00000, 0x00100),
        (0x000500, 0x00006, 0x00000, 0x00000),
@@ -193,8 +211,7 @@ async def test_18b_fma(dut):
    dut.dsp_rst.value = 1
    dut.fab_in_rst.value = 1
    dut.fab_out_rst.value = 1
-   dut.alu_ctl.value = 1
-   dut.dsp_control.value = 0
+   drive_alu_ctl(dut, mode=1, dsp_ctl=0)
    dut.dsp_casc_in.value = 0
    clear_datapath(dut)
 
@@ -204,7 +221,7 @@ async def test_18b_fma(dut):
    dut.dsp_rst.value = 0
    dut.fab_in_rst.value = 0
    dut.fab_out_rst.value = 0
-   dut.dsp_control.value = pack_dsp_ctl(
+   drive_alu_ctl(dut, mode=1, dsp_ctl=pack_dsp_ctl(
        INMODE=0b10001,
        ALUMODE=0,
        OPMODE=0b0110101,
@@ -215,7 +232,7 @@ async def test_18b_fma(dut):
        CEM=1,
        CEP=1,
        CEAD=1,
-   )
+   ))
    dut.dsp_casc_in.value = pack_dsp_casc(PC=47806)
 
    for cycle, test_input in enumerate(test_data):
@@ -249,6 +266,7 @@ async def test_18b_fma(dut):
 
 @cocotb.test()
 async def test_24b_add(dut):
+   # dut.debug_test_id.value = 3
    cocotb.log.info(f"dut = {dut}")
 
    expected_y1 = deque()
@@ -272,8 +290,7 @@ async def test_24b_add(dut):
    dut.dsp_rst.value = 1
    dut.fab_in_rst.value = 1
    dut.fab_out_rst.value = 1
-   dut.alu_ctl.value = 2
-   dut.dsp_control.value = 0
+   drive_alu_ctl(dut, mode=2, dsp_ctl=0)
    dut.dsp_casc_in.value = 0
    clear_datapath(dut)
 
@@ -283,7 +300,7 @@ async def test_24b_add(dut):
    dut.dsp_rst.value = 0
    dut.fab_in_rst.value = 0
    dut.fab_out_rst.value = 0
-   dut.dsp_control.value = pack_dsp_ctl(
+   drive_alu_ctl(dut, mode=2, dsp_ctl=pack_dsp_ctl(
        INMODE=0,
        ALUMODE=0,
        OPMODE=0b0001111,
@@ -294,7 +311,7 @@ async def test_24b_add(dut):
        CEM=1,
        CEP=1,
        CEAD=1,
-   )
+   ))
    dut.dsp_casc_in.value = pack_dsp_casc(PC=48879)
 
    for cycle, test_input in enumerate(test_data):
@@ -331,4 +348,90 @@ async def test_24b_add(dut):
       actual_y2 = int(dut.Y2.value) & 0xFFFFFF
       assert actual_y1 == exp_y1 >> 18, f"Y1: expected 0x{exp_y1:x}, got 0x{actual_y1:x}"
       assert actual_y2 == exp_y2, f"Y2: expected 0x{exp_y2:x}, got 0x{actual_y2:x}"
+      await Timer(1, unit="step")
+
+@cocotb.test()
+async def test_18b_cmp(dut):
+   # dut.debug_test_id.value = 1
+   cocotb.log.info(f"dut = {dut}")
+
+   expected_y1 = deque()
+   expected_y2 = deque()
+
+   test_data = [
+   #    X1       X2      AccIn1  AccIn2
+       (0x000000, 0x00000, 0x00000, 0x00000),
+       (0x000001, 0x00002, 0x00001, 0x00001),
+       (0x000003, 0x00004, 0x00000, 0x00001),
+       (0x000005, 0x00006, 0x00001, 0x00001),
+       (0x000007, 0x00008, 0x00000, 0x00001),
+       (0x000009, 0x0000A, 0x00001, 0x00001),
+       (0x00000B, 0x0000C, 0x00000, 0x00001),
+       (0x00000D, 0x0000E, 0x00000, 0x00001),
+       (0x00000F, 0x00010, 0x00001, 0x00001),
+   ]
+
+   start_tdm_clocks(dut)
+
+   dut.dsp_rst.value = 1
+   dut.fab_in_rst.value = 1
+   dut.fab_out_rst.value = 1
+   drive_alu_ctl(dut, mode=4, dsp_ctl=0)
+   dut.dsp_casc_in.value = 0
+   clear_datapath(dut)
+
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
+
+   dut.dsp_rst.value = 0
+   dut.fab_in_rst.value = 0
+   dut.fab_out_rst.value = 0
+   drive_alu_ctl(dut, mode=4, dsp_ctl=pack_dsp_ctl(
+       INMODE=0,
+       ALUMODE=0b0011,
+       OPMODE=0b0110011,
+       CEA=0b11,
+       CEB=0b11,
+       CEC=1,
+       CED=1,
+       CEM=1,
+       CEP=1,
+       CEAD=1,
+   ))
+   dut.dsp_casc_in.value = pack_dsp_casc(PC=51966)
+
+   # prev_acc1 = 0
+   # prev_acc2 = 0
+
+   for cycle, test_input in enumerate(test_data):
+      X1, X2, AccIn1, AccIn2 = test_input
+      dut.X1.value = X1
+      dut.X2.value = X2
+      dut.AccIn1.value = AccIn1
+      dut.AccIn2.value = AccIn2
+
+      expected_y1.append(1 if AccIn1 >= X1 else 0)
+      expected_y2.append(1 if AccIn2 >= X2 else 0)
+
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
+
+      if cycle >= LANE_LATENCY:
+         exp_y1 = expected_y1.popleft()
+         exp_y2 = expected_y2.popleft()
+         try:
+            assert_signal_eq(dut.Y1, exp_y1, "Y1")
+            assert_signal_eq(dut.Y2, exp_y2, "Y2")
+         except AssertionError as err:
+            raise AssertionError(f"{err}\n{lane_snapshot(dut)}") from err
+      await Timer(1, unit="step")
+
+   for _ in range(LANE_LATENCY):
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
+
+      exp_y1 = expected_y1.popleft()
+      exp_y2 = expected_y2.popleft()
+      assert_signal_eq(dut.Y1, exp_y1, "Y1 (pipeline)") if exp_y1 is not None else None
+      assert_signal_eq(dut.Y2, exp_y2, "Y2 (pipeline)") if exp_y2 is not None else None
       await Timer(1, unit="step")
