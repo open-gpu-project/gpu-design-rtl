@@ -4,7 +4,6 @@
 
 #include <cpptrace/cpptrace.hpp>
 #include <exception>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -58,21 +57,45 @@ namespace framework {
    };
 
    /**
+    * Generic simulation exception holding arbitrary structured logging fields.
+    */
+   template <typename... Ts>
+   class GenericSimulationException
+         : public StructuredSimulationException<GenericSimulationException<Ts...>> {
+   public:
+      template <typename... Ks>
+      GenericSimulationException(std::string_view what, std::pair<Ks, Ts>... fields)
+            : StructuredSimulationException<GenericSimulationException<Ts...>>(what),
+              m_fields{std::pair<std::string, Ts>{std::move(fields.first),
+                                                  std::move(fields.second)}...} {}
+
+      auto get_fields() const {
+         return std::apply(
+               [](const auto&... fields) {
+                  return std::make_tuple(logpp::field(fields.first, fields.second)...);
+               },
+               m_fields);
+      }
+
+   private:
+      std::tuple<std::pair<std::string, Ts>...> m_fields;
+   };
+
+   /**
     * Multiple drivers detected. The exception contains the location of each
     * driver's stack trace (including the current one).
     */
    class MultiDriverException : public StructuredSimulationException<MultiDriverException> {
    public:
       MultiDriverException(std::string_view driver_name,
-                           std::unique_ptr<cpptrace::stacktrace> previous,
-                           std::unique_ptr<cpptrace::stacktrace> current)
+                           cpptrace::stacktrace const& previous,
+                           cpptrace::stacktrace const& current)
             : StructuredSimulationException<MultiDriverException>(
                     "Multiple drivers detected for signal"),
               m_driver_name(driver_name),
-              m_previous_trace(previous ? previous->to_string() : "null"),
-              m_current_trace(current ? current->to_string() : "null") {}
+              m_previous_trace(previous.to_string()),
+              m_current_trace(current.to_string()) {}
 
-   protected:
       auto get_fields() const {
          return std::make_tuple(logpp::field("signal", m_driver_name),
                                 logpp::field("previous", m_previous_trace),

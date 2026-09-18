@@ -39,7 +39,7 @@ namespace framework {
       }
 
    protected:
-      void on_tick() override {
+      void on_tick(Simulation const&) override {
          // Handle any reads pending
          if (m_next_read_staged) {
             m_read_index = (m_read_index + 1) % Size;
@@ -54,7 +54,7 @@ namespace framework {
          }
       }
 
-      void on_after_tick() override {
+      void on_after_tick(Simulation const&) override {
          m_next_write_data.reset();
          m_next_read_staged = false;
          m_write_detector.reset();

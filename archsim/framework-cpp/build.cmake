@@ -9,6 +9,7 @@ add_library(
    ${CMAKE_CURRENT_LIST_DIR}/fifo.h
    ${CMAKE_CURRENT_LIST_DIR}/reg.h
    ${CMAKE_CURRENT_LIST_DIR}/simulation.cc
+   ${CMAKE_CURRENT_LIST_DIR}/tracer.cc
 )
 
 # Create an alias for the library to be used by consumers
@@ -36,3 +37,6 @@ target_compile_features(
    PUBLIC
    cxx_std_23
 )
+
+# Include the test directory
+include(${CMAKE_CURRENT_LIST_DIR}/tests/build.cmake)

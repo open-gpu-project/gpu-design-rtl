@@ -35,7 +35,7 @@ namespace partitions::fabric {
     */
    template <typename... Ts>
    auto to_ref_tuple(std::tuple<Ts...>& t) {
-      return std::tuple<Ts&...>(std::get<Ts&>(t)...);
+      return std::tuple<Ts&...>(std::get<Ts>(t)...);
    }
 } // namespace partitions::fabric
 
@@ -63,8 +63,8 @@ namespace partitions {
       auto dpq_arb_if() { return fabric::to_ref_tuple(m_dpq_arb_if); }
 
    protected:
-      void on_evaluate() override;
-      void on_tick() override;
+      void on_evaluate(framework::Simulation const&) override;
+      void on_tick(framework::Simulation const&) override;
 
    private:
       fabric::AxiHpIfType m_axi_hp_if;

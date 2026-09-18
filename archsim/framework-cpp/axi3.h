@@ -108,8 +108,8 @@ namespace framework::axi3 {
       }
 
    protected:
-      void on_evaluate() override { m_fifo.on_evaluate(); }
-      void on_tick() override { m_fifo.on_tick(); }
+      void on_evaluate(Simulation const& sim) override { m_fifo.on_evaluate(sim); }
+      void on_tick(Simulation const& sim) override { m_fifo.on_tick(sim); }
 
    private:
       Fifo<T, 2> m_fifo{};

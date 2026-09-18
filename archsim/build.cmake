@@ -2,6 +2,7 @@
 # find_package(glfw3 CONFIG REQUIRED)
 find_package(cpptrace CONFIG REQUIRED)
 find_package(magic_enum CONFIG REQUIRED)
+find_package(Catch2 CONFIG REQUIRED)
 
 # file(
 #    GLOB IMGUI_SOURCES
@@ -16,6 +17,5 @@ find_package(magic_enum CONFIG REQUIRED)
 # )
 
 include(${CMAKE_CURRENT_LIST_DIR}/third-party/logpp.cmake)
-
 include(${CMAKE_CURRENT_LIST_DIR}/framework-cpp/build.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/partitions-cpp/build.cmake)
