@@ -19,6 +19,8 @@
 #include "framework-cpp/exceptions.h"
 #include "framework-cpp/simulation.h"
 
+using namespace framework;
+
 namespace {
 
    using framework::Simulation;
@@ -53,10 +55,10 @@ namespace {
    }
 
    /// @brief Entity that records every callback the simulation delivers to it.
-   class TestEntity : public framework::Entity {
+   class TestEntity : public Entity {
    public:
-      explicit TestEntity(std::string tag = {}, OrderLog* log = nullptr)
-            : m_tag{std::move(tag)}, m_log{log} {}
+      explicit TestEntity(EntityConfig config, std::string tag = {}, OrderLog* log = nullptr)
+            : Entity{config}, m_tag{std::move(tag)}, m_log{log} {}
 
       Events const& events() const { return m_events; }
 
@@ -94,12 +96,12 @@ namespace {
    };
 
    /// @brief Entity that throws out of on_evaluate() on a chosen tick.
-   class ThrowingEntity : public framework::Entity {
+   class ThrowingEntity : public Entity {
    public:
       enum class What { Simulation, Runtime };
 
-      ThrowingEntity(unsigned throw_on_tick, What what)
-            : m_throw_on_tick{throw_on_tick}, m_what{what} {}
+      ThrowingEntity(EntityConfig config, unsigned throw_on_tick, What what)
+            : Entity{config}, m_throw_on_tick{throw_on_tick}, m_what{what} {}
 
       /// @brief Stops the entity throwing, so an aborted run can be resumed.
       void disarm() { m_throw_on_tick = 0; } // tick 0 never occurs
@@ -109,7 +111,7 @@ namespace {
             return;
          }
          if (m_what == What::Simulation) {
-            throw framework::SimulationException("entity failed");
+            throw SimulationException("entity failed");
          }
          throw std::runtime_error("entity failed");
       }
@@ -121,7 +123,7 @@ namespace {
 
    /// @brief An entity id paired with a non-owning pointer to the entity itself.
    struct Registered {
-      Simulation::entity_id_t id;
+      entity_id_t id;
       TestEntity* entity;
    };
 
@@ -131,18 +133,29 @@ namespace {
     */
    Registered add_test_entity(Simulation& sim,
                               std::string_view name,
-                              Simulation::clock_id_t clock,
-                              std::optional<Simulation::entity_id_t> parent = std::nullopt,
+                              clock_id_t clock,
+                              std::optional<entity_id_t> parent = std::nullopt,
                               OrderLog* log = nullptr) {
-      auto entity = std::make_unique<TestEntity>(std::string{name}, log);
-      auto* raw = entity.get();
-      auto id = sim.add_entity(name, std::move(entity), clock, parent);
-      return Registered{id, raw};
+      auto [id, entity] = sim.add_entity<TestEntity>(name, clock, parent, std::string{name}, log);
+      return Registered{id, &entity};
    }
+
+   /**
+    * A detector plus the simulation and entity that own it. `MultiDriverDetector`
+    * needs an `Entity&`, and an entity only exists once registered.
+    */
+   struct DetectorFixture {
+      Simulation sim{};
+      Entity& owner;
+      MultiDriverDetector detector;
+
+      DetectorFixture()
+            : owner{*add_test_entity(sim, "owner", sim.add_clock("clk")).entity}, detector{owner} {}
+   };
 
 } // namespace
 
-TEST_CASE("Clocks fire on the ticks where tick % period == phase") {
+TEST_CASE("simulation: Clocks fire on the ticks where tick % period == phase") {
    struct Row {
       int period;
       int phase;
@@ -175,7 +188,7 @@ TEST_CASE("Clocks fire on the ticks where tick % period == phase") {
    }
 }
 
-TEST_CASE("A clock at rest reads as a rising edge when its phase is zero") {
+TEST_CASE("simulation: A clock at rest reads as a rising edge when its phase is zero") {
    Simulation sim;
    auto phase0 = sim.add_clock("phase0", 2, 0);
    auto phase1 = sim.add_clock("phase1", 2, 1);
@@ -193,14 +206,14 @@ TEST_CASE("A clock at rest reads as a rising edge when its phase is zero") {
    }
 }
 
-TEST_CASE("add_clock rejects an invalid period or phase") {
+TEST_CASE("simulation: add_clock rejects an invalid period or phase") {
    Simulation sim;
 
-   REQUIRE_THROWS_AS(sim.add_clock("zero_period", 0), framework::SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("negative_period", -1), framework::SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("phase_at_period", 2, 2), framework::SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("phase_past_period", 2, 5), framework::SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("negative_phase", 2, -1), framework::SimulationException);
+   REQUIRE_THROWS_AS(sim.add_clock("zero_period", 0), SimulationException);
+   REQUIRE_THROWS_AS(sim.add_clock("negative_period", -1), SimulationException);
+   REQUIRE_THROWS_AS(sim.add_clock("phase_at_period", 2, 2), SimulationException);
+   REQUIRE_THROWS_AS(sim.add_clock("phase_past_period", 2, 5), SimulationException);
+   REQUIRE_THROWS_AS(sim.add_clock("negative_phase", 2, -1), SimulationException);
 
    SECTION("but accepts the boundary cases") {
       REQUIRE_NOTHROW(sim.add_clock("unit", 1, 0));
@@ -208,7 +221,7 @@ TEST_CASE("add_clock rejects an invalid period or phase") {
    }
 }
 
-TEST_CASE("An entity is evaluated, ticked, then after-ticked on every cycle") {
+TEST_CASE("simulation: An entity is evaluated, ticked, then after-ticked on every cycle") {
    Simulation sim;
    auto clk = sim.add_clock("clk");
    auto* entity = add_test_entity(sim, "dut", clk).entity;
@@ -230,7 +243,7 @@ TEST_CASE("An entity is evaluated, ticked, then after-ticked on every cycle") {
                                });
 }
 
-TEST_CASE("Only on_tick is gated on the clock edge") {
+TEST_CASE("simulation: Only on_tick is gated on the clock edge") {
    Simulation sim;
 
    SECTION("on a period-3 phase-0 clock") {
@@ -256,7 +269,7 @@ TEST_CASE("Only on_tick is gated on the clock edge") {
    }
 }
 
-TEST_CASE("Entities on different clocks tick independently") {
+TEST_CASE("simulation: Entities on different clocks tick independently") {
    Simulation sim;
    auto fast_clk = sim.add_clock("fast", 1, 0);
    auto slow_clk = sim.add_clock("slow", 3, 0);
@@ -274,14 +287,21 @@ TEST_CASE("Entities on different clocks tick independently") {
    REQUIRE(slow->count(Event::Kind::Evaluate) == 6);
 }
 
-TEST_CASE("Entity::config() is only available once the entity is registered") {
-   TestEntity unregistered;
-   REQUIRE_THROWS_AS(unregistered.config(), framework::SimulationException);
+TEST_CASE("simulation: Entity::config reports the registration the simulation assigned") {
+   Simulation sim;
+   auto clk = sim.add_clock("clk", 2, 1);
+   auto registered = add_test_entity(sim, "dut", clk);
+   sim.build();
+   auto const& config = registered.entity->config();
 
-   SECTION("and then aliases the clock it was registered with") {
-      Simulation sim;
-      auto clk = sim.add_clock("clk", 2, 1);
-      auto* entity = add_test_entity(sim, "dut", clk).entity;
+   REQUIRE(&config.simulation == &sim);
+   REQUIRE(config.id == registered.id);
+   REQUIRE(config.clock_id == clk);
+   // The local name, not the qualified path: `get_entity_full_name()` joins the chain
+   REQUIRE(config.name == "dut");
+
+   SECTION("and aliases the clock it was registered with") {
+      auto* entity = registered.entity;
 
       REQUIRE(&entity->config().clock == &sim.get_clock(clk));
 
@@ -292,7 +312,7 @@ TEST_CASE("Entity::config() is only available once the entity is registered") {
    }
 }
 
-TEST_CASE("An entity's clock reference survives later add_clock calls") {
+TEST_CASE("simulation: An entity's clock reference survives later add_clock calls") {
    Simulation sim;
    auto clk = sim.add_clock("clk", 2, 0);
    auto* entity = add_test_entity(sim, "dut", clk).entity;
@@ -309,7 +329,7 @@ TEST_CASE("An entity's clock reference survives later add_clock calls") {
    REQUIRE(entity->tick_edges() == std::vector<unsigned>{2, 4});
 }
 
-TEST_CASE("Entity names are qualified by their position in the hierarchy") {
+TEST_CASE("simulation: Entity names are qualified by their position in the hierarchy") {
    Simulation sim;
    auto clk = sim.add_clock("clk");
 
@@ -343,41 +363,20 @@ TEST_CASE("Entity names are qualified by their position in the hierarchy") {
    }
 }
 
-TEST_CASE("A duplicate entity path is rejected and leaves the simulation unchanged") {
+TEST_CASE("simulation: A duplicate entity path is rejected") {
    Simulation sim;
    auto clk = sim.add_clock("clk");
 
    auto root = add_test_entity(sim, "root", clk).id;
    auto child = add_test_entity(sim, "child", clk, root).id;
+   sim.add_entity<TestEntity>("child", clk, root);
 
-   // add_entity takes ownership unconditionally, so the rejected entity is
-   // destroyed here and there is nothing for the caller to hold onto.
-   REQUIRE_THROWS_AS(sim.add_entity("child", std::make_unique<TestEntity>(), clk, root),
-                     framework::SimulationException);
-
-   SECTION("without leaving the rejected id attached to a parent") {
-      // A rejected add does not consume an id, so the next entity registered is
-      // given the same one. If add_entity committed any state before throwing,
-      // this entity would silently inherit `root` as its parent.
-      auto orphan = add_test_entity(sim, "orphan", clk).id;
-
-      REQUIRE(sim.get_entity_full_name(orphan) == "orphan");
-      REQUIRE_FALSE(sim.get_entity_parent(orphan).has_value());
-   }
-
-   SECTION("leaving the entities already registered untouched") {
-      REQUIRE(sim.get_entity_full_name(root) == "root");
-      REQUIRE(sim.get_entity_full_name(child) == "root.child");
-      REQUIRE(sim.get_entity_parent(child).value() == root);
-   }
-
-   SECTION("and leaving the simulation runnable") {
-      sim.run(2);
-      REQUIRE(sim.current_tick() == 2);
-   }
+   // add_entity<T> constructs the entity before it validates the path, so the
+   // rejected entity is destroyed here and never reaches the caller.
+   REQUIRE_THROWS_AS(sim.build(), SimulationException);
 }
 
-TEST_CASE("reset() rewinds the simulation but keeps entities registered") {
+TEST_CASE("simulation: reset() rewinds the simulation but keeps entities registered") {
    Simulation sim;
    auto clk = sim.add_clock("clk", 2, 0);
 
@@ -416,13 +415,13 @@ TEST_CASE("reset() rewinds the simulation but keeps entities registered") {
    }
 }
 
-TEST_CASE("run() swallows a SimulationException and stops early") {
+TEST_CASE("simulation: run() swallows a SimulationException and stops early") {
    Simulation sim;
    auto clk = sim.add_clock("clk");
 
-   auto thrower = std::make_unique<ThrowingEntity>(2u, ThrowingEntity::What::Simulation);
-   auto* raw_thrower = thrower.get();
-   sim.add_entity("thrower", std::move(thrower), clk);
+   // Registered ahead of the observer, so the throw pre-empts the observer's evaluate
+   auto [thrower_id, thrower] = sim.add_entity<ThrowingEntity>(
+         "thrower", clk, std::nullopt, 2u, ThrowingEntity::What::Simulation);
    auto* observer = add_test_entity(sim, "observer", clk).entity;
 
    // The cycle count is bumped before the callbacks, so the failed cycle counts
@@ -434,58 +433,56 @@ TEST_CASE("run() swallows a SimulationException and stops early") {
    REQUIRE(observer->count(Event::Kind::Evaluate) == 1);
 
    SECTION("and the run simply resumes, with the caller none the wiser") {
-      raw_thrower->disarm();
+      thrower.disarm();
       sim.run(3);
 
       REQUIRE(sim.current_tick() == 5);
    }
 }
 
-TEST_CASE("run() propagates exceptions that are not SimulationExceptions") {
+TEST_CASE("simulation: run() propagates exceptions that are not SimulationExceptions") {
    Simulation sim;
    auto clk = sim.add_clock("clk");
-   sim.add_entity(
-         "thrower", std::make_unique<ThrowingEntity>(2u, ThrowingEntity::What::Runtime), clk);
-
+   sim.add_entity<ThrowingEntity>("thrower", clk, std::nullopt, 2u, ThrowingEntity::What::Runtime);
    REQUIRE_THROWS_AS(sim.run(5), std::runtime_error);
    REQUIRE(sim.current_tick() == 2);
 }
 
-TEST_CASE("MultiDriverDetector allows a single driver per cycle") {
-   framework::Entity owner;
-   framework::MultiDriverDetector detector{owner};
+TEST_CASE("simulation: MultiDriverDetector allows a single driver per cycle") {
+   DetectorFixture fixture;
+   auto& detector = fixture.detector;
 
    REQUIRE_NOTHROW(detector.add_and_check_driver("sig"));
-   REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), framework::MultiDriverException);
+   REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), MultiDriverException);
 
    SECTION("and re-arms once reset") {
       detector.reset();
 
       REQUIRE_NOTHROW(detector.add_and_check_driver("sig"));
-      REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), framework::MultiDriverException);
+      REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), MultiDriverException);
    }
 }
 
-TEST_CASE("MultiDriverException names the signal that was double-driven") {
-   framework::Entity owner;
-   framework::MultiDriverDetector detector{owner};
+TEST_CASE("simulation: MultiDriverException names the signal that was double-driven") {
+   DetectorFixture fixture;
+   auto& detector = fixture.detector;
 
    detector.add_and_check_driver("reg_assign");
    try {
       detector.add_and_check_driver("reg_assign");
       FAIL("expected a MultiDriverException");
-   } catch (framework::MultiDriverException const& e) {
+   } catch (MultiDriverException const& e) {
       REQUIRE(std::get<0>(e.get_fields()).value == "reg_assign");
    }
 }
 
-TEST_CASE("MultiDriverDetector reports every extra driver in a cycle") {
-   framework::Entity owner;
-   framework::MultiDriverDetector detector{owner};
+TEST_CASE("simulation: MultiDriverDetector reports every extra driver in a cycle") {
+   DetectorFixture fixture;
+   auto& detector = fixture.detector;
 
    REQUIRE_NOTHROW(detector.add_and_check_driver("sig"));
    for (int driver = 2; driver <= 5; ++driver) {
-      REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), framework::MultiDriverException);
+      REQUIRE_THROWS_AS(detector.add_and_check_driver("sig"), MultiDriverException);
    }
 
    SECTION("and goes quiet again once reset") {
@@ -495,14 +492,14 @@ TEST_CASE("MultiDriverDetector reports every extra driver in a cycle") {
    }
 }
 
-TEST_CASE("MultiDriverException keeps blaming the first driver of the cycle") {
-   framework::Entity owner;
-   framework::MultiDriverDetector detector{owner};
+TEST_CASE("simulation: MultiDriverException keeps blaming the first driver of the cycle") {
+   DetectorFixture fixture;
+   auto& detector = fixture.detector;
 
    auto previous_trace_of_next_throw = [&detector]() -> std::string {
       try {
          detector.add_and_check_driver("sig");
-      } catch (framework::MultiDriverException const& e) {
+      } catch (MultiDriverException const& e) {
          return std::get<1>(e.get_fields()).value;
       }
       FAIL("expected a MultiDriverException");

@@ -10,11 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "exceptions.h"
-
 namespace framework {
 
    class Simulation;
+   class Entity;
 
    /**
     * Represents a clock signal in the simulation. See also `Simulation::add_clock()`.
@@ -41,11 +40,46 @@ namespace framework {
    };
 
    /**
+    * Opaque handle to a clock registered with the simulation. Only the
+    * simulation that issued it can resolve it back to a `Clock`.
+    */
+   struct clock_id_t {
+      bool operator==(clock_id_t const&) const = default;
+
+   private:
+      friend class Simulation;
+      explicit clock_id_t(unsigned value) : value{value} {}
+      unsigned value;
+   };
+
+   /**
+    * Opaque handle to an entity registered with the simulation. Only the
+    * simulation that issued it can resolve it back to an `Entity`.
+    */
+   struct entity_id_t {
+      bool operator==(entity_id_t const&) const = default;
+
+      /// @brief Hash functor, for using an entity id as an unordered container key.
+      struct hash {
+         std::size_t operator()(entity_id_t id) const { return std::hash<unsigned>{}(id.value); }
+      };
+
+   private:
+      friend class Simulation;
+      explicit entity_id_t(unsigned value) : value{value} {}
+      unsigned value;
+   };
+
+   /**
     * Configuration for a simulation entity, assigned by `Simulation` when
     * registering the entity.
     */
    struct EntityConfig {
+      Simulation& simulation;
       Clock const& clock;
+      clock_id_t clock_id;
+      entity_id_t id;
+      std::string name;
    };
 
    /**
@@ -56,20 +90,13 @@ namespace framework {
       friend class Simulation;
 
    public:
-      Entity() = default;
+      Entity(EntityConfig config) : m_config(config) {}
       virtual ~Entity() = default;
 
       /**
        * Read-only access to the entity's configuration.
        */
-      EntityConfig const& config() const {
-         if (!m_config.has_value()) {
-            throw SimulationException(
-                  "Entity configuration is not set. "
-                  "Have you registered this entity with the simulation?");
-         }
-         return m_config.value();
-      }
+      EntityConfig const& config() const { return m_config; }
 
    protected:
       /**
@@ -102,7 +129,7 @@ namespace framework {
       virtual void on_reset(Simulation const&) {}
 
    private:
-      std::optional<EntityConfig> m_config;
+      EntityConfig m_config;
    };
 
    /**
@@ -111,37 +138,6 @@ namespace framework {
     */
    class Simulation {
    public:
-      /**
-       * Opaque handle to a clock registered with the simulation. Only the
-       * simulation that issued it can resolve it back to a `Clock`.
-       */
-      struct clock_id_t {
-         bool operator==(clock_id_t const&) const = default;
-
-      private:
-         friend class Simulation;
-         explicit clock_id_t(unsigned value) : value{value} {}
-         unsigned value;
-      };
-
-      /**
-       * Opaque handle to an entity registered with the simulation. Only the
-       * simulation that issued it can resolve it back to an `Entity`.
-       */
-      struct entity_id_t {
-         bool operator==(entity_id_t const&) const = default;
-
-         /// @brief Hash functor, for using an entity id as an unordered container key.
-         struct hash {
-            std::size_t operator()(entity_id_t id) const { return std::hash<unsigned>{}(id.value); }
-         };
-
-      private:
-         friend class Simulation;
-         explicit entity_id_t(unsigned value) : value{value} {}
-         unsigned value;
-      };
-
       Clock& get_clock(clock_id_t id) { return m_clocks.at(id.value); }
       Clock const& get_clock(clock_id_t id) const { return m_clocks.at(id.value); }
 
@@ -149,27 +145,37 @@ namespace framework {
        * Creates a new clock with the specified name, period, and phase, and
        * returns its clock ID. The clock's rising edge falls on every tick where
        * `tick % period == phase`.
-       *
-       * @throws SimulationException if `period` is not positive, or if `phase`
-       *         is outside `[0, period)`.
        */
       clock_id_t add_clock(std::string_view name, int period = 1, int phase = 0);
 
       /**
        * Adds a new synchronous hardware entity to the simulation whose tick is
        * driven by the specified clock.
-       *
-       * Takes ownership of the entity unconditionally: the entity is destroyed
-       * even if registration fails, so the caller must not retain a pointer to
-       * it across a throw.
-       *
-       * @throws SimulationException if the entity's fully qualified name is
-       *         already taken, or if `parent` is not a valid entity id.
        */
-      entity_id_t add_entity(std::string_view name,
-                             std::unique_ptr<Entity> entity,
-                             clock_id_t clock,
-                             std::optional<entity_id_t> parent = std::nullopt);
+      template <typename T, typename... Args>
+         requires std::is_base_of_v<Entity, T>
+      std::pair<entity_id_t, T&> add_entity(std::string_view name,
+                                            clock_id_t clock,
+                                            std::optional<entity_id_t> parent,
+                                            Args&&... args) {
+         auto entity_id = entity_id_t{static_cast<unsigned>(m_entities.size())};
+         m_entities.push_back(nullptr);
+         auto& entity = add_entity_impl(entity_id,
+                                        name,
+                                        std::move(std::make_unique<T>(
+                                              EntityConfig{
+                                                    .simulation = *this,
+                                                    .clock = m_clocks.at(clock.value),
+                                                    .clock_id = clock,
+                                                    .id = entity_id,
+                                                    // name is computed in the next step
+                                              },
+                                              std::forward<Args>(args)...)),
+                                        parent);
+         return {entity_id, static_cast<T&>(entity)};
+      }
+
+      void build();
 
       /// @brief Run the simulation for the specified number of cycles.
       void run(int cycles);
@@ -188,6 +194,10 @@ namespace framework {
 
    private:
       void run_one_tick();
+      Entity& add_entity_impl(entity_id_t entity_id,
+                              std::string_view name,
+                              std::unique_ptr<Entity> entity,
+                              std::optional<entity_id_t> parent);
 
       // A deque, not a vector: `EntityConfig` holds a `Clock const&` into this
       // container, so adding a clock must not invalidate existing references.
@@ -197,6 +207,7 @@ namespace framework {
       std::unordered_map<entity_id_t, entity_id_t, entity_id_t::hash> m_entity_tree{};
       std::unordered_map<std::string, entity_id_t> m_name_to_entity{};
       unsigned m_cycle_count{0};
+      bool built = false;
    };
 
    /**

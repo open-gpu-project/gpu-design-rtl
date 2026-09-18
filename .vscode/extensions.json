@@ -4,6 +4,8 @@
       "ms-vscode.cpptools",
       "pkief.material-icon-theme",
       "mshr-h.veriloghdl",
-      "kylinideteam.cmake-intellisence"
+      "kylinideteam.cmake-intellisence",
+      "llvm-vs-code-extensions.lldb-dap",
+      "matepek.vscode-catch2-test-adapter"
    ]
 }

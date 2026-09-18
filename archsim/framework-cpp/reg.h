@@ -1,6 +1,7 @@
 #pragma once
 
 #include "simulation.h"
+#include "tracer.h"
 
 namespace framework {
 
@@ -10,7 +11,7 @@ namespace framework {
    template <std::equality_comparable T>
    class Reg : public Entity {
    public:
-      explicit Reg(T initial_value) : m_value{initial_value} {}
+      explicit Reg(EntityConfig config, T initial_value) : Entity{config}, m_value{initial_value} {}
 
       /**
        * Assigns a value to the register that will take effect on the next clock tick.
@@ -19,6 +20,11 @@ namespace framework {
          m_detector.add_and_check_driver("reg_assign");
          m_next_value = value;
       }
+
+      /**
+       * Returns the current value of the register.
+       */
+      T const& value() const { return m_value; }
 
    protected:
       void on_tick(Simulation const& context) override {

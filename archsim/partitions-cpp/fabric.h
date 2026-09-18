@@ -42,13 +42,15 @@ namespace partitions::fabric {
 namespace partitions {
    class Fabric : public framework::Entity {
    public:
-      Fabric(fabric::AxiHpIfType&& axi_hp_if,
+      Fabric(framework::EntityConfig config,
+             fabric::AxiHpIfType&& axi_hp_if,
              fabric::TdsuIfType&& tdsu_if,
              fabric::UpqIfType&& upq_if,
              fabric::TcmMasterIfType&& tcm_master_if,
              fabric::TcmSlaveIfType&& tcm_slave_if,
              fabric::DpqArbIfType&& dpq_arb_if)
-            : m_axi_hp_if{std::move(axi_hp_if)},
+            : framework::Entity{config},
+              m_axi_hp_if{std::move(axi_hp_if)},
               m_tdsu_if{std::move(tdsu_if)},
               m_upq_if{std::move(upq_if)},
               m_tcm_master_if{std::move(tcm_master_if)},

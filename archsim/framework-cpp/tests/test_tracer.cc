@@ -33,7 +33,7 @@ namespace {
 
 } // namespace
 
-TEST_CASE("Tracer records and dumps value changes") {
+TEST_CASE("tracer: Tracer records and dumps value changes") {
    framework::Tracer<int> tracer{"sig"};
    tracer.on_value_change(0, 1);
    tracer.on_value_change(3, 2);
@@ -61,7 +61,7 @@ TEST_CASE("Tracer records and dumps value changes") {
    }
 }
 
-TEST_CASE("Tracer rejects decreasing ticks") {
+TEST_CASE("tracer: Tracer rejects decreasing ticks") {
    framework::Tracer<int> tracer{"sig"};
    tracer.on_value_change(7, 1);
 

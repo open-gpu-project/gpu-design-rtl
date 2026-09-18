@@ -14,7 +14,9 @@ namespace framework {
    template <typename T, size_t Size>
    class Fifo : public Entity {
    public:
-      Fifo() { static_assert(Size > 0, "Fifo size must be greater than 0"); }
+      Fifo(EntityConfig config) : Entity{config} {
+         static_assert(Size > 0, "Fifo size must be greater than 0");
+      }
 
       bool can_write() const { return !m_next_write_data.has_value() && m_count < Size; }
       bool can_read() const { return m_count > 0; }
