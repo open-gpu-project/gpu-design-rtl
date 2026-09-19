@@ -16,6 +16,7 @@ namespace framework {
    public:
       Fifo(EntityConfig config) : Entity{config} {
          static_assert(Size > 0, "Fifo size must be greater than 0");
+         on_reset();
       }
 
       bool can_write() const { return !m_next_write_data.has_value() && m_count < Size; }
@@ -41,7 +42,7 @@ namespace framework {
       }
 
    protected:
-      void on_tick(Simulation const&) override {
+      void on_tick() override {
          // Handle any reads pending
          if (m_next_read_staged) {
             m_read_index = (m_read_index + 1) % Size;
@@ -56,7 +57,16 @@ namespace framework {
          }
       }
 
-      void on_after_tick(Simulation const&) override {
+      void on_after_tick() override {
+         m_next_write_data.reset();
+         m_next_read_staged = false;
+         m_write_detector.reset();
+      }
+
+      void on_reset() override {
+         m_write_index = 0;
+         m_read_index = 0;
+         m_count = 0;
          m_next_write_data.reset();
          m_next_read_staged = false;
          m_write_detector.reset();

@@ -101,18 +101,11 @@ namespace framework::axi3 {
    };
 
    template <ChannelData T>
-   struct Channel : Entity {
+   struct Channel : Fifo<T, 2> {
    public:
       std::tuple<ChannelSource<T>, ChannelSink<T>> split() {
-         return {ChannelSource<T>(m_fifo), ChannelSink<T>(m_fifo)};
+         return {ChannelSource<T>(*this), ChannelSink<T>(*this)};
       }
-
-   protected:
-      void on_evaluate(Simulation const& sim) override { m_fifo.on_evaluate(sim); }
-      void on_tick(Simulation const& sim) override { m_fifo.on_tick(sim); }
-
-   private:
-      Fifo<T, 2> m_fifo{};
    };
 
    /**

@@ -7,9 +7,14 @@ add_library(
    ${CMAKE_CURRENT_LIST_DIR}/concepts.h
    ${CMAKE_CURRENT_LIST_DIR}/exceptions.h
    ${CMAKE_CURRENT_LIST_DIR}/fifo.h
+   ${CMAKE_CURRENT_LIST_DIR}/file_trace_sink.cc
+   ${CMAKE_CURRENT_LIST_DIR}/file_trace_sink.h
    ${CMAKE_CURRENT_LIST_DIR}/reg.h
    ${CMAKE_CURRENT_LIST_DIR}/simulation.cc
    ${CMAKE_CURRENT_LIST_DIR}/tracer.cc
+   ${CMAKE_CURRENT_LIST_DIR}/tracer.h
+   ${CMAKE_CURRENT_LIST_DIR}/tracer_codec.cc
+   ${CMAKE_CURRENT_LIST_DIR}/tracer_codec.h
 )
 
 # Create an alias for the library to be used by consumers
@@ -19,6 +24,7 @@ add_library(archsim::framework ALIAS framework-cpp)
 target_link_libraries(
    framework-cpp
    PUBLIC
+   glaze::glaze
    magic_enum::magic_enum
    cpptrace::cpptrace
    logpp::logpp

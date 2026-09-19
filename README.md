@@ -53,7 +53,7 @@ To add a package to the project:
 
 ## Setting up your C++ Environment
 
-1. Install Ninja and CMake. For CMake, try to install the latest version, you can grab the `.sh` install file for **Linux** here: https://cmake.org/download/ (and .msi for **Windows**). On **MacOS**, use brew.
+1. Install Ninja and CMake. For CMake, try to install the latest version, you can grab the `.sh` install file for **Linux** here: https://cmake.org/download/ (and .msi for **Windows**). On **MacOS**, use brew. **CMake 3.31 or newer is required**.
 2. Download and install LLVM-19. **On Linux**, this can be installed with the LLVM install script by running:
    ```bash
    wget https://apt.llvm.org/llvm.sh

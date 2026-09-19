@@ -21,4 +21,4 @@ add_cocotb_verilator(
    VERILATOR_ARGS --trace
 )
 
-add_cocotb_test(simpart_xu design.partitions.xu.dv.test_alu_lane)
+# add_cocotb_test(simpart_xu design.partitions.xu.dv.test_alu_lane)

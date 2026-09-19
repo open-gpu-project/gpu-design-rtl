@@ -49,5 +49,5 @@
    "cmake.ctest.neverDebugTestsWithLaunchConfiguration": false,
    "cmake.ctest.testSuiteDelimiter": ":",
    "cmake.ctest.testSuiteDelimiterMaxOccurrence": 1,
-   "cmake.ctest.testExplorerIntegrationEnabled": true,
+   "cmake.ctest.testExplorerIntegrationEnabled": false,
 }

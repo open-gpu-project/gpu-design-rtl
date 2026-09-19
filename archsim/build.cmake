@@ -16,6 +16,7 @@ find_package(Catch2 CONFIG REQUIRED)
 #    ${CMAKE_CURRENT_LIST_DIR}/third-party/imgui/backends/
 # )
 
+include(${CMAKE_CURRENT_LIST_DIR}/third-party/glaze.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/third-party/logpp.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/framework-cpp/build.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/partitions-cpp/build.cmake)

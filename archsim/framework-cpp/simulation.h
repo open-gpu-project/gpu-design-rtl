@@ -14,6 +14,8 @@ namespace framework {
 
    class Simulation;
    class Entity;
+   class TracerBase;
+   class TraceSink;
 
    /**
     * Represents a clock signal in the simulation. See also `Simulation::add_clock()`.
@@ -104,7 +106,7 @@ namespace framework {
        * `on_tick()` is called on the clock edge. Ordering of evaluation
        * relative to other entities is not guaranteed.
        */
-      virtual void on_evaluate(Simulation const&) {}
+      virtual void on_evaluate() {}
 
       /**
        * Called on the rising edge of the clock. This is when any staged updates
@@ -113,20 +115,20 @@ namespace framework {
        *
        * Ordering of tick updates relative to other entities is not guaranteed.
        */
-      virtual void on_tick(Simulation const&) {}
+      virtual void on_tick() {}
 
       /**
        * Called to reset the tick state after `on_tick()` is called. Any staged
        * updates or assignments should be cleared.
        */
-      virtual void on_after_tick(Simulation const&) {}
+      virtual void on_after_tick() {}
 
       /**
        * Called when the simulation is reset. Any state should be restored to its
        * initial value. The simulation's tick count and clocks are already reset
        * by the time this is called.
        */
-      virtual void on_reset(Simulation const&) {}
+      virtual void on_reset() {}
 
    private:
       EntityConfig m_config;
@@ -138,6 +140,8 @@ namespace framework {
     */
    class Simulation {
    public:
+      explicit Simulation(TraceSink* sink = nullptr) : m_sink(sink) {}
+
       Clock& get_clock(clock_id_t id) { return m_clocks.at(id.value); }
       Clock const& get_clock(clock_id_t id) const { return m_clocks.at(id.value); }
 
@@ -175,13 +179,20 @@ namespace framework {
          return {entity_id, static_cast<T&>(entity)};
       }
 
+      /// @brief Builds the simulation, preparing it for execution.
       void build();
+
+      /// @brief Registers a tracer with the simulation.
+      void register_tracer(TracerBase& tracer);
 
       /// @brief Run the simulation for the specified number of cycles.
       void run(int cycles);
 
       /// @brief Reset the simulation to its initial state.
       void reset();
+
+      /// @brief Stops the simulation.
+      void stop();
 
       /// @brief Gets the current simulation tick count
       auto current_tick() const { return m_cycle_count; }
@@ -194,6 +205,8 @@ namespace framework {
 
    private:
       void run_one_tick();
+
+   private:
       Entity& add_entity_impl(entity_id_t entity_id,
                               std::string_view name,
                               std::unique_ptr<Entity> entity,
@@ -206,8 +219,10 @@ namespace framework {
       std::unordered_map<entity_id_t, std::string, entity_id_t::hash> m_entity_names{};
       std::unordered_map<entity_id_t, entity_id_t, entity_id_t::hash> m_entity_tree{};
       std::unordered_map<std::string, entity_id_t> m_name_to_entity{};
+      std::vector<TracerBase*> m_tracers{};
       unsigned m_cycle_count{0};
       bool built = false;
+      TraceSink* m_sink = nullptr;
    };
 
    /**

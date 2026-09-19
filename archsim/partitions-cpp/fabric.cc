@@ -2,10 +2,10 @@
 
 using namespace partitions;
 
-void Fabric::on_evaluate(framework::Simulation const&) {
+void Fabric::on_evaluate() {
    // ...
 }
 
-void Fabric::on_tick(framework::Simulation const&) {
+void Fabric::on_tick() {
    // Implement the tick behavior for the Fabric entity here
 }

@@ -77,14 +77,14 @@ namespace {
          return std::ranges::count(m_events, kind, &Event::kind);
       }
 
-      void on_evaluate(Simulation const& sim) override { record(Event::Kind::Evaluate, sim); }
-      void on_tick(Simulation const& sim) override { record(Event::Kind::Tick, sim); }
-      void on_after_tick(Simulation const& sim) override { record(Event::Kind::AfterTick, sim); }
-      void on_reset(Simulation const& sim) override { record(Event::Kind::Reset, sim); }
+      void on_evaluate() override { record(Event::Kind::Evaluate); }
+      void on_tick() override { record(Event::Kind::Tick); }
+      void on_after_tick() override { record(Event::Kind::AfterTick); }
+      void on_reset() override { record(Event::Kind::Reset); }
 
    private:
-      void record(Event::Kind kind, Simulation const& sim) {
-         m_events.push_back(Event{kind, sim.current_tick()});
+      void record(Event::Kind kind) {
+         m_events.push_back(Event{kind, config().simulation.current_tick()});
          if (m_log != nullptr) {
             m_log->push_back(m_tag + ":" + std::string{kind_name(kind)});
          }
@@ -106,8 +106,8 @@ namespace {
       /// @brief Stops the entity throwing, so an aborted run can be resumed.
       void disarm() { m_throw_on_tick = 0; } // tick 0 never occurs
 
-      void on_evaluate(Simulation const& sim) override {
-         if (sim.current_tick() != m_throw_on_tick) {
+      void on_evaluate() override {
+         if (config().simulation.current_tick() != m_throw_on_tick) {
             return;
          }
          if (m_what == What::Simulation) {

@@ -65,8 +65,8 @@ namespace partitions {
       auto dpq_arb_if() { return fabric::to_ref_tuple(m_dpq_arb_if); }
 
    protected:
-      void on_evaluate(framework::Simulation const&) override;
-      void on_tick(framework::Simulation const&) override;
+      void on_evaluate() override;
+      void on_tick() override;
 
    private:
       fabric::AxiHpIfType m_axi_hp_if;

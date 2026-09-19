@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "exceptions.h"
+#include "tracer.h"
 
 using namespace framework;
 
@@ -46,12 +47,12 @@ Entity& Simulation::add_entity_impl(entity_id_t entity_id,
 }
 
 void Simulation::build() {
-   if(built) return;
+   if (built) return;
    // Build name_to_entity mapping for all entities
    m_name_to_entity.clear();
    for (const auto& [entity_id, name] : m_entity_names) {
       auto full_name = get_entity_full_name(entity_id);
-      if(m_name_to_entity.find(full_name) != m_name_to_entity.end()) {
+      if (m_name_to_entity.find(full_name) != m_name_to_entity.end()) {
          throw GenericSimulationException("Duplicate entity path",
                                           std::pair{"entity_path", full_name});
       }
@@ -59,7 +60,24 @@ void Simulation::build() {
       entity->m_config.name = full_name;
       m_name_to_entity.insert_or_assign(full_name, entity_id);
    }
+   // We can now initialize the tracer
+   if (m_sink) {
+      for (auto* tracer : m_tracers) {
+         tracer->initialize(m_sink);
+      }
+      m_sink->commit_header();
+   } else if (!m_tracers.empty()) {
+      logpp::warn("Simulation has tracers but no sink, so nothing will be recorded",
+                  logpp::field("tracers", static_cast<uint64_t>(m_tracers.size())));
+   }
    built = true;
+}
+
+void Simulation::register_tracer(TracerBase& tracer) {
+   if (built) {
+      throw GenericSimulationException("Cannot register a tracer after the simulation is built");
+   }
+   m_tracers.push_back(&tracer);
 }
 
 void Simulation::run(int cycles) {
@@ -78,6 +96,10 @@ void Simulation::run_one_tick() {
    // Tick the context
    m_cycle_count++;
 
+   if (m_sink) {
+      m_sink->write_tick(m_cycle_count);
+   }
+
    // Tick all the clocks
    for (auto& clock : m_clocks) {
       clock.tick();
@@ -85,15 +107,15 @@ void Simulation::run_one_tick() {
 
    // Evaluate all entities' combinational logic
    for (auto& entity : m_entities) {
-      entity->on_evaluate(*this);
+      entity->on_evaluate();
    }
 
    // Commit all registered writes on this clock edge
    for (auto& entity : m_entities) {
       if (entity->config().clock.rising_edge()) {
-         entity->on_tick(*this);
+         entity->on_tick();
       }
-      entity->on_after_tick(*this);
+      entity->on_after_tick();
    }
 }
 
@@ -102,11 +124,20 @@ void Simulation::reset() {
    for (auto& clock : m_clocks) {
       clock.reset();
    }
+   for (auto* tracer : m_tracers) {
+      tracer->reset();
+   }
 
    // Reset entities last, so they observe a tick count of zero. Registration
    // (names and hierarchy) deliberately survives a reset.
    for (auto& entity : m_entities) {
-      entity->on_reset(*this);
+      entity->on_reset();
+   }
+}
+
+void Simulation::stop() {
+   if (m_sink) {
+      m_sink->commit_file_end();
    }
 }
 
