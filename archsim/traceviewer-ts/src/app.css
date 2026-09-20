@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-surface: #0f1115;
+  --color-panel: #161a22;
+  --color-panel-border: #262c38;
+  --color-ink: #dbe3ef;
+  --color-ink-dim: #8a94a6;
+  --color-accent: #60a5fa;
+}
+
+/* No scrollbars anywhere: the canvas is driven by a virtual camera, and the page never scrolls. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+#app {
+  height: 100%;
+}

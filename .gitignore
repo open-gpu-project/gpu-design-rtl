@@ -19,3 +19,6 @@ Testing/
 # CocoTB test results
 results.xml
 *.vcd
+
+# Node
+node_modules/
