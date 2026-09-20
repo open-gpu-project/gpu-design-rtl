@@ -58,7 +58,7 @@ TEST_CASE("reg: Use in a shift chain") {
    sim.run(1);
 
    SECTION("assign on each cycle") {
-      for (int i = 0; i < 4; ++i) {
+      for (size_t i = 0; i < 4; ++i) {
          dut.dump();
 
          // Step the simulation by one clock cycle and check the state
@@ -73,7 +73,7 @@ TEST_CASE("reg: Use in a shift chain") {
    }
 
    SECTION("do not assign on each cycle") {
-      for (int i = 0; i < 4; ++i) {
+      for (size_t i = 0; i < 4; ++i) {
          dut.dump();
 
          // Step the simulation by one clock cycle and check the state

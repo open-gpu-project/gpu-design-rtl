@@ -173,6 +173,7 @@ namespace framework {
                                                     .clock_id = clock,
                                                     .id = entity_id,
                                                     // name is computed in the next step
+                                                    .name = {},
                                               },
                                               std::forward<Args>(args)...)),
                                         parent);
@@ -252,7 +253,7 @@ namespace framework {
 
    private:
       std::optional<cpptrace::stacktrace> m_caller{};
-      Entity& m_owner;
+      [[maybe_unused]] Entity& m_owner;
    };
 
 } // namespace framework

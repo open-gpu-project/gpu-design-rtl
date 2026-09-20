@@ -19,5 +19,8 @@ target_link_libraries(
    Catch2::Catch2WithMain
 )
 
+# Enable first-party warnings
+archsim_enable_warnings(framework-cpp-tests)
+
 # Register each TEST_CASE with ctest
 catch_discover_tests(framework-cpp-tests)

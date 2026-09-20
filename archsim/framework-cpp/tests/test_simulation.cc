@@ -368,7 +368,7 @@ TEST_CASE("simulation: A duplicate entity path is rejected") {
    auto clk = sim.add_clock("clk");
 
    auto root = add_test_entity(sim, "root", clk).id;
-   auto child = add_test_entity(sim, "child", clk, root).id;
+   add_test_entity(sim, "child", clk, root);
    sim.add_entity<TestEntity>("child", clk, root);
 
    // add_entity<T> constructs the entity before it validates the path, so the

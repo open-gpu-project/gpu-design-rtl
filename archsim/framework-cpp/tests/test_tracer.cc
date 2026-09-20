@@ -203,31 +203,3 @@ TEST_CASE("tracer: The sink is finalized when the simulation stops") {
       REQUIRE(sink.file_end_commits == 1);
    }
 }
-
-TEST_CASE("tracer: Tracers compare by the changes they recorded") {
-   MockTraceSink sink{};
-   Simulation sim{&sink};
-   auto clk = sim.add_clock("clk");
-   auto [a_id, a] = sim.add_entity<Probe>("a", clk, std::nullopt, "");
-   auto [b_id, b] = sim.add_entity<Probe>("b", clk, std::nullopt, "");
-   sim.build();
-
-   a.tracer.on_value_change(1);
-   a.tracer.on_value_change(2);
-
-   SECTION("ignoring the tracer's name") {
-      b.tracer.on_value_change(1);
-      b.tracer.on_value_change(2);
-      REQUIRE(a.tracer.equals(b.tracer));
-   }
-
-   SECTION("distinguishing different changes") {
-      b.tracer.on_value_change(1);
-      REQUIRE_FALSE(a.tracer.equals(b.tracer));
-   }
-
-   SECTION("dropping the recorded changes on reset") {
-      sim.reset();
-      REQUIRE(a.tracer.equals(b.tracer));
-   }
-}

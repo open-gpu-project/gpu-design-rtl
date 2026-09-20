@@ -83,7 +83,7 @@ namespace framework::axi3 {
       void write(T data) { m_fifo.write(data); }
 
    private:
-      friend class Channel<T>;
+      friend struct Channel<T>;
       ChannelSource(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
       Fifo<T, 2>& m_fifo;
    };
@@ -95,7 +95,7 @@ namespace framework::axi3 {
       T read() { return m_fifo.read(); }
 
    private:
-      friend class Channel<T>;
+      friend struct Channel<T>;
       ChannelSink(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
       Fifo<T, 2>& m_fifo;
    };

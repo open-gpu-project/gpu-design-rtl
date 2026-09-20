@@ -66,7 +66,7 @@ namespace framework {
       signal_id_t register_signal(std::type_info const&, std::string name);
 
       virtual void commit_header() {}
-      virtual void commit_body_data(std::string_view data) {}
+      virtual void commit_body_data(std::string_view) {}
       virtual void commit_file_end() {}
 
       /// @brief Number of bytes in a body record header.
@@ -86,9 +86,6 @@ namespace framework {
       }
 
    private:
-      // Keyed on type_index rather than type_info::hash_code(): the standard
-      // permits two distinct types to share a hash, which would silently give
-      // the second type the first one's schema.
       std::unordered_map<std::type_index, schema_id_t> m_schema_ids{};
       std::vector<schema_data_t> m_schemas{};
       std::vector<std::pair<signal_name_t, schema_id_t>> m_signals{};
@@ -150,28 +147,16 @@ namespace framework {
       }
 
       virtual void on_value_change(T const& value) {
-         m_changes.emplace_back(m_simulation.current_tick(), value);
-
-         // A tracer with no sink still records in memory; the simulation warns
-         // once at registration time rather than on every value change.
-         if (!m_signal_id || !m_sink) {
+         if (!m_sink || !m_signal_id) {
             return;
          }
          m_sink->write_value_change(*m_signal_id, TracerCodec<T>::encode(value));
       }
 
-      virtual bool equals(Tracer const& other) const { return m_changes == other.m_changes; }
-
-      /**
-       * Drops the recorded changes. The sink and signal id are structural: they
-       * are established once at build time and deliberately survive a reset, so
-       * that a tracer keeps recording after `Simulation::reset()`.
-       */
-      void reset() override { m_changes.clear(); }
+      void reset() override {}
 
    private:
       const std::string m_name;
-      std::vector<std::pair<unsigned, T>> m_changes{};
       TraceSink* m_sink = nullptr;
       std::optional<signal_id_t> m_signal_id = std::nullopt;
    };

@@ -10,3 +10,6 @@ target_link_libraries(
    PUBLIC
    archsim::framework
 )
+
+# Enable first-party warnings
+archsim_enable_warnings(partitions-cpp)

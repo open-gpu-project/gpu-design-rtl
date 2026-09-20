@@ -39,7 +39,11 @@ set(PROJECT_VERSION_MAJOR 0)
 # stay inside the add_subdirectory() below rather than being hoisted up here.
 list(APPEND CMAKE_MODULE_PATH ${LOGPP_SOURCE_DIR}/cmake)
 
-add_subdirectory(${LOGPP_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/archsim/third-party/logpp)
+# SYSTEM marks logpp's interface include directories -- its include/ tree and the generated
+# export header under ${CMAKE_BINARY_DIR}/include -- as -isystem for consumers, so warnings from
+# logpp headers are not attributed to the first-party translation units that include them.
+add_subdirectory(${LOGPP_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/archsim/third-party/logpp SYSTEM)
 
-# Upstream forces `-pipe -march=native` on Clang/GCC, which defeats reproducible builds
-set_property(TARGET logpp PROPERTY COMPILE_OPTIONS "")
+# Upstream forces `-pipe -march=native` on Clang/GCC, which defeats reproducible builds. Replace
+# the whole option list with -w; logpp's own sources are not ours to fix.
+set_property(TARGET logpp PROPERTY COMPILE_OPTIONS "-w")

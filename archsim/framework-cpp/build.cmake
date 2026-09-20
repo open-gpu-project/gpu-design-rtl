@@ -44,5 +44,8 @@ target_compile_features(
    cxx_std_23
 )
 
+# Enable first-party warnings
+archsim_enable_warnings(framework-cpp)
+
 # Include the test directory
 include(${CMAKE_CURRENT_LIST_DIR}/tests/build.cmake)
