@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'svelte-jsoneditor/themes/jse-theme-dark.css';
 
 @theme {
   --color-surface: #0f1115;
@@ -27,4 +28,60 @@ body {
 
 #app {
   height: 100%;
+}
+
+/*
+  svgrid gives every dock pane `overflow: auto`, which would put a scrollbar around the canvas
+  and break the rule above. Its rule is scoped (specificity 0,2,0), so a `:global()` override
+  would lose -- the `#app` prefix is what wins, without reaching for `!important`. Panels that
+  need to scroll do it inside their own content.
+*/
+#app .sv-dock__content {
+  overflow: hidden;
+}
+
+/*
+  ...and the consequence of that: svelte-jsoneditor renders its context menu into an
+  `.jse-absolute-popup` sibling of the editor, positioned `absolute` inside the panel. Three
+  nested `overflow: hidden` ancestors (the rule above, plus svgrid's own `.sv-dock__leaf` and
+  `.sv-dock__cell`) then shear off whatever falls outside the pane -- and since the menu is
+  wider than a docked side panel, it flips to open leftwards and most of it lands on the canvas
+  side of the boundary.
+
+  Making the popup root `fixed` at the viewport origin takes it out of every one of those clip
+  rects, because a fixed box is only clipped by ancestors in its containing-block chain and its
+  chain now ends at the viewport. The coordinates come out unchanged for free: the library
+  positions the menu at `top - rootRect.top` / `left - rootRect.left`, and pinning the root to
+  0,0 makes those offsets viewport coordinates, which is what they were derived from.
+
+  Specificity, as above: the library's rule is Svelte-scoped (0,2,0), so `#app` is what wins.
+  Relies on no ancestor establishing a containing block for fixed positioning -- svgrid's only
+  `transform` is on `.sv-dock__guide`, a drag overlay that is never a parent of pane content.
+*/
+#app .jse-absolute-popup {
+  position: fixed;
+}
+
+/*
+  The property editor's tree has no per-node read-only mode, so computed and fixed properties
+  are only *marked* here. `applyDocument` is what actually refuses to write them.
+*/
+.archsim-readonly {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Pull the editor's dark theme onto the app's palette rather than its default VS Code greys. */
+.jse-theme-dark {
+  --jse-theme-color: var(--color-accent);
+  --jse-theme-color-highlight: var(--color-accent);
+  --jse-background-color: var(--color-panel);
+  --jse-text-color: var(--color-ink);
+  --jse-main-border: none;
+  --jse-panel-background: var(--color-panel);
+  --jse-panel-border: 1px solid var(--color-panel-border);
+  --jse-key-color: var(--color-ink-dim);
+  --jse-delimiter-color: var(--color-ink-dim);
+  --jse-font-size: 12px;
+  --jse-font-size-mono: 12px;
 }

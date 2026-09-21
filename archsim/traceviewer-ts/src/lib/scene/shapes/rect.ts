@@ -4,20 +4,27 @@ import { normalizeRect, pointInRect, rectFromPoints } from '../../geom/math';
 import type { Anchor, Rect, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
-import type { RectShape, SerializedShape, ShapeOps } from '../shape';
+import type { RectShape, ShapeName, ShapeOps } from '../shape';
+import { rectProps } from './rect.props';
 
 /** Mid-drag a rect may carry negative w/h (the user flipped it). Everything reads through this. */
 function box(s: RectShape): Rect {
   return normalizeRect({ x: s.x, y: s.y, w: s.w, h: s.h });
 }
 
-export function makeRect(a: Vec2, b: Vec2, name: string): RectShape {
+export function makeRect(a: Vec2, b: Vec2, name: ShapeName): RectShape {
   const r = rectFromPoints(a, b);
-  return { id: crypto.randomUUID(), kind: 'rect', name, x: r.x, y: r.y, w: r.w, h: r.h };
+  return { kind: 'rect', name, label: '', description: '', x: r.x, y: r.y, w: r.w, h: r.h };
 }
 
 export const rectOps: ShapeOps<RectShape> = {
   kind: 'rect',
+  props: rectProps,
+
+  /** One grid cell at the origin. An import overwrites whatever it carries onto this. */
+  blank(name) {
+    return { kind: 'rect', name, label: '', description: '', x: 0, y: 0, w: GRID, h: GRID };
+  },
 
   bounds: box,
 
@@ -155,7 +162,9 @@ export const rectOps: ShapeOps<RectShape> = {
       ctx.font = `${Math.round(12 * dc.dpr)}px ui-sans-serif, system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(s.name, (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0 - 8 * dc.dpr);
+      // The label is what the diagram is *about*; the name is the identifier behind it.
+      const text = s.label !== '' ? s.label : s.name;
+      ctx.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0 - 8 * dc.dpr);
     }
     restore();
   },
@@ -171,22 +180,6 @@ export const rectOps: ShapeOps<RectShape> = {
       { id: 's', pos: { x: cx, y: r.y + r.h }, normal: { x: 0, y: 1 } },
       { id: 'w', pos: { x: r.x, y: cy }, normal: { x: -1, y: 0 } },
     ];
-  },
-
-  serialize(s): SerializedShape {
-    return { id: s.id, kind: 'rect', name: s.name, x: s.x, y: s.y, w: s.w, h: s.h };
-  },
-
-  deserialize(data): RectShape {
-    return {
-      id: typeof data['id'] === 'string' ? data['id'] : crypto.randomUUID(),
-      kind: 'rect',
-      name: typeof data['name'] === 'string' ? data['name'] : 'Block',
-      x: Number(data['x']) || 0,
-      y: Number(data['y']) || 0,
-      w: Number(data['w']) || 0,
-      h: Number(data['h']) || 0,
-    };
   },
 };
 

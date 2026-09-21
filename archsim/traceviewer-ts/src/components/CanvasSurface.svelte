@@ -119,8 +119,8 @@
       canvasEl.removeEventListener('gesturestart', onGestureStart);
       canvasEl.removeEventListener('gesturechange', onGestureChange);
       canvasEl.removeEventListener('gestureend', onGestureEnd);
-      host.detach();
-      view.detach();
+      host.detach(canvasEl);
+      view.detach(canvasEl);
       renderer.dispose();
     };
   });

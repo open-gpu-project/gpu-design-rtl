@@ -1,4 +1,6 @@
-import type { SerializedShape, Shape, ShapeBase, ShapeOps } from './shape';
+import { hydrateShape } from '../props/project';
+import type { PropContext, PropertyBag } from '../props/spec';
+import type { Shape, ShapeBase, ShapeName, ShapeOps } from './shape';
 
 const registry = new Map<string, ShapeOps<never>>();
 
@@ -25,10 +27,28 @@ export function opsFor(s: Shape): ShapeOps<Shape> {
   return opsForKind(s.kind);
 }
 
+/** Non-throwing lookup, for data that came from a file rather than from this build. */
+export function tryOpsForKind(kind: unknown): ShapeOps<Shape> | null {
+  if (typeof kind !== 'string') return null;
+  return (registry.get(kind) as unknown as ShapeOps<Shape> | undefined) ?? null;
+}
+
 export function registryHasDependencies(): boolean {
   return anyDependent;
 }
 
-export function deserializeShape(data: SerializedShape): Shape {
-  return opsForKind(data.kind).deserialize(data);
+/**
+ * Rebuild one shape from a file record under a caller-chosen name.
+ *
+ * The name is a parameter rather than read from `bag` because identity is the name: only the
+ * caller loading the whole document can see the other names and resolve a collision.
+ */
+export function deserializeShape(
+  bag: PropertyBag,
+  name: ShapeName,
+  ctx: PropContext,
+): Shape | null {
+  const ops = tryOpsForKind(bag['kind']);
+  if (ops === null) return null;
+  return hydrateShape(ops.props, ops.blank(name), bag, ctx);
 }

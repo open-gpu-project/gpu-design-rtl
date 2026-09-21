@@ -3,19 +3,24 @@ import type { ViewController } from '../canvas/view.svelte';
 import { WheelController } from '../canvas/wheel';
 import type { Vec2 } from '../geom/types';
 import type { SceneStore } from '../scene/scene.svelte';
-import type { DrawContext, Shape, ShapeId } from '../scene/shape';
+import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { bringForward, bringToFront, sendBackward, sendToBack } from '../scene/zorder';
 import { buildPointerInfo } from './pointer';
 import { allTools, toolDescriptor } from './registry';
 import type { PointerInfo, Tool, ToolContext, ToolId } from './tool';
 
+/**
+ * Walks ancestors, not just the immediate target: the property editor focuses wrapper divs and
+ * the caret often sits in a child of the contenteditable, so an exact-target test misses both.
+ */
 function isEditableTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
-  const tag = t.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+  return (
+    t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !== null
+  );
 }
 
-type Restack = (shapes: readonly Shape[], ids: ReadonlySet<ShapeId>) => readonly Shape[];
+type Restack = (shapes: readonly Shape[], ids: ReadonlySet<ShapeName>) => readonly Shape[];
 
 /**
  * Translates DOM events into tool calls, and owns the two things that must work regardless of
@@ -27,6 +32,16 @@ export class ToolHost {
   hint = $state('');
   /** Bumped when a tool's internal state changes in a way the scene signals do not cover. */
   overlayVersion = $state(0);
+  /**
+   * Bumped whenever a pointer gesture ends, however it ended.
+   *
+   * Anything that defers work while `isGesturing()` is true needs a signal telling it to look
+   * again, and the scene alone is not that signal: a click that only changes the selection
+   * starts a move-drag, is refused by the deferral, and then commits nothing -- so the waiter
+   * would never wake. `isGesturing` is deliberately plain state (a filter, not a dependency),
+   * which is exactly why this counter has to exist separately.
+   */
+  gestureVersion = $state(0);
   /** Live cursor readout for the status bar. */
   pointer = $state.raw<{ readonly world: Vec2; readonly snapped: Vec2 } | null>(null);
 
@@ -45,6 +60,11 @@ export class ToolHost {
     private readonly scene: SceneStore,
     private readonly view: ViewController,
     private readonly invalidate: () => void,
+    /**
+     * Whether the diagram panel currently owns the keyboard. Defaults to always, so a lone
+     * canvas behaves exactly as it did before docking existed.
+     */
+    private readonly acceptsKeys: () => boolean = () => true,
   ) {
     this.#ctx = {
       scene,
@@ -87,7 +107,9 @@ export class ToolHost {
     this.refreshRect();
   }
 
-  detach(): void {
+  /** Identity-guarded for the same reason as `ViewController.detach`. */
+  detach(canvas: HTMLCanvasElement): void {
+    if (this.#canvas !== canvas) return;
     this.#canvas = null;
     this.#stage = null;
     this.wheel.dispose();
@@ -154,17 +176,23 @@ export class ToolHost {
     if (this.#canvas?.hasPointerCapture(e.pointerId) === true) {
       this.#canvas.releasePointerCapture(e.pointerId);
     }
-    if (this.#pan !== null) {
-      this.#endPan();
-      return;
+    try {
+      if (this.#pan !== null) {
+        this.#endPan();
+        return;
+      }
+      this.#tool.onPointerUp?.(p, this.#ctx);
+    } finally {
+      // After the tool has cleared its drag, so a reader sees `isGesturing() === false`.
+      this.gestureVersion += 1;
     }
-    this.#tool.onPointerUp?.(p, this.#ctx);
   }
 
   onPointerCancel(): void {
     this.#pan = null;
     this.#tool.onPointerCancel?.(this.#ctx);
     this.cursor = this.#tool.defaultCursor;
+    this.gestureVersion += 1;
     this.invalidate();
   }
 
@@ -191,6 +219,11 @@ export class ToolHost {
   /* ------------------------------------------------------------------ keyboard ---- */
 
   onKeyDown(e: KeyboardEvent): void {
+    // Three independent filters, because each one alone has a hole: `acceptsKeys` misses a panel
+    // the user drives without ever focusing it, `defaultPrevented` misses keys a widget consumes
+    // without preventing, and `isEditableTarget` misses the tabindex divs the JSON tree focuses.
+    if (!this.acceptsKeys()) return;
+    if (e.defaultPrevented) return;
     if (isEditableTarget(e.target)) return;
 
     if (e.code === 'Space' && !e.repeat) {
@@ -219,6 +252,7 @@ export class ToolHost {
     this.#pan = null;
     this.#tool.onPointerCancel?.(this.#ctx);
     this.cursor = this.#tool.defaultCursor;
+    this.gestureVersion += 1;
     this.invalidate();
   }
 
@@ -244,14 +278,14 @@ export class ToolHost {
     const ids = this.scene.selection;
     if (ids.size === 0) return;
     this.scene.commit('delete', () => {
-      this.scene.shapes = this.scene.shapes.filter((s) => !ids.has(s.id));
+      this.scene.shapes = this.scene.shapes.filter((s) => !ids.has(s.name));
       this.scene.setSelection(new Set());
     });
     this.invalidate();
   }
 
   selectAll(): void {
-    this.scene.setSelection(new Set(this.scene.shapes.map((s) => s.id)));
+    this.scene.setSelection(new Set(this.scene.shapes.map((s) => s.name)));
     this.invalidate();
   }
 

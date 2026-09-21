@@ -9,4 +9,6 @@ export default defineConfig({
   base: './',
   build: { target: 'es2022', sourcemap: true },
   server: { port: 5183, strictPort: true },
+  // 4183 because `verify/production.mjs` and the docs both name it; vite's own default is 4173.
+  preview: { port: 4183, strictPort: true },
 });

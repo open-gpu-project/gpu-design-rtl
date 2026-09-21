@@ -10,13 +10,15 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "check:watch": "svelte-check --tsconfig ./tsconfig.app.json --watch",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "verify": "node verify/properties.mjs && node verify/docking.mjs && node verify/trace.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "playwright": "^1.63.0",
     "prettier": "^3.9.8",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
@@ -28,5 +30,9 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@svgrid/grid": "^3.0.5",
+    "svelte-jsoneditor": "^3.13.0"
   }
 }

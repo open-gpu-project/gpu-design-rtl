@@ -2,40 +2,11 @@
   import CanvasSurface from '../components/CanvasSurface.svelte';
   import StatusBar from '../components/StatusBar.svelte';
   import Toolbar from '../components/Toolbar.svelte';
-  import { Renderer } from '../lib/canvas/renderer';
-  import { darkTheme } from '../lib/canvas/theme';
-  import { ViewController } from '../lib/canvas/view.svelte';
-  import '../lib/register';
-  import { computeWorldBounds } from '../lib/scene/bounds';
-  import { SceneStore } from '../lib/scene/scene.svelte';
-  import { serializeScene } from '../lib/scene/serialize';
-  import { ToolHost } from '../lib/tools/host.svelte';
+  import { useSession } from '../lib/session.svelte';
 
-  const scene = new SceneStore();
-  const view = new ViewController();
-
-  // `renderer` is only read from inside these closures, which run well after both are built.
-  const host = new ToolHost(scene, view, () => renderer.requestFrame());
-  const renderer = new Renderer(view, darkTheme, () => ({
-    shapes: scene.shapes,
-    selection: scene.selection,
-    draft: scene.draft,
-    overlay: (dc) => host.drawOverlay(dc),
-  }));
-
-  // Synchronous, not an `$effect`: an effect would let the browser paint one frame with the
-  // world already changed but the camera not yet re-clamped.
-  scene.onCommit = () => {
-    view.setWorld(computeWorldBounds(scene.contentBounds));
-  };
-
-  if (import.meta.env.DEV) {
-    Object.assign(window, {
-      __scene: scene,
-      __view: view,
-      __dump: () => serializeScene(scene.shapes),
-    });
-  }
+  // A pure view over the shared session. Owning none of it is what lets this be re-mounted by
+  // the dock (maximize, float, tab switch) without the diagram going with it.
+  const { scene, view, host, renderer } = useSession();
 </script>
 
 <!-- Self-contained and sized by its container, so this drops into a pane when the tab strip

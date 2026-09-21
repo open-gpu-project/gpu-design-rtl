@@ -1,13 +1,23 @@
+import type { PropSchema } from '../props/spec';
 import type { Theme } from '../canvas/theme';
 import type { Anchor, Modifiers, Rect, Vec2 } from '../geom/types';
 
-export type ShapeId = string;
+/**
+ * A shape's identity **is** its name. There is no separate opaque id.
+ *
+ * That is a deliberate product decision: the diagram is of named hardware entities and is meant
+ * to be queried by those names later, so a UUID would just be a second identifier nobody wants
+ * to type. The cost is that renaming is a structural operation -- see `SceneStore.renameShape`
+ * and the `renameRef` seam below.
+ */
+export type ShapeName = string;
 
 export interface ShapeBase {
-  readonly id: ShapeId;
   readonly kind: string;
-  /** The diagram is of named hardware entities; a future layers panel and inspector show this. */
-  readonly name: string;
+  /** The identity. Unique scene-wide, never empty. */
+  readonly name: ShapeName;
+  /** Text drawn on the shape. Cosmetic and may be empty, in which case `name` is drawn. */
+  readonly label: string;
 }
 
 /** A block in the architecture diagram. The only entity kind so far. */
@@ -17,6 +27,8 @@ export interface RectShape extends ShapeBase {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  /** Free-text note on what this hardware block is. Never rendered on the canvas. */
+  readonly description: string;
 }
 
 /** Widen as kinds are added: `| ConnectionShape | PortShape | LabelShape`. */
@@ -75,12 +87,6 @@ export interface RenderFlags {
   readonly ghost: boolean;
 }
 
-export interface SerializedShape {
-  readonly id: ShapeId;
-  readonly kind: string;
-  readonly [key: string]: unknown;
-}
-
 /**
  * Per-kind operations. Every method is pure: it must not mutate `s`, leave canvas state behind,
  * or read anything global. That is what makes undo a matter of swapping array references.
@@ -107,16 +113,37 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
   /** Canonicalise. Return null when the result is degenerate and should be dropped. */
   normalize(s: S): S | null;
 
-  serialize(s: S): SerializedShape;
-  deserialize(data: SerializedShape): S;
+  /* ------------------------------------------------------------------- properties ---- */
+
+  /**
+   * The property declaration for this kind. One source for four consumers: the property
+   * panel's document, the generated JSON Schema ajv validates against, the footer
+   * documentation, and the on-disk record. `serialize` is derived from it, not written.
+   */
+  readonly props: PropSchema<S>;
+
+  /**
+   * A default instance under the given name, for an import to be applied onto. Keeping this
+   * per-kind is what lets `deserializeShape` stay generic.
+   */
+  blank(name: ShapeName): S;
 
   /* -------- seams for connections: designed now, unimplemented this revision -------- */
 
+  /**
+   * Rewrite references to a shape that was just renamed. A connection updates its endpoints.
+   *
+   * Required because identity is the name: without this, renaming a block would silently
+   * orphan everything pointing at it, and adding connections would become a breaking change
+   * to every mutation path instead of an additive one.
+   */
+  renameRef?(s: S, from: ShapeName, to: ShapeName): S;
+
   /** Ids whose geometry this shape depends on. A connection returns its two endpoints. */
-  dependsOn?(s: S): readonly ShapeId[];
+  dependsOn?(s: S): readonly ShapeName[];
 
   /** Re-derive geometry after a dependency moved. Called for every dependent on commit. */
-  reroute?(s: S, deps: ReadonlyMap<ShapeId, Shape>): S;
+  reroute?(s: S, deps: ReadonlyMap<ShapeName, Shape>): S;
 
   /** Points a connection may terminate on. A block exposes its edge midpoints. */
   anchors?(s: S): readonly Anchor[];

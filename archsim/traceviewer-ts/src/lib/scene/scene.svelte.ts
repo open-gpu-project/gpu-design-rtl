@@ -1,10 +1,11 @@
 import type { Rect } from '../geom/types';
 import { unionBounds } from './bounds';
 import { History } from './history.svelte';
+import { nextBlockName } from './names';
 import { opsFor, registryHasDependencies } from './registry';
-import type { Shape, ShapeId } from './shape';
+import type { Shape, ShapeName } from './shape';
 
-const EMPTY_SELECTION: ReadonlySet<ShapeId> = new Set();
+const EMPTY_SELECTION: ReadonlySet<ShapeName> = new Set();
 
 /**
  * The document.
@@ -16,7 +17,7 @@ const EMPTY_SELECTION: ReadonlySet<ShapeId> = new Set();
 export class SceneStore {
   /** The z-order. Index 0 is the bottom of the stack; a layers panel will show this directly. */
   shapes = $state.raw<readonly Shape[]>([]);
-  selection = $state.raw<ReadonlySet<ShapeId>>(EMPTY_SELECTION);
+  selection = $state.raw<ReadonlySet<ShapeName>>(EMPTY_SELECTION);
   /** An uncommitted preview (the rect being drawn). Never part of `shapes`. */
   draft = $state.raw<Shape | null>(null);
 
@@ -32,38 +33,99 @@ export class SceneStore {
    */
   onCommit: (() => void) | null = null;
 
+  /**
+   * Run after any change to `selection`, including the ones undo and redo restore.
+   *
+   * `EditorSession` uses it to clear the trace panel's selection whenever blocks become
+   * selected. The alternative -- teaching every selection call site about the trace -- would
+   * have missed undo/redo, which assign `selection` directly and never go through a tool.
+   */
+  onSelectionChanged: (() => void) | null = null;
+
   #counter = 0;
 
-  /** Auto-name for the next block. Hardware entities want names, even placeholder ones. */
-  nextName(): string {
-    this.#counter += 1;
-    return `block_${this.#counter}`;
+  /**
+   * Auto-name for the next block.
+   *
+   * Scans the live names rather than trusting the counter: undo, delete and import all make
+   * `block_3` available again, and since the name *is* the identity, handing out a duplicate
+   * would be two shapes sharing one identity rather than a cosmetic annoyance.
+   */
+  nextName(): ShapeName {
+    const taken = new Set(this.shapes.map((s) => s.name));
+    const name = nextBlockName(taken, this.#counter + 1);
+    this.#counter = Number(name.slice('block_'.length));
+    return name;
   }
 
   setDraft(d: Shape | null): void {
     this.draft = d;
   }
 
-  setSelection(ids: ReadonlySet<ShapeId>): void {
+  /**
+   * The single write path for `selection`, so `onSelectionChanged` cannot be bypassed.
+   * Assigning `selection` directly anywhere in this class is a bug.
+   */
+  #setSelection(ids: ReadonlySet<ShapeName>): void {
+    if (ids === this.selection) return;
     this.selection = ids;
+    this.onSelectionChanged?.();
   }
 
-  selectOnly(id: ShapeId): void {
-    this.selection = new Set([id]);
+  setSelection(ids: ReadonlySet<ShapeName>): void {
+    this.#setSelection(ids);
   }
 
-  toggleSelected(id: ShapeId): void {
+  selectOnly(id: ShapeName): void {
+    this.#setSelection(new Set([id]));
+  }
+
+  toggleSelected(id: ShapeName): void {
     const next = new Set(this.selection);
     if (!next.delete(id)) next.add(id);
-    this.selection = next;
+    this.#setSelection(next);
   }
 
   clearSelection(): void {
-    if (this.selection.size > 0) this.selection = EMPTY_SELECTION;
+    if (this.selection.size > 0) this.#setSelection(EMPTY_SELECTION);
   }
 
   selectedShapes(): readonly Shape[] {
-    return this.shapes.filter((s) => this.selection.has(s.id));
+    return this.shapes.filter((s) => this.selection.has(s.name));
+  }
+
+  /** The single selected shape, or null when nothing or more than one thing is selected. */
+  soleSelected(): Shape | null {
+    if (this.selection.size !== 1) return null;
+    return this.shapes.find((s) => this.selection.has(s.name)) ?? null;
+  }
+
+  /**
+   * Replace one shape with an edited version of itself, possibly under a new name. The only
+   * path the property editor commits through.
+   *
+   * Rename is a structural change here, not a field assignment, because identity is the name:
+   * the selection has to follow, and every other shape gets a chance to rewrite references via
+   * `renameRef`. Doing that inside the single `commit` keeps it to one history entry.
+   */
+  replaceShape(prev: Shape, next: Shape, label: string): void {
+    const index = this.shapes.indexOf(prev);
+    if (index < 0) return;
+    const renamedFrom = prev.name !== next.name ? prev.name : null;
+
+    this.commit(label, () => {
+      this.shapes = this.shapes.map((s, i) => {
+        if (i === index) return next;
+        if (renamedFrom === null) return s;
+        return opsFor(s).renameRef?.(s, renamedFrom, next.name) ?? s;
+      });
+      if (renamedFrom !== null && this.selection.has(renamedFrom)) {
+        const sel = new Set(this.selection);
+        sel.delete(renamedFrom);
+        sel.add(next.name);
+        this.#setSelection(sel);
+      }
+    });
   }
 
   /** Mid-gesture preview. Deliberately does not touch bounds, history, or the camera. */
@@ -109,7 +171,7 @@ export class SceneStore {
     if (entry === null) return;
     this.draft = null;
     this.shapes = entry.before;
-    this.selection = entry.beforeSel;
+    this.#setSelection(entry.beforeSel);
     this.onCommit?.();
   }
 
@@ -118,7 +180,7 @@ export class SceneStore {
     if (entry === null) return;
     this.draft = null;
     this.shapes = entry.after;
-    this.selection = entry.afterSel;
+    this.#setSelection(entry.afterSel);
     this.onCommit?.();
   }
 
@@ -132,7 +194,7 @@ export class SceneStore {
 
     let current = this.shapes;
     for (;;) {
-      const byId = new Map(current.map((s) => [s.id, s]));
+      const byId = new Map(current.map((s) => [s.name, s]));
       const kept = current.filter((s) => {
         const deps = opsFor(s).dependsOn?.(s);
         return deps === undefined || deps.every((id) => byId.has(id));
@@ -144,12 +206,12 @@ export class SceneStore {
       current = kept; // A dropped shape may orphan another, so settle to a fixed point.
     }
 
-    const byId = new Map(current.map((s) => [s.id, s]));
+    const byId = new Map(current.map((s) => [s.name, s]));
     this.shapes = current.map((s) => {
       const ops = opsFor(s);
       const deps = ops.dependsOn?.(s);
       if (deps === undefined || ops.reroute === undefined) return s;
-      const resolved = new Map<ShapeId, Shape>();
+      const resolved = new Map<ShapeName, Shape>();
       for (const id of deps) {
         const dep = byId.get(id);
         if (dep !== undefined) resolved.set(id, dep);
@@ -158,9 +220,9 @@ export class SceneStore {
     });
 
     if (this.selection.size > 0) {
-      const live = new Set(this.shapes.map((s) => s.id));
+      const live = new Set(this.shapes.map((s) => s.name));
       if ([...this.selection].some((id) => !live.has(id))) {
-        this.selection = new Set([...this.selection].filter((id) => live.has(id)));
+        this.#setSelection(new Set([...this.selection].filter((id) => live.has(id))));
       }
     }
   }

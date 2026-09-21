@@ -1,14 +1,14 @@
 import { expandRect, rectsIntersect } from '../geom/math';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
-import type { DrawContext, Shape, ShapeId } from '../scene/shape';
+import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { drawDotGrid } from './grid-renderer';
 import type { Theme } from './theme';
 import type { ViewController } from './view.svelte';
 
 export interface RenderInput {
   readonly shapes: readonly Shape[];
-  readonly selection: ReadonlySet<ShapeId>;
+  readonly selection: ReadonlySet<ShapeName>;
   /** Uncommitted preview, drawn above everything as a ghost. */
   readonly draft: Shape | null;
   /** The active tool's overlay: selection handles, marquees. Drawn in world space. */
@@ -96,7 +96,7 @@ export class Renderer {
     for (const s of input.shapes) {
       const ops = opsFor(s);
       if (!rectsIntersect(ops.bounds(s), cull)) continue;
-      ops.draw(s, dc, { selected: input.selection.has(s.id), ghost: false });
+      ops.draw(s, dc, { selected: input.selection.has(s.name), ghost: false });
     }
 
     input.overlay?.(dc);

@@ -1,7 +1,7 @@
 import { dist2, distToSegment } from '../geom/math';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
-import type { Handle, HitContext, Shape, ShapeId } from '../scene/shape';
+import type { Handle, HitContext, Shape, ShapeName } from '../scene/shape';
 import { HANDLE_HIT_R_PX } from './theme';
 
 export type HitResult =
@@ -11,7 +11,7 @@ export type HitResult =
 
 export interface HitScene {
   readonly shapes: readonly Shape[];
-  readonly selection: ReadonlySet<ShapeId>;
+  readonly selection: ReadonlySet<ShapeName>;
 }
 
 /**
@@ -27,7 +27,7 @@ export function hitTest(scene: HitScene, world: Vec2, hc: HitContext): HitResult
 
   for (let i = scene.shapes.length - 1; i >= 0; i--) {
     const s = scene.shapes[i]!;
-    if (!scene.selection.has(s.id)) continue;
+    if (!scene.selection.has(s.name)) continue;
     for (const h of opsFor(s).handles(s)) {
       const hit =
         h.geom === 'point'

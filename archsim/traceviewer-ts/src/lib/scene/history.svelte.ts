@@ -1,10 +1,10 @@
-import type { Shape, ShapeId } from './shape';
+import type { Shape, ShapeName } from './shape';
 
 export interface HistoryEntry {
   readonly before: readonly Shape[];
   readonly after: readonly Shape[];
-  readonly beforeSel: ReadonlySet<ShapeId>;
-  readonly afterSel: ReadonlySet<ShapeId>;
+  readonly beforeSel: ReadonlySet<ShapeName>;
+  readonly afterSel: ReadonlySet<ShapeName>;
   /** Human-readable, for tooltips and a future history panel. */
   readonly label: string;
 }

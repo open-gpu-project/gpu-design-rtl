@@ -34,7 +34,15 @@ export class ViewController {
     this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   }
 
-  detach(): void {
+  /**
+   * Takes the canvas it is detaching so a late teardown cannot clobber a live attachment.
+   *
+   * The dock re-mounts a pane when it is floated or maximized, and Svelte may run the new
+   * component's `onMount` before the old one's cleanup. An unconditional detach would then
+   * null out the context that was just installed, leaving a permanently blank canvas.
+   */
+  detach(canvas: HTMLCanvasElement): void {
+    if (this.canvas !== canvas) return;
     this.canvas = null;
     this.ctx = null;
   }

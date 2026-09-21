@@ -1,8 +1,10 @@
 import { alignStroke } from '../canvas/pixel';
 import { DRAG_SLOP_PX, HANDLE_SIZE_PX, SELECT_ON_PRESS_BEGINS_MOVE } from '../canvas/theme';
 import type { Vec2 } from '../geom/types';
+import { serializeShape } from '../props/project';
+import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
-import type { DrawContext, Handle, Shape, ShapeId } from '../scene/shape';
+import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
 
@@ -10,14 +12,14 @@ type Drag =
   | {
       readonly kind: 'move';
       readonly snapshot: readonly Shape[];
-      readonly ids: ReadonlySet<ShapeId>;
+      readonly ids: ReadonlySet<ShapeName>;
       readonly start: Vec2;
       readonly downScreen: Vec2;
     }
   | {
       readonly kind: 'resize';
       readonly snapshot: readonly Shape[];
-      readonly id: ShapeId;
+      readonly name: ShapeName;
       readonly handle: Handle;
       readonly downScreen: Vec2;
     };
@@ -42,8 +44,18 @@ function flippedCursor(handle: Handle, flipX: boolean, flipY: boolean): string {
   return CORNER_CURSOR[v + h] ?? handle.cursor;
 }
 
+/**
+ * Did this drag actually change anything? Key order is deterministic because it comes from the
+ * kind's `props` declaration, so string equality is a sound comparison.
+ *
+ * The empty context is safe only because `serializeShape` skips `computed` properties, which
+ * are the only ones that read it. A `fixed` or `edit` property that consulted `ctx` would need
+ * a real one here.
+ */
+const NO_CONTEXT: PropContext = { shapes: [], index: -1 };
+
 function fingerprint(s: Shape): string {
-  return JSON.stringify(opsFor(s).serialize(s));
+  return JSON.stringify(serializeShape(opsFor(s).props, s, NO_CONTEXT));
 }
 
 export class SelectTool implements Tool {
@@ -79,7 +91,7 @@ export class SelectTool implements Tool {
       this.#drag = {
         kind: 'resize',
         snapshot: c.scene.shapes,
-        id: hit.shape.id,
+        name: hit.shape.name,
         handle: hit.handle,
         downScreen: p.screen,
       };
@@ -94,13 +106,13 @@ export class SelectTool implements Tool {
     }
 
     if (p.mods.shift) {
-      c.scene.toggleSelected(hit.shape.id);
+      c.scene.toggleSelected(hit.shape.name);
       c.requestFrame();
       return;
     }
 
-    if (!c.scene.selection.has(hit.shape.id)) {
-      c.scene.selectOnly(hit.shape.id);
+    if (!c.scene.selection.has(hit.shape.name)) {
+      c.scene.selectOnly(hit.shape.name);
       // The alternative reading of "click and grab to move, as long as an object isn't
       // selected" is that selecting and moving must be two separate gestures.
       if (!SELECT_ON_PRESS_BEGINS_MOVE) {
@@ -152,14 +164,14 @@ export class SelectTool implements Tool {
         dx === 0 && dy === 0
           ? drag.snapshot
           : drag.snapshot.map((s) =>
-              drag.ids.has(s.id) ? opsFor(s).translate(s, { x: dx, y: dy }) : s,
+              drag.ids.has(s.name) ? opsFor(s).translate(s, { x: dx, y: dy }) : s,
             ),
       );
     } else {
-      const original = drag.snapshot.find((s) => s.id === drag.id);
+      const original = drag.snapshot.find((s) => s.name === drag.name);
       if (original === undefined) return;
       const next = opsFor(original).resize(original, drag.handle.id, p.snapped, p.mods);
-      c.scene.previewShapes(drag.snapshot.map((s) => (s.id === drag.id ? next : s)));
+      c.scene.previewShapes(drag.snapshot.map((s) => (s.name === drag.name ? next : s)));
 
       // After a flip the pinned edge becomes the opposite side of the box, which is something
       // bounds alone can report -- no need for any shape-kind specific sign checks.
@@ -186,17 +198,17 @@ export class SelectTool implements Tool {
     if (drag === null) return;
     this.#drag = null;
 
-    const affected = drag.kind === 'move' ? drag.ids : new Set<ShapeId>([drag.id]);
-    const before = new Map(drag.snapshot.map((s) => [s.id, s]));
+    const affected = drag.kind === 'move' ? drag.ids : new Set<ShapeName>([drag.name]);
+    const before = new Map(drag.snapshot.map((s) => [s.name, s]));
 
     // A block resized down to nothing reverts rather than disappearing; deleting on an
     // over-drag is surprising even with undo available.
     const normalized = c.scene.shapes.map((s) => {
-      if (!affected.has(s.id)) return s;
-      return opsFor(s).normalize(s) ?? before.get(s.id) ?? s;
+      if (!affected.has(s.name)) return s;
+      return opsFor(s).normalize(s) ?? before.get(s.name) ?? s;
     });
 
-    const after = new Map(normalized.map((s) => [s.id, s]));
+    const after = new Map(normalized.map((s) => [s.name, s]));
     const changed = [...affected].some((id) => {
       const a = before.get(id);
       const b = after.get(id);
@@ -245,7 +257,7 @@ export class SelectTool implements Tool {
     ctx.lineWidth = lw;
 
     for (const s of c.scene.shapes) {
-      if (!selection.has(s.id)) continue;
+      if (!selection.has(s.name)) continue;
       for (const h of opsFor(s).handles(s)) {
         if (!h.visible) continue;
         const p = dc.project(h.pos);

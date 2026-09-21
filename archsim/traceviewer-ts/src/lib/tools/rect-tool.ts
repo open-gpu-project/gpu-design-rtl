@@ -61,7 +61,7 @@ export class RectTool implements Tool {
     const named = { ...shape, name: c.scene.nextName() };
     c.scene.commit('draw block', () => {
       c.scene.shapes = [...c.scene.shapes, named];
-      c.scene.setSelection(new Set([named.id]));
+      c.scene.setSelection(new Set([named.name]));
     });
     c.requestFrame();
   }

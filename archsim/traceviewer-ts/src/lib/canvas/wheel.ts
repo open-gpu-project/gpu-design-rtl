@@ -1,6 +1,5 @@
 import type { Vec2 } from '../geom/types';
 import { DISCRETE_DELTA_PX, PINCH_K, WHEEL_K } from './theme';
-import type { ViewController } from './view.svelte';
 
 export type WheelKind = 'pinch' | 'trackpad-pan' | 'mouse-wheel';
 
@@ -49,6 +48,30 @@ interface GestureLikeEvent extends Event {
 const SAFARI_GESTURE_SUPPRESS_MS = 400;
 
 /**
+ * The two camera operations this controller needs.
+ *
+ * Structural rather than `ViewController`, so the trace panel's `TimelineView` -- which is a
+ * separate camera with its own axes -- drives the same accumulator. Both implement these with
+ * the same meaning: `pan` in CSS pixels, `zoomAt` about a point in stage-relative CSS pixels.
+ */
+export interface WheelTarget {
+  zoomAt(anchorScreen: Vec2, factor: number): void;
+  pan(dxScreen: number, dyScreen: number): void;
+}
+
+export interface WheelOptions {
+  /**
+   * Whether a discrete mouse wheel zooms.
+   *
+   * True for the diagram, where the user asked for wheel-to-zoom. False for the trace panel,
+   * where vertical wheel scrolls the rows -- there are potentially hundreds of them, and a
+   * timeline that zoomed on every wheel notch would be unnavigable with a plain mouse. Pinch,
+   * Cmd+wheel and Shift+wheel are unaffected either way.
+   */
+  readonly wheelMeansZoom?: boolean;
+}
+
+/**
  * Accumulates wheel input and applies it once per animation frame. A 120 Hz trackpad otherwise
  * drives 120 separate camera updates and repaints in a second.
  */
@@ -63,10 +86,15 @@ export class WheelController {
   #gestureAnchor: Vec2 = { x: 0, y: 0 };
   #suppressPinchUntil = 0;
 
+  readonly #wheelMeansZoom: boolean;
+
   constructor(
-    private readonly view: ViewController,
+    private readonly view: WheelTarget,
     private readonly onApplied: () => void,
-  ) {}
+    opts: WheelOptions = {},
+  ) {
+    this.#wheelMeansZoom = opts.wheelMeansZoom ?? true;
+  }
 
   /** `screen` is the pointer position in CSS pixels relative to the stage. */
   handleWheel(e: WheelEvent, screen: Vec2): void {
@@ -88,6 +116,15 @@ export class WheelController {
     }
 
     if (kind === 'trackpad-pan' && !forceZoom) {
+      this.#panX += dx;
+      this.#panY += dy;
+      this.#schedule();
+      return;
+    }
+
+    // A discrete wheel notch, where the host has asked for scrolling rather than zooming. A
+    // pinch is never redirected here: ctrl+wheel means zoom everywhere.
+    if (kind === 'mouse-wheel' && !this.#wheelMeansZoom && !forceZoom) {
       this.#panX += dx;
       this.#panY += dy;
       this.#schedule();
