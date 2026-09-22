@@ -440,6 +440,28 @@ TEST_CASE("simulation: run() swallows a SimulationException and stops early") {
    }
 }
 
+TEST_CASE("simulation: run(throw_on_exception=true)") {
+   Simulation sim;
+   auto clk = sim.add_clock("clk");
+
+   auto [thrower_id, thrower] = sim.add_entity<ThrowingEntity>(
+         "thrower", clk, std::nullopt, 2u, ThrowingEntity::What::Simulation);
+   auto* observer = add_test_entity(sim, "observer", clk).entity;
+
+   REQUIRE_THROWS_AS(sim.run(5, true), SimulationException);
+
+   // It stops in the same place run() would, it just does not hide the reason
+   REQUIRE(sim.current_tick() == 2);
+   REQUIRE(observer->tick_edges() == std::vector<unsigned>{1});
+
+   SECTION("and the run can still be resumed once the fault is cleared") {
+      thrower.disarm();
+
+      REQUIRE_NOTHROW(sim.run(3, true));
+      REQUIRE(sim.current_tick() == 5);
+   }
+}
+
 TEST_CASE("simulation: run() propagates exceptions that are not SimulationExceptions") {
    Simulation sim;
    auto clk = sim.add_clock("clk");

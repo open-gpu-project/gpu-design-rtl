@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bitset>
 #include <concepts>
 #include <cstddef>
 #include <glaze/beve.hpp>
@@ -40,6 +41,12 @@ namespace framework {
       template <typename T>
       concept scalar_like = std::is_arithmetic_v<T> || std::is_enum_v<T>;
 
+      /// @brief Whether T is a std::bitset. Glaze encodes one as a single value.
+      template <typename T>
+      constexpr bool is_bitset = false;
+      template <std::size_t N>
+      constexpr bool is_bitset<std::bitset<N>> = true;
+
       /// @brief Member type at index I. Stable across Glaze versions.
       template <typename T, std::size_t I>
       using member_t = std::remove_cvref_t<typename glz::reflect<T>::template type<I>>;
@@ -52,6 +59,8 @@ namespace framework {
             return false; // a struct is never a leaf, however shallow
          } else if constexpr (scalar_like<U> ||
                               string_like<U>) { // string_like must be before array_like
+            return true;
+         } else if constexpr (is_bitset<U>) { // a bit vector is one value, not a container
             return true;
          } else if constexpr (optional_like<U>) {
             return is_trace_leaf<typename U::value_type>;

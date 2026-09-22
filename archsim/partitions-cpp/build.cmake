@@ -13,3 +13,6 @@ target_link_libraries(
 
 # Enable first-party warnings
 archsim_enable_warnings(partitions-cpp)
+
+# Include the test directory
+include(${CMAKE_CURRENT_LIST_DIR}/tests/build.cmake)

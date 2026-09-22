@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cassert>
 #include <optional>
 
+#include "exceptions.h"
 #include "simulation.h"
 #include "tracer.h"
 
@@ -30,7 +30,12 @@ namespace framework {
        * Stages data to be pushed on the next tick(). Requires can_write().
        */
       void assign_write(T data, tag_t tag = default_tag) {
-         assert(can_write());
+         if (!can_write()) {
+            throw GenericSimulationException("Write to a Fifo that is not ready",
+                                             std::pair{"fifo", config().name},
+                                             std::pair{"count", m_count},
+                                             std::pair{"size", static_cast<int>(Size)});
+         }
          m_write_detector.add_and_check_driver("fifo_write");
          m_next_write_data = std::make_pair(data, tag);
       }
@@ -40,7 +45,10 @@ namespace framework {
        * committed on the next tick(). Requires can_read().
        */
       std::pair<T, tag_t> read() {
-         assert(can_read());
+         if (!can_read()) {
+            throw GenericSimulationException("Read from a Fifo that is not valid",
+                                             std::pair{"fifo", config().name});
+         }
          m_next_read_staged = true;
          return m_buffer[m_read_index];
       }
@@ -50,7 +58,7 @@ namespace framework {
        * Returns std::nullopt if the FIFO is empty.
        */
       std::optional<T> peek() const {
-         return m_count > 0 ? m_buffer[m_read_index].first : std::nullopt;
+         return m_count > 0 ? std::optional<T>{m_buffer[m_read_index].first} : std::nullopt;
       }
 
    protected:

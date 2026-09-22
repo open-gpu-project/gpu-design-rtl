@@ -80,7 +80,14 @@ namespace framework::axi3 {
    struct ChannelSink {
    public:
       bool ready() const { return m_fifo.can_write(); }
-      void write(T data) { m_fifo.write(data); }
+      void write(T data, tag_t tag = default_tag) { m_fifo.assign_write(data, tag); }
+
+      /**
+       * Forwards a payload and its tag together, so that piping a source
+       * straight into a sink -- `sink.write(source.read())` -- carries the
+       * tag across the hop instead of resetting it.
+       */
+      void write(std::pair<T, tag_t> tagged) { m_fifo.assign_write(tagged.first, tagged.second); }
 
    private:
       friend struct Channel<T>;
@@ -92,7 +99,7 @@ namespace framework::axi3 {
    struct ChannelSource {
    public:
       bool valid() const { return m_fifo.can_read(); }
-      T read() { return m_fifo.read(); }
+      std::pair<T, tag_t> read() { return m_fifo.read(); }
       std::optional<T> peek() const { return m_fifo.can_read() ? m_fifo.peek() : std::nullopt; }
 
    private:
@@ -104,6 +111,8 @@ namespace framework::axi3 {
    template <ChannelData T>
    struct Channel : Fifo<T, 2> {
    public:
+      using Fifo<T, 2>::Fifo;
+
       std::tuple<ChannelSource<T>, ChannelSink<T>> split() {
          return {ChannelSource<T>(*this), ChannelSink<T>(*this)};
       }

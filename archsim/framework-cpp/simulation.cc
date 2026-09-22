@@ -80,15 +80,17 @@ void Simulation::register_tracer(TracerBase& tracer) {
    m_tracers.push_back(&tracer);
 }
 
-void Simulation::run(int cycles) {
+void Simulation::run(int cycles, bool throw_on_exception) {
    build();
-   int cycle = 0;
    try {
-      for (; cycle < cycles; ++cycle) {
+      for (int cycle = 0; cycle < cycles; ++cycle) {
          run_one_tick();
       }
    } catch (SimulationException& e) {
       e.log();
+      if (throw_on_exception) {
+         throw;
+      }
    }
 }
 

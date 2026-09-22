@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "exceptions.h"
 #include "simulation.h"
 #include "tracer_codec.h"
 

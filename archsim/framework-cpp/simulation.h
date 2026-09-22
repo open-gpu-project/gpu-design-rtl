@@ -190,8 +190,20 @@ namespace framework {
       /// @brief Registers a tracer with the simulation.
       void register_tracer(TracerBase& tracer);
 
-      /// @brief Run the simulation for the specified number of cycles.
-      void run(int cycles);
+      /// @brief Run the simulation for the specified number of cycles. A
+      ///        `SimulationException` is logged and ends the run early, but is
+      ///        not propagated to the caller unless `throw_on_exception` is set.
+      void run(int cycles, bool throw_on_exception = false);
+
+      /**
+       * Run the simulation for the specified number of cycles, propagating a
+       * `SimulationException` to the caller after logging it.
+       *
+       * `run()` deliberately swallows these so a long-running simulation can
+       * report a fault and carry on. A test wants the opposite: a fault should
+       * surface as a failure rather than as quietly stale state.
+       */
+      void run_strict(int cycles);
 
       /// @brief Reset the simulation to its initial state.
       void reset();
