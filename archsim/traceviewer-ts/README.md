@@ -10,7 +10,10 @@ into windows, or collapsed to an edge. Three panels exist so far.
 - **Properties** — an editable tree view of the selected block, validated live against a JSON
   Schema generated from that object kind's property declaration, with a footer documenting
   whichever key is selected. Keys are ordered `kind`, then the ones you can edit, then the ones
-  the app derives, each group alphabetical. The footer is never shorter than the text in it;
+  the app derives, each group alphabetical. Rows the app owns rather than you — the draw
+  order, and a connection's route and two endpoints, which the canvas sets — are greyed and
+  refuse to be typed into; the footer says which, and a refusal says where to change it
+  instead. The footer is never shorter than the text in it;
   drag the divider above it (or focus it and use the arrow keys, `Shift` for a coarser step) to
   give it more room than that, and the extra is remembered. Right-click a property for the eight
   actions a property bag has: the two edit buttons, cut/copy/paste, insert before/after, and
@@ -41,7 +44,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 247 assertions across six suites. Anything touching the canvas, the camera, DPI, or the property round trip
+iteration document. `npm run verify` is 257 assertions across six suites. Anything touching the canvas, the camera, DPI, or the property round trip
 has to be run in a real browser at `deviceScaleFactor: 2`. `verify/` is what does that.
 
 ## Controls
@@ -127,6 +130,11 @@ Where you put it in the array does not matter. `propSchema` sorts every declarat
 canonical order — `kind`, then the editable keys, then the generated ones, each group
 alphabetical — and that order is what the panel, the schema and the saved file all use.
 
+A property's `mode` says who owns it, not how permanent it is. `edit` is yours; `fixed` is
+saved and restored but set by some other part of the app; `computed` is re-derived and never
+written to the file. A `fixed` property still needs its `write` — that is what the loader puts
+the saved value back with.
+
 Properties are flat by construction: the value grammar has no object case, only scalars,
 fixed-length tuples of scalars, and lists of either. A polyline is `list[tuple[int, int]]`.
 
@@ -141,7 +149,9 @@ changed. What the kind needed beyond the reserved seams was `anchorAt` / `resolv
 picking a point on a perimeter, and `corridors`, for saying which of its runs other connections
 may bundle onto. Iteration 4.1 added one more, `rebind`, for re-attaching an end to whatever the
 tool found under the cursor — together with a `role` on the handle record, so the select tool can
-route a drag without knowing what `end:to` means.
+route a drag without knowing what `end:to` means. Iteration 4.2 then made the four properties
+that describe where a connection runs read-only: they are one value, the gestures that change
+them keep them consistent, and a tree editor cannot.
 
 ### Adding a tool
 
@@ -171,6 +181,9 @@ type-check cleanly and only fail at runtime.
   one canonical property key order, a documentation footer that sizes itself to its text, and
   draggable connection endpoints. Why the handle record grew a `role`, and the round-trip bug
   the key order quietly fixed.
+- [iter-4-2-read-only-geometry.md](history/iter-4-2-read-only-geometry.md) — a connection's
+  route and endpoints become read-only in the panel. What `fixed` means once a read-only
+  property is also real saved state, and the one capability this costs.
 - [iter-3-1-render-performance.md](history/iter-3-1-render-performance.md) — why the canvas gets
   slower the larger the window, and the four defects behind it. Why `createPattern` is the wrong
   answer. Supporting measurements in

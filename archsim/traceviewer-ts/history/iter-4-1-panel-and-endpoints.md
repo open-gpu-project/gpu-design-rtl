@@ -1,7 +1,14 @@
 # Iteration 4.1 — panel order, a self-sizing footer, and movable endpoints
 
-2026-09-22. Complete. Three follow-ups to iteration 4, none of which changes the file format or
-any router behaviour.
+2026-09-22. Complete, and followed the same day by
+[iteration 4.2](./iter-4-2-read-only-geometry.md), which makes a connection's `source`,
+`target`, `routing` and `points` read-only in the panel. That changes what `mode: 'fixed'`
+means — see its §3.1 before acting on §3.1 here — and grows the counts below: the suite total
+is now 257, and `verify/connections.mjs` is 87. The numbers in this document are iteration
+4.1's.
+
+Three follow-ups to iteration 4, none of which changes the file format or any router
+behaviour.
 
 Read [iter-4-connections.md](./iter-4-connections.md) first for the connection model, and
 [iter-2-docking-and-properties.md](./iter-2-docking-and-properties.md) §3 for the property

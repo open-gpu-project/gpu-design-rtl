@@ -1,15 +1,25 @@
-import { DEV_URL, diagramCanvas, drawBlock, drawConnection, open, suite } from './harness.mjs';
+import {
+  DEV_URL,
+  clickKey,
+  diagramCanvas,
+  drawBlock,
+  drawConnection,
+  editValue,
+  open,
+  row,
+  suite,
+} from './harness.mjs';
 
 /*
   Connections: the router, the anchors, the store's dependency pass, the click-click tool, and
   the render invariants.
 
-  Four groups, split by what they need rather than by what they cover. Groups R and A drive
+  Five groups, split by what they need rather than by what they cover. Groups R and A drive
   pure functions through `window.__route` and `window.__anchor` with no compositor and no
   pointer in the loop -- the same argument `grid.mjs` makes for the dot grid, and for the same
   reason: a router that picks a defensible-looking but wrong elbow produces a screenshot nobody
-  can tell is wrong. Group S drives the store directly. Only group I needs a real pointer, and
-  only group V needs a real frame.
+  can tell is wrong. Groups S and P drive the store and the property panel directly. Only
+  group I needs a real pointer, and only group V needs a real frame.
 
   The single most important assertion in the file is S's "a no-op commit records nothing".
   Registering the first shape kind with dependencies turns on a pass that used to be dead, and
@@ -434,6 +444,160 @@ t.ok(
   cascade.restored.conns === cascade.conns,
   `${cascade.after.conns} -> ${cascade.restored.conns} connections`,
 );
+
+/* --------------------------------------- P: what the property panel may change ---- */
+
+/*
+  A connection's geometry -- `source`, `target`, `routing`, `points` -- is `fixed` rather than
+  `edit`: saved and restored like everything else, but owned by the canvas.
+
+  Four coupled values that only make sense together are a poor thing to hand-edit one at a
+  time. The gestures that set them (drag a bead, drag a segment) keep them consistent by
+  construction; the tree editor cannot, and every writer would have had to defend itself
+  against the other three. `name`, `label` and `description` stay editable, because those are
+  the parts a person, rather than the app, actually decides.
+
+  Both halves of that claim are checked here. The greying and the schema's `readOnly` are
+  signposting -- svelte-jsoneditor has no per-node read-only -- so `applyDocument`'s second
+  pass is the real refusal, and a signpost with no gate behind it is worse than neither.
+*/
+
+const connName = await page.evaluate(() => {
+  const sc = window.__scene;
+  const c = sc.shapes.find((s) => s.kind === 'conn');
+  sc.selectOnly(c.name);
+  return c.name;
+});
+await page.waitForTimeout(400);
+
+const greyed = async (key) =>
+  (await page.locator(`[data-path="%2F${key}"].archsim-readonly`).count()) === 1;
+
+t.ok(
+  'selecting a connection shows its properties',
+  /conn/.test(await row(page, 'kind').innerText()),
+  connName,
+);
+t.ok(
+  'the route and both endpoints are marked read-only',
+  (await greyed('points')) &&
+    (await greyed('routing')) &&
+    (await greyed('source')) &&
+    (await greyed('target')),
+);
+t.ok(
+  'and the three things a person names are not',
+  !(await greyed('name')) && !(await greyed('label')) && !(await greyed('description')),
+);
+
+await clickKey(page, 'points');
+const pointsDoc = (await page.locator('.footer').innerText()).replace(/\s+/g, ' ');
+t.ok(
+  'the footer says so beside the type, rather than leaving the grey to be guessed at',
+  /read-only/i.test(pointsDoc) && /Route/.test(pointsDoc),
+  pointsDoc.slice(0, 90),
+);
+
+await editValue(page, 'label', 'ldst');
+t.ok(
+  'an editable key still commits with four read-only ones beside it in the document',
+  (await page.evaluate(() => window.__scene.shapes.find((s) => s.kind === 'conn').label)) ===
+    'ldst',
+);
+
+const beforeRefusal = await page.evaluate(() => ({
+  routing: window.__scene.shapes.find((s) => s.kind === 'conn').routing,
+  label: window.__scene.history.undoLabel,
+}));
+await editValue(page, 'routing', 'manual');
+const refusal = await page.evaluate(() => ({
+  routing: window.__scene.shapes.find((s) => s.kind === 'conn').routing,
+  label: window.__scene.history.undoLabel,
+  alert: (document.querySelector('.alert')?.innerText ?? '').replace(/\s+/g, ' '),
+}));
+t.ok(
+  'typing a routing mode into the panel changes nothing and records nothing',
+  refusal.routing === beforeRefusal.routing && refusal.label === beforeRefusal.label,
+  `${beforeRefusal.routing} -> ${refusal.routing}, history ${refusal.label}`,
+);
+t.ok(
+  'and the refusal names the key and points at where it is set instead',
+  /routing/.test(refusal.alert) && /canvas/i.test(refusal.alert),
+  refusal.alert.slice(0, 110),
+);
+
+/*
+  The gate itself, straight from the module. A second module instance under HMR is harmless
+  here in a way it is not for the registry: these are pure functions over a schema built at
+  import time, and the read-only pass rejects before any writer -- so `opsFor`, the one thing
+  in this file that would need the app's own registry, is never reached.
+*/
+const gate = await page.evaluate(async (name) => {
+  const [proj, schema] = await Promise.all([
+    import('/src/lib/props/project.ts'),
+    import('/src/lib/scene/shapes/conn.props.ts'),
+  ]);
+  const shapes = window.__scene.shapes;
+  const index = shapes.findIndex((s) => s.name === name);
+  const ctx = { shapes, index };
+  const s = shapes[index];
+  const doc = proj.projectShape(schema.connProps, s, ctx);
+  const edits = {
+    points: [
+      [0, 0],
+      [0, 32],
+    ],
+    routing: s.routing === 'auto' ? 'manual' : 'auto',
+    source: ['nowhere', 'n'],
+    target: ['nowhere', 's'],
+  };
+  const refused = {};
+  for (const key of Object.keys(edits)) {
+    const r = proj.applyDocument(schema.connProps, s, { ...doc, [key]: edits[key] }, ctx);
+    refused[key] = r.ok ? null : r.error;
+  }
+  const clean = proj.applyDocument(schema.connProps, s, { ...doc, label: 'x' }, ctx);
+  return { refused, clean: clean.ok ? clean.changed.join() : `refused: ${clean.error}` };
+}, connName);
+
+t.ok(
+  'applyDocument refuses every one of the four, which is what the greying is drawn over',
+  ['points', 'routing', 'source', 'target'].every((k) => gate.refused[k] !== null),
+  JSON.stringify(gate.refused).slice(0, 140),
+);
+t.ok('and passes an edit that touches only an editable key', gate.clean === 'label', gate.clean);
+
+/*
+  The other half of `fixed`: read-only to the user, not to the loader. `hydrateShape` gates on
+  having a writer rather than on being editable, and if it did not, every connection in every
+  saved file would come back as whatever `makeConnection` blanks to.
+*/
+const restored = await page.evaluate(async () => {
+  const mod = await import('/src/lib/scene/serialize.ts');
+  const doc = window.__dump();
+  const record = doc.shapes.find((r) => r.kind === 'conn');
+  const c = mod.deserializeScene(doc).find((x) => x.kind === 'conn');
+  return {
+    source: c.from === record.source[0] && c.fromAnchor === record.source[1],
+    target: c.to === record.target[0] && c.toAnchor === record.target[1],
+    points: JSON.stringify(c.points.map((p) => [p.x, p.y])) === JSON.stringify(record.points),
+    routing: c.routing === record.routing,
+  };
+});
+t.ok(
+  'a property the user cannot type is still one the loader puts back',
+  restored.source && restored.target && restored.points && restored.routing,
+  JSON.stringify(restored),
+);
+
+/*
+  Put the focus back on the canvas before anything drives the keyboard again. The host ignores
+  shortcuts while an editable element has focus, so a caret left in the JSON tree makes
+  `drawBlock`'s Digit2 vanish and the drag that follows it draw a marquee instead of a block.
+*/
+const afterPanel = await diagramCanvas(page).boundingBox();
+await page.mouse.click(afterPanel.x + 24, afterPanel.y + 24);
+await page.waitForTimeout(200);
 
 /* -------------------------------------------------------------- I: the real pointer ---- */
 

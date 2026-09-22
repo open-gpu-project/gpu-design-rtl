@@ -47,9 +47,10 @@ export type ApplyResult<S> =
  * Apply an edited document to a shape. Pure, and strict: this is the editor's commit path, so
  * anything it lets through ends up in the scene and in history.
  *
- * Read-only enforcement lives at step 3. The greyed styling from `onClassName` and the schema's
+ * Read-only enforcement lives at step 2. The greyed styling from `onClassName` and the schema's
  * `readOnly` annotation are signposting only -- svelte-jsoneditor has no per-node read-only, so
- * this rejection is the actual mechanism.
+ * this rejection is the actual mechanism, for `computed` keys and for the ones a `fixed` kind
+ * keeps to itself alike.
  */
 export function applyDocument<S extends ShapeBase>(
   ps: PropSchema<S>,
@@ -102,6 +103,11 @@ export function applyDocument<S extends ShapeBase>(
  * Unlike `applyDocument` this never fails: a missing key keeps the blank's default and a bad
  * value is skipped. Loading a diagram someone else saved should degrade, not abort -- the same
  * reasoning that makes `deserializeScene` skip unknown kinds rather than throw.
+ *
+ * Gated on having a writer rather than on being editable, and that is the whole difference
+ * between this and `applyDocument`. They ask different questions: that one asks whether the
+ * *user* may set this key and refuses the `fixed` ones, while this one asks whether the *file*
+ * may -- and a file that recorded a connection's route is entitled to get its route back.
  */
 export function hydrateShape<S extends ShapeBase>(
   ps: PropSchema<S>,
@@ -113,7 +119,7 @@ export function hydrateShape<S extends ShapeBase>(
   const record = bag as Record<string, unknown>;
   let next = blank;
   for (const d of ps.props) {
-    if (d.mode !== 'edit' || d.write === undefined) continue;
+    if (d.mode === 'computed' || d.write === undefined) continue;
     if (!(d.key in record)) continue;
     const r = d.write(next, record[d.key], ctx);
     if (r.ok) next = r.shape;

@@ -6,6 +6,13 @@ draggable. That adds a fifth row to §2's table of gaps in the shape contract, a
 `verify/connections.mjs` from the 64 assertions §9 inventories to 77. The counts here are
 iteration 4's; the current ones are in the README.
 
+**One decision in §3's table has since been withdrawn.**
+[Iteration 4.2](./iter-4-2-read-only-geometry.md) made a connection's `source`, `target`,
+`routing` and `points` read-only in the property panel, so "with `routing` exposed as a
+property, so setting it back to `auto` is the escape hatch" no longer describes the app. A
+pinned route stays pinned; the store-level path still exists and is still asserted, but nothing
+in the UI reaches it.
+
 Adds a second shape kind and a third tool; changes no existing mutation path.
 
 Read [iter-1-canvas-foundation.md](./iter-1-canvas-foundation.md) §5 and

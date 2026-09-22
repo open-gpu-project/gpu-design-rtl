@@ -42,7 +42,12 @@ function asPointList(v: unknown): Vec2[] | null {
   return out;
 }
 
-/** Validate one end against the live scene, so a bad edit is refused rather than cascade-deleted. */
+/**
+ * Validate one end against the live scene, so a bad binding is refused rather than loaded and
+ * then cascade-deleted. Reached from the loader now rather than from the panel, which is if
+ * anything the case that needs it more: a hand-written or hand-merged file is exactly where a
+ * connection pointing at a block that is not there comes from.
+ */
 function checkEndpoint(
   ctx: PropContext,
   block: string,
@@ -69,6 +74,13 @@ function checkEndpoint(
  * Read this as the definition of what a connection *is*. As with a block, every consumer -- the
  * panel rows, the JSON Schema, the footer documentation and the saved record -- follows from
  * this one list, in the order `propSchema` sorts it into rather than the order written here.
+ *
+ * Only `name`, `label` and `description` are editable. The geometry -- `source`, `target`,
+ * `routing` and `points` -- is `fixed`: saved and restored like everything else, but owned by
+ * the canvas. A route is four coupled values that only make sense together, and the gestures
+ * that change them (drag a bead, drag a segment) keep them coupled by construction, while
+ * hand-editing one of the four is a way to say something the other three contradict. The
+ * writers below survive because the loader still needs them; see `hydrateShape`.
  *
  * Note that there is no version bump anywhere for adding this kind. A record is a property bag
  * keyed by `kind`, so a new kind is new data in the same format, not a new format.
@@ -114,8 +126,8 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'source',
     title: 'Source',
-    doc: 'Where the connection starts, as [block, anchor]. The anchor is a side — n, e, s or w — optionally followed by a distance in world units along that side from its top or left corner, such as “e:48”. A bare side means the middle of that side.',
-    mode: 'edit',
+    doc: 'Where the connection starts, as [block, anchor]. The anchor is a side — n, e, s or w — optionally followed by a distance in world units along that side from its top or left corner, such as “e:48”. A bare side means the middle of that side. Set on the canvas: drag the round bead at this end of the line along its edge, or onto a different block.',
+    mode: 'fixed',
     type: {
       type: 'tuple',
       items: [
@@ -136,8 +148,8 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'target',
     title: 'Target',
-    doc: 'Where the connection ends, as [block, anchor], in the same form as the source. This is the end that carries the arrowhead — swapping source and target reverses the arrow.',
-    mode: 'edit',
+    doc: 'Where the connection ends, as [block, anchor], in the same form as the source. This is the end that carries the arrowhead, so swapping the two would reverse the arrow. Set on the canvas: drag the round bead at this end of the line along its edge, or onto a different block.',
+    mode: 'fixed',
     type: {
       type: 'tuple',
       items: [
@@ -158,8 +170,8 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'routing',
     title: 'Routing',
-    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends. Dragging a segment on the canvas switches this to “manual”; setting it back to “auto” here re-routes immediately.',
-    mode: 'edit',
+    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends. Set on the canvas: a connection starts out “auto” and dragging any of its segments switches it to “manual” for good. To get an automatic route back, delete the connection and draw it again.',
+    mode: 'fixed',
     type: { type: 'enum', values: ['auto', 'manual'] },
     read: (s) => s.routing,
     write: (s, v): Write => {
@@ -172,8 +184,8 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'points',
     title: 'Route',
-    doc: 'The path as a list of [x, y] points in world units. The first point sits on the source anchor and the last on the target anchor, and every point must share exactly one coordinate with the next, since the route only runs horizontally and vertically. Editing this switches routing to “manual”, unless the same edit sets routing itself.',
-    mode: 'edit',
+    doc: 'The path as a list of [x, y] points in world units. The first point sits on the source anchor and the last on the target anchor, and every point must share exactly one coordinate with the next, since the route only runs horizontally and vertically. Set on the canvas: drag a square knob to slide a segment sideways, or a round bead to move an end. Loading a file applies this before “routing”, so a saved route arrives with the mode it was saved with.',
+    mode: 'fixed',
     type: {
       type: 'list',
       item: {

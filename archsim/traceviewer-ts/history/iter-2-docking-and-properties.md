@@ -6,8 +6,7 @@ Read [iteration 1](./iter-1-canvas-foundation.md) first; its conventions still h
 repeated here. This document records what changed, the two design defects that a green
 type-check and a working-looking UI did not reveal, and one third-party bug you will hit.
 
-Two corrections from
-[iteration 4.1](./iter-4-1-panel-and-endpoints.md), which you should read before acting on §3:
+Three corrections from later iterations, which you should read before acting on §3:
 
 1. **Key order no longer comes from the declaration.** `propSchema` sorts every kind's `props`
    into one canonical order — `kind`, the editable keys, then the derived ones, each group
@@ -15,7 +14,13 @@ Two corrections from
    that says otherwise was true when it was written and is not now.
 2. **The documentation footer sizes itself.** It is never shorter than the text in it; the grip
    only makes it larger. §3.7's two-clamp description is now three numbers, not two, and the
-   per-suite counts in §9 have moved.
+   per-suite counts in §9 have moved. (Both of the above are from
+   [iteration 4.1](./iter-4-1-panel-and-endpoints.md).)
+3. **`fixed` no longer implies "not loaded from the file".**
+   [Iteration 4.2](./iter-4-2-read-only-geometry.md) §3.1 splits the question `hydrateShape`
+   asks from the one `applyDocument` asks: a `fixed` property with a writer is restored from
+   the record, it simply cannot be typed. §3's "`fixed` is not editable but _is_ saved
+   (`kind`)" is still true and is no longer the whole story.
 
 ---
 

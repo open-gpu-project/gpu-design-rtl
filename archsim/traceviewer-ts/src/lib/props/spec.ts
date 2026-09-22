@@ -37,10 +37,16 @@ export interface PropList {
 export type PropType = PropScalar | PropTuple | PropList;
 
 /**
- * - `edit`     editable, written to the file.
- * - `fixed`    not editable, written to the file. `kind` is the only one so far.
+ * - `edit`     editable in the panel, written to the file, restored from it.
+ * - `fixed`    not editable in the panel, written to the file, restored from it.
  * - `computed` not editable, NOT written to the file: re-derived from the document on load.
  *              `zIndex` is implied by a shape's position in the scene list.
+ *
+ * `fixed` is a claim about authority, not about storage. A connection's route and its two
+ * endpoints are as real and as saved as anything else it owns; the canvas simply decides them,
+ * and typing a polyline into a tree editor is not how anyone wants to move a wire. So read-only
+ * here means "another part of the app is in charge of this", which is why a `fixed` value still
+ * round-trips through the file and a `computed` one does not.
  */
 export type PropMode = 'edit' | 'fixed' | 'computed';
 
@@ -71,11 +77,15 @@ export interface PropDef<S extends ShapeBase = Shape> {
   read(s: S, ctx: PropContext): PropValue;
 
   /**
-   * Present only when `mode` is `'edit'`.
+   * Absent on `computed`, which stores nothing, and on `kind`, which the loader has already
+   * acted on by the time it picks a blank to fill in. Present on everything else, read-only
+   * included: `applyDocument` refuses to call it for a non-`edit` key, but `hydrateShape` needs
+   * it to put a saved value back.
    *
    * Takes `unknown` rather than a narrowed type on purpose: the JSON editor treats validation
    * as an annotation and still hands the document to `onChange`, so every writer is a trust
-   * boundary and has to check its own input.
+   * boundary and has to check its own input. A writer reachable only from the loader is no
+   * less of one -- that input came off disk, and the disk is not this program.
    */
   write?(s: S, v: unknown, ctx: PropContext): WriteResult<S>;
 }
