@@ -1,4 +1,10 @@
-import type { PropContext, PropDef, PropSchema, WriteResult } from '../../props/spec';
+import {
+  propSchema,
+  type PropContext,
+  type PropDef,
+  type PropSchema,
+  type WriteResult,
+} from '../../props/spec';
 import type { RectShape } from '../shape';
 
 type Write = WriteResult<RectShape>;
@@ -26,6 +32,9 @@ function asIntPair(v: unknown): [number, number] | null {
  * Read this as the definition of what a block *is*. Adding a property is one entry here: the
  * JSON Schema, the ajv validation, the tree editor's rows, the footer documentation and the
  * saved file all follow from it, and nothing else needs to change.
+ *
+ * Where in this array is not one of the things that follows from it: `propSchema` sorts on the
+ * way out, so put a new property wherever it reads best next to its neighbours.
  *
  * Every `doc` is written for someone opening the diagram for the first time, because it is what
  * the panel footer shows -- it is documentation, not a code comment that happens to be a string.
@@ -131,9 +140,9 @@ const props: readonly PropDef<RectShape>[] = [
   },
 ];
 
-export const rectProps: PropSchema<RectShape> = {
+export const rectProps: PropSchema<RectShape> = propSchema({
   kind: 'rect',
   title: 'Block',
   doc: 'A rectangular hardware entity in the architecture diagram.',
   props,
-};
+});

@@ -1,8 +1,9 @@
 import type { Rect } from '../geom/types';
 import { unionBounds } from './bounds';
 import { History } from './history.svelte';
-import { nextBlockName } from './names';
+import { nextIndexedName } from './names';
 import { opsFor, registryHasDependencies } from './registry';
+import { resolveDependencies } from './resolve';
 import type { Shape, ShapeName } from './shape';
 
 const EMPTY_SELECTION: ReadonlySet<ShapeName> = new Set();
@@ -42,19 +43,20 @@ export class SceneStore {
    */
   onSelectionChanged: (() => void) | null = null;
 
-  #counter = 0;
+  /** One high-water mark per prefix, so `block_` and `conn_` count independently. */
+  #counters = new Map<string, number>();
 
   /**
-   * Auto-name for the next block.
+   * Auto-name for the next shape of a kind. `block_N` by default; connections pass `'conn'`.
    *
    * Scans the live names rather than trusting the counter: undo, delete and import all make
    * `block_3` available again, and since the name *is* the identity, handing out a duplicate
    * would be two shapes sharing one identity rather than a cosmetic annoyance.
    */
-  nextName(): ShapeName {
+  nextName(prefix = 'block'): ShapeName {
     const taken = new Set(this.shapes.map((s) => s.name));
-    const name = nextBlockName(taken, this.#counter + 1);
-    this.#counter = Number(name.slice('block_'.length));
+    const name = nextIndexedName(prefix, taken, (this.#counters.get(prefix) ?? 0) + 1);
+    this.#counters.set(prefix, Number(name.slice(prefix.length + 1)));
     return name;
   }
 
@@ -185,39 +187,20 @@ export class SceneStore {
   }
 
   /**
-   * Cascade-delete shapes whose dependencies vanished, then let survivors re-route. No shape
-   * kind implements these yet, so this is a no-op until connections land -- but building the
-   * hook now is what keeps that change additive instead of touching every mutation path.
+   * Cascade-delete shapes whose dependencies vanished, then let survivors re-route.
+   *
+   * The work lives in `resolve.ts` so the select tool can run the reroute half against a
+   * mid-drag preview, where there is no commit to hang it off.
    */
   #resolveDependencies(): void {
     if (!registryHasDependencies()) return;
 
-    let current = this.shapes;
-    for (;;) {
-      const byId = new Map(current.map((s) => [s.name, s]));
-      const kept = current.filter((s) => {
-        const deps = opsFor(s).dependsOn?.(s);
-        return deps === undefined || deps.every((id) => byId.has(id));
-      });
-      if (kept.length === current.length) {
-        current = kept;
-        break;
-      }
-      current = kept; // A dropped shape may orphan another, so settle to a fixed point.
-    }
-
-    const byId = new Map(current.map((s) => [s.name, s]));
-    this.shapes = current.map((s) => {
-      const ops = opsFor(s);
-      const deps = ops.dependsOn?.(s);
-      if (deps === undefined || ops.reroute === undefined) return s;
-      const resolved = new Map<ShapeName, Shape>();
-      for (const id of deps) {
-        const dep = byId.get(id);
-        if (dep !== undefined) resolved.set(id, dep);
-      }
-      return ops.reroute(s, resolved);
-    });
+    // The identity guard is load-bearing, not an optimisation: `commit` decides whether to push
+    // an undo entry by comparing `shapes` against its pre-mutate value, so assigning an
+    // equal-but-new array here would make every commit -- including ones that changed nothing --
+    // an undoable step.
+    const next = resolveDependencies(this.shapes);
+    if (next !== this.shapes) this.shapes = next;
 
     if (this.selection.size > 0) {
       const live = new Set(this.shapes.map((s) => s.name));

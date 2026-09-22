@@ -114,6 +114,26 @@ export async function drawBlock(page, x1, y1, x2, y2) {
   return box;
 }
 
+/**
+ * Draw a connection with the connect tool, in canvas-relative CSS pixels.
+ *
+ * Click-click, not a drag, and the moves before each click matter: the tool picks its anchor
+ * from the hovered perimeter, so a click with no preceding move lands on a stale hover.
+ * Leaves the connect tool active, the way the real gesture does.
+ */
+export async function drawConnection(page, x1, y1, x2, y2) {
+  const box = await diagramCanvas(page).boundingBox();
+  await page.keyboard.press('Digit3');
+  await page.mouse.move(box.x + x1, box.y + y1, { steps: 5 });
+  await page.waitForTimeout(60);
+  await page.mouse.click(box.x + x1, box.y + y1);
+  await page.mouse.move(box.x + x2, box.y + y2, { steps: 8 });
+  await page.waitForTimeout(60);
+  await page.mouse.click(box.x + x2, box.y + y2);
+  await page.waitForTimeout(250);
+  return box;
+}
+
 /** Property rows carry `data-path="%2F<key>"` (a URL-encoded JSON pointer). */
 export const row = (page, key) => page.locator(`[data-path="%2F${key}"]`);
 

@@ -9,7 +9,7 @@ export function sameValue(a: PropValue | undefined, b: PropValue | undefined): b
   return a === b;
 }
 
-/** The property panel's document: every declared property, in declaration order. */
+/** The property panel's document: every declared property, in canonical key order. */
 export function projectShape<S extends ShapeBase>(
   ps: PropSchema<S>,
   s: S,

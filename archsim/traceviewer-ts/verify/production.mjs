@@ -66,8 +66,8 @@ const keys = await page.evaluate(() =>
     .filter((p) => p !== '' && !p.slice(1).includes('/')),
 );
 t.ok(
-  'property panel populated, in declaration order',
-  keys.join() === '/kind,/name,/label,/position,/size,/description,/zIndex',
+  'property panel populated, in canonical order: kind, then editable, then generated',
+  keys.join() === '/kind,/description,/label,/name,/position,/size,/zIndex',
   JSON.stringify(keys),
 );
 t.ok(

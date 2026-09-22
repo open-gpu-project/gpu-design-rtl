@@ -6,7 +6,7 @@ import type { SceneStore } from '../scene/scene.svelte';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { bringForward, bringToFront, sendBackward, sendToBack } from '../scene/zorder';
 import { buildPointerInfo } from './pointer';
-import { allTools, toolDescriptor } from './registry';
+import { allTools, toolDescriptor, toolForShortcut } from './registry';
 import type { PointerInfo, Tool, ToolContext, ToolId } from './tool';
 
 /**
@@ -214,6 +214,9 @@ export class ToolHost {
 
   onPointerLeave(): void {
     this.pointer = null;
+    // No `invalidate` here. The tool repaints only if it actually dropped something, which keeps
+    // a pointer that merely grazes the canvas edge from costing a frame.
+    this.#tool.onPointerLeave?.(this.#ctx);
   }
 
   onWheel(e: WheelEvent): void {
@@ -426,14 +429,12 @@ export class ToolHost {
       case 'Backspace':
         this.deleteSelection();
         return true;
-      case '1':
-        this.setTool('select');
+      default: {
+        const d = toolForShortcut(e.key);
+        if (d === null) return false;
+        this.setTool(d.id);
         return true;
-      case '2':
-        this.setTool('rect');
-        return true;
-      default:
-        return false;
+      }
     }
   }
 }

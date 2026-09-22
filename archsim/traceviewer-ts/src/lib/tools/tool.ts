@@ -46,6 +46,15 @@ export interface Tool {
   onPointerUp?(p: PointerInfo, c: ToolContext): void;
   onPointerCancel?(c: ToolContext): void;
 
+  /**
+   * The pointer left the canvas. Not a gesture end: an in-flight drag holds pointer capture and
+   * keeps receiving moves, so this fires only for hover.
+   *
+   * It exists because hover-only decoration -- the connect tool's perimeter dot -- is otherwise
+   * stranded on screen at wherever the pointer last was, which reads as a stuck UI.
+   */
+  onPointerLeave?(c: ToolContext): void;
+
   /** Return true when the key was consumed, so the host skips its global bindings. */
   onKeyDown?(e: KeyboardEvent, c: ToolContext): boolean;
 

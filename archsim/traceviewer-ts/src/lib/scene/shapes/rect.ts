@@ -1,11 +1,50 @@
 import { alignStroke } from '../../canvas/pixel';
-import { LABEL_MIN_PX } from '../../canvas/theme';
-import { normalizeRect, pointInRect, rectFromPoints } from '../../geom/math';
+import { ANCHOR_BAND_PX, ANCHOR_HIT_PX, LABEL_MIN_PX } from '../../canvas/theme';
+import { clampNum, expandRect, normalizeRect, pointInRect, rectFromPoints } from '../../geom/math';
 import type { Anchor, Rect, Vec2 } from '../../geom/types';
-import { GRID } from '../../grid';
+import { GRID, snap } from '../../grid';
 import { registerShape } from '../registry';
 import type { RectShape, ShapeName, ShapeOps } from '../shape';
 import { rectProps } from './rect.props';
+
+type Side = 'n' | 'e' | 's' | 'w';
+
+const SIDES: readonly Side[] = ['n', 'e', 's', 'w'];
+
+const NORMALS: Readonly<Record<Side, Vec2>> = {
+  n: { x: 0, y: -1 },
+  e: { x: 1, y: 0 },
+  s: { x: 0, y: 1 },
+  w: { x: -1, y: 0 },
+};
+
+/** Length of a face, and the corner its offset is measured from (left for n/s, top for e/w). */
+function faceLength(r: Rect, side: Side): number {
+  return side === 'n' || side === 's' ? r.w : r.h;
+}
+
+/**
+ * An anchor at `off` world units along `side`.
+ *
+ * `id` carries the offset as authored, not as clamped, so shrinking a block below an anchor and
+ * growing it back puts the connection where the user left it rather than where the small
+ * version of the block happened to end.
+ */
+function makeRectAnchor(r: Rect, side: Side, off: number, authored = off): Anchor {
+  const len = faceLength(r, side);
+  const t = clampNum(off, 0, len);
+  const pos =
+    side === 'n'
+      ? { x: r.x + t, y: r.y }
+      : side === 's'
+        ? { x: r.x + t, y: r.y + r.h }
+        : side === 'e'
+          ? { x: r.x + r.w, y: r.y + t }
+          : { x: r.x, y: r.y + t };
+  return { id: `${side}:${authored}`, pos, normal: NORMALS[side] };
+}
+
+const ANCHOR_ID = /^([nesw])(?::(-?\d+))?$/;
 
 /** Mid-drag a rect may carry negative w/h (the user flipped it). Everything reads through this. */
 function box(s: RectShape): Rect {
@@ -169,7 +208,60 @@ export const rectOps: ShapeOps<RectShape> = {
     restore();
   },
 
-  /** Edge midpoints. Unused until connections land, but cheap to keep honest. */
+  /**
+   * Nearest perimeter point, grid-snapped along the face.
+   *
+   * Within `ANCHOR_BAND_PX` of the outline the offset tracks the cursor, which is what puts the
+   * anchor exactly where the user pointed. Deeper inside the block the nearest face is both
+   * ambiguous and jumpy -- a pixel of drift flips the dot to another side -- so the offset
+   * collapses to the face midpoint and "click the middle of the target" becomes a stable
+   * gesture instead of a lottery.
+   */
+  anchorAt(s, p, hc): Anchor | null {
+    const r = box(s);
+    const tol = ANCHOR_HIT_PX * hc.worldPerPx;
+    if (!pointInRect(p, expandRect(r, tol))) return null;
+
+    // Ties resolve in n, e, s, w order, so the id is a deterministic function of the point.
+    const d: readonly number[] = [
+      Math.abs(p.y - r.y),
+      Math.abs(p.x - (r.x + r.w)),
+      Math.abs(p.y - (r.y + r.h)),
+      Math.abs(p.x - r.x),
+    ];
+    let best = 0;
+    for (let i = 1; i < d.length; i++) {
+      if (d[i]! < d[best]!) best = i;
+    }
+    const side = SIDES[best]!;
+
+    const band = ANCHOR_BAND_PX * hc.worldPerPx;
+    const inner = { x: r.x + band, y: r.y + band, w: r.w - 2 * band, h: r.h - 2 * band };
+    const deep = inner.w > 0 && inner.h > 0 && pointInRect(p, inner);
+
+    const len = faceLength(r, side);
+    if (deep) return makeRectAnchor(r, side, Math.round(len / 2));
+    const along = side === 'n' || side === 's' ? p.x - r.x : p.y - r.y;
+    const off = clampNum(snap(along), 0, len);
+    return makeRectAnchor(r, side, off);
+  },
+
+  /** `'e'` (the face midpoint) or `'e:48'` (offset from the face's start corner). */
+  resolveAnchor(s, id): Anchor | null {
+    const m = ANCHOR_ID.exec(id);
+    if (m === null) return null;
+    const r = box(s);
+    const side = m[1] as Side;
+    if (m[2] === undefined) {
+      const mid = Math.round(faceLength(r, side) / 2);
+      const a = makeRectAnchor(r, side, mid);
+      return { ...a, id: side };
+    }
+    const off = Number(m[2]);
+    return makeRectAnchor(r, side, off);
+  },
+
+  /** Edge midpoints. The discrete siblings of `anchorAt`; nothing consumes them yet. */
   anchors(s): readonly Anchor[] {
     const r = box(s);
     const cx = r.x + r.w / 2;

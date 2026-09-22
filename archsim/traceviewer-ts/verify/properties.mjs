@@ -153,16 +153,24 @@ t.ok(
 );
 
 /*
-  The documentation footer is resizable, and the two clamps that keep the split usable. Every
-  number here is read off the live layout rather than off component state -- the whole point of
-  the grip is where the boundary actually lands.
+  The documentation footer sizes itself to its own text, may be enlarged but not shrunk below
+  that, and yields to the two clamps that keep the split usable. Every number here is read off
+  the live layout rather than off component state -- the whole point of the grip is where the
+  boundary actually lands, and `content` is what the text actually needs.
 */
 const geom = () =>
   page.evaluate(() => {
     const f = document.querySelector('.footer');
+    // Scoped, unlike its siblings: `.doc` is a generic enough name that a second, hidden
+    // properties pane -- which the dock's keep-alive contract leaves in the tree -- could
+    // answer first, and every comparison below would then quietly measure the wrong box.
+    const d = document.querySelector('.footer > .doc');
     const e = document.querySelector('.editor');
     return {
       footer: Math.round(f.clientHeight),
+      // `clientHeight` on both sides: the engine has already rounded it, so the equalities
+      // below cannot fail by half a pixel on a line box that does not land on the grid.
+      content: d.clientHeight,
       editor: Math.round(e.clientHeight),
       total: Math.round(f.clientHeight + e.clientHeight),
       scrolls: f.scrollHeight > f.clientHeight + 1,
@@ -179,8 +187,14 @@ async function dragGrip(dy) {
   await page.waitForTimeout(250);
 }
 
-await clickKey(page, 'name'); // the longest doc string there is
+await clickKey(page, 'position'); // the longest documentation a block carries
 const g0 = await geom();
+t.ok(
+  'the documentation is given room for all of its text without being asked',
+  g0.footer === g0.content && !g0.scrolls,
+  `${g0.footer}px for ${g0.content}px of text`,
+);
+
 await dragGrip(-120);
 const g1 = await geom();
 t.ok(
@@ -195,8 +209,11 @@ t.ok('the tree keeps its floor however far the grip is dragged', gTop.editor ===
 
 await dragGrip(2000);
 const gBottom = await geom();
-t.ok('the documentation keeps its floor too', gBottom.footer === 44, gBottom.footer);
-t.ok('a doc too long for the space scrolls rather than being truncated', gBottom.scrolls);
+t.ok(
+  'and the documentation cannot be dragged shorter than its own text',
+  gBottom.footer === gBottom.content && !gBottom.scrolls,
+  `${gBottom.footer} vs the ${gBottom.content} it needs`,
+);
 
 const blocks = (await state()).n;
 await page.locator('.grip').focus();
@@ -206,13 +223,61 @@ await page.waitForTimeout(250);
 const gKeys = await geom();
 t.ok(
   'the grip is keyboard-operable, with a coarse step on Shift',
-  gKeys.footer === 44 + 40,
-  gKeys.footer,
+  gKeys.footer === gBottom.footer + 40,
+  `${gBottom.footer} -> ${gKeys.footer}`,
 );
 t.ok('and its arrow keys never reach the canvas', (await state()).n === blocks);
 
-await dragGrip(-120);
-t.ok('and the same doc stops scrolling once there is room for it', !(await geom()).scrolls);
+/*
+  The two halves of `max(what the text needs, what you asked for)`, which is the whole rule.
+  A size the user asked for has to outlive the property that prompted it; a floor must not,
+  or one long documentation string would enlarge the footer permanently.
+*/
+await clickKey(page, 'kind');
+const gKeep = await geom();
+t.ok(
+  'a size the user asked for survives switching to a shorter documentation string',
+  gKeep.footer === gKeys.footer && gKeep.content < gKeep.footer,
+  `${gKeep.footer} kept, ${gKeep.content} needed`,
+);
+await dragGrip(2000);
+const gShrunk = await geom();
+await clickKey(page, 'position');
+const gRegrown = await geom();
+t.ok(
+  'but a floor does not ratchet: give the size back and the longer text takes it again',
+  gShrunk.footer === gShrunk.content && gRegrown.footer === gRegrown.content,
+  `${gShrunk.footer} -> ${gRegrown.footer}`,
+);
+
+/*
+  Text that cannot fit however the split is arranged. Forced with the root font size rather
+  than with a contrived string, because the real cause is a user who has scaled their fonts up
+  -- and the invariant that matters is that the tree survives it.
+*/
+await page.evaluate(() => document.documentElement.style.setProperty('font-size', '40px'));
+await page.waitForTimeout(400);
+const gHuge = await geom();
+const ariaHuge = await page.evaluate(() => {
+  const g = document.querySelector('.grip');
+  return ['valuemin', 'valuenow', 'valuemax'].map((k) => Number(g.getAttribute(`aria-${k}`)));
+});
+await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+await page.waitForTimeout(400);
+t.ok(
+  'documentation with nowhere to fit scrolls instead of swallowing the tree',
+  gHuge.scrolls && gHuge.content > gHuge.footer && gHuge.editor >= 80,
+  `${gHuge.content} of text in ${gHuge.footer}, tree ${gHuge.editor}`,
+);
+t.ok(
+  'and the splitter still reports a range assistive technology can act on',
+  ariaHuge[0] <= ariaHuge[1] && ariaHuge[1] <= ariaHuge[2],
+  `min ${ariaHuge[0]}, now ${ariaHuge[1]}, max ${ariaHuge[2]} — the floor must not outrank the ceiling`,
+);
+
+// Leave a size that is distinctively the user's, for the persistence check at the end of the
+// file to recognise. A footer sitting on its floor would pass that check for the wrong reason.
+await dragGrip(-96);
 
 /*
   The context menu is wider than a docked side panel, so it flips to open leftwards -- straight
@@ -337,8 +402,17 @@ t.ok(
 );
 await page.keyboard.press('Escape');
 
-// Last, because it drops the scene: reloading keeps only what was persisted.
-const wanted = (await geom()).footer;
+/*
+  Last, because it drops the scene: reloading keeps only what was persisted.
+
+  Compared against the stored number rather than against the height on screen before the
+  reload, because those two are only the same thing while the size the user asked for is the
+  larger half of the max -- and after a reload nothing is selected, so there is no text to
+  floor it.
+*/
+const wanted = await page.evaluate(() =>
+  Number(localStorage.getItem('archsim.traceviewer.props.docs.v1')),
+);
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 t.ok(

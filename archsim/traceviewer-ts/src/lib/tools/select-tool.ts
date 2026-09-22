@@ -1,9 +1,11 @@
+import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
 import { DRAG_SLOP_PX, HANDLE_SIZE_PX, SELECT_ON_PRESS_BEGINS_MOVE } from '../canvas/theme';
 import type { Vec2 } from '../geom/types';
 import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
+import { rerouteAll } from '../scene/resolve';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
@@ -160,18 +162,47 @@ export class SelectTool implements Tool {
     if (drag.kind === 'move') {
       const dx = p.snapped.x - drag.start.x;
       const dy = p.snapped.y - drag.start.y;
+      // Re-route inside the preview, not just on commit: `previewShapes` deliberately bypasses
+      // `#resolveDependencies`, so without this every connection would trail a cell behind its
+      // block for the whole drag and snap into place only on release.
       c.scene.previewShapes(
-        dx === 0 && dy === 0
-          ? drag.snapshot
-          : drag.snapshot.map((s) =>
-              drag.ids.has(s.name) ? opsFor(s).translate(s, { x: dx, y: dy }) : s,
-            ),
+        rerouteAll(
+          dx === 0 && dy === 0
+            ? drag.snapshot
+            : drag.snapshot.map((s) =>
+                drag.ids.has(s.name) ? opsFor(s).translate(s, { x: dx, y: dy }) : s,
+              ),
+        ),
+      );
+    } else if (drag.handle.role === 'rebind') {
+      const original = drag.snapshot.find((s) => s.name === drag.name);
+      if (original === undefined) return;
+      /*
+        The drop target is resolved here rather than inside the shape, because only the tool
+        can see the rest of the scene -- and it is resolved against the pristine snapshot, so
+        the answer is a pure function of the pointer no matter how long the drag has run.
+
+        `p.world`, not `p.snapped`: the perimeter decides where the anchor lands and already
+        snaps the offset along the face, so snapping the cursor first would only make the
+        chosen face flicker near a corner.
+      */
+      const hit = anchorHitTest(drag.snapshot, p.world, { worldPerPx: c.view.worldPerPx });
+      const next =
+        opsFor(original).rebind?.(
+          original,
+          drag.handle.id,
+          hit === null ? null : { shape: hit.shape.name, anchor: hit.anchor },
+        ) ?? original;
+      c.scene.previewShapes(
+        rerouteAll(drag.snapshot.map((s) => (s.name === drag.name ? next : s))),
       );
     } else {
       const original = drag.snapshot.find((s) => s.name === drag.name);
       if (original === undefined) return;
       const next = opsFor(original).resize(original, drag.handle.id, p.snapped, p.mods);
-      c.scene.previewShapes(drag.snapshot.map((s) => (s.name === drag.name ? next : s)));
+      c.scene.previewShapes(
+        rerouteAll(drag.snapshot.map((s) => (s.name === drag.name ? next : s))),
+      );
 
       // After a flip the pinned edge becomes the opposite side of the box, which is something
       // bounds alone can report -- no need for any shape-kind specific sign checks.
@@ -222,7 +253,10 @@ export class SelectTool implements Tool {
     }
 
     c.scene.previewShapes(normalized);
-    c.scene.commitPreview(drag.kind === 'move' ? 'move' : 'resize', drag.snapshot);
+    c.scene.commitPreview(
+      drag.kind === 'move' ? 'move' : drag.handle.role === 'rebind' ? 'reanchor' : 'resize',
+      drag.snapshot,
+    );
     c.requestFrame();
   }
 

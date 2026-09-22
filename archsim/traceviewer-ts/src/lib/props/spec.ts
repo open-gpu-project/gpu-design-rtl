@@ -85,7 +85,45 @@ export interface PropSchema<S extends ShapeBase = Shape> {
   readonly kind: S['kind'];
   readonly title: string;
   readonly doc: string;
+  /** Canonically ordered by `propSchema`; a declaration's own order carries no meaning. */
   readonly props: readonly PropDef<S>[];
+}
+
+/** `kind` above everything, then what you can change, then what the app works out for you. */
+function rank<S extends ShapeBase>(d: PropDef<S>): number {
+  if (d.key === 'kind') return 0;
+  return d.mode === 'edit' ? 1 : 2;
+}
+
+/**
+ * The canonical key order: `kind`, then the editable keys, then the derived ones, each group
+ * alphabetical.
+ *
+ * Sorted rather than hand-arranged so that a key's place is a fact about what it *is* -- can I
+ * change this? -- and not about where its author happened to paste it. `kind` is exempt because
+ * it is what tells you how to read everything under it, and a document whose first line is
+ * `description` reads like a mistake.
+ *
+ * One order serves every consumer: the panel rows, the generated schema, the saved record, and
+ * the sequence `applyDocument` writes in. That last one is worth knowing when two writers on the
+ * same object interact -- the alphabetically later key is applied second and wins.
+ */
+export function orderProps<S extends ShapeBase>(
+  props: readonly PropDef<S>[],
+): readonly PropDef<S>[] {
+  // Plain `<` rather than `localeCompare`: keys are ASCII identifiers, and the saved file's key
+  // order must not depend on the machine's locale.
+  return [...props].sort(
+    (a, b) => rank(a) - rank(b) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+  );
+}
+
+/**
+ * Declare a kind's properties. Wrap the declaration rather than assigning it directly, so
+ * `orderProps` is the single place document order is decided.
+ */
+export function propSchema<S extends ShapeBase>(ps: PropSchema<S>): PropSchema<S> {
+  return { ...ps, props: orderProps(ps.props) };
 }
 
 export function defFor<S extends ShapeBase>(

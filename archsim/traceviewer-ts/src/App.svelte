@@ -11,7 +11,21 @@
   } from './lib/canvas/grid-renderer';
   import { darkTheme } from './lib/canvas/theme';
   import { clearWorkspace } from './lib/dock/layout';
+  import type { Vec2 } from './lib/geom/types';
+  import { opsFor } from './lib/scene/registry';
+  import {
+    collapseRoute,
+    CorridorIndex,
+    isRectilinear,
+    moveSegment,
+    NO_CORRIDORS,
+    patchEnd,
+    patchStart,
+    ROUTE_MAX_SEGMENTS,
+    routeConnection,
+  } from './lib/scene/route';
   import { serializeScene } from './lib/scene/serialize';
+  import type { Shape } from './lib/scene/shape';
   import { EditorSession, provideSession } from './lib/session.svelte';
   import { tickTiers } from './lib/timeline/ticks';
 
@@ -77,6 +91,40 @@
         ): void => new DotGrid().draw(ctx, camX, camY, z, dpr, theme),
         /** For checks that need to hold one across renders, i.e. that test cache HITS. */
         DotGrid,
+      },
+      /*
+        The router as a pure function, for the same reason as `__grid`: routing is the part of
+        connections most likely to be subtly wrong in a way a screenshot will not show, and a
+        browser check can drive it with no compositor and no pointer in the loop.
+      */
+      __route: {
+        routeConnection,
+        collapseRoute,
+        isRectilinear,
+        moveSegment,
+        patchStart,
+        patchEnd,
+        CorridorIndex,
+        NO_CORRIDORS,
+        ROUTE_MAX_SEGMENTS,
+      },
+      __anchor: {
+        anchorAt: (s: Shape, p: Vec2, worldPerPx: number) =>
+          opsFor(s).anchorAt?.(s, p, { worldPerPx }) ?? null,
+        resolveAnchor: (s: Shape, id: string) => opsFor(s).resolveAnchor?.(s, id) ?? null,
+      },
+      /*
+        A shape's handles, by name. Reached through the session rather than by importing the
+        registry, because a check that imports `registry.ts` by URL gets a second, empty copy
+        of it the moment Vite has invalidated the app's own import of the same file.
+
+        Worth exposing at all because the ORDER of this list is load-bearing: `hitTest` takes
+        the first handle it matches, which is what puts an end bead ahead of the segment
+        leaving it.
+      */
+      __handles: (name: string) => {
+        const s = session.scene.shapes.find((x) => x.name === name);
+        return s === undefined ? null : opsFor(s).handles(s);
       },
       __dump: () => serializeScene(session.scene.shapes),
       __resetLayout: () => {

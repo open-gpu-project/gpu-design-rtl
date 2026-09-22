@@ -22,10 +22,19 @@ export function uniqueName(desired: string, taken: ReadonlySet<ShapeName>): Shap
   }
 }
 
-/** The first free `block_N`. Used for auto-naming a freshly drawn block. */
-export function nextBlockName(taken: ReadonlySet<ShapeName>, from = 1): ShapeName {
+/** The first free `<prefix>_N`. Used for auto-naming a freshly drawn shape. */
+export function nextIndexedName(
+  prefix: string,
+  taken: ReadonlySet<ShapeName>,
+  from = 1,
+): ShapeName {
   for (let n = from; ; n++) {
-    const candidate = `block_${n}`;
+    const candidate = `${prefix}_${n}`;
     if (!taken.has(candidate)) return candidate;
   }
+}
+
+/** The first free `block_N`. */
+export function nextBlockName(taken: ReadonlySet<ShapeName>, from = 1): ShapeName {
+  return nextIndexedName('block', taken, from);
 }

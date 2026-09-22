@@ -23,7 +23,12 @@
   /** Editor floor: roughly four tree rows. Paired with the `min-height` override in the
    *  stylesheet below -- without that the editor cannot honour a floor this small. */
   const MIN_EDITOR = 80;
-  /** Footer floor: the heading line plus one line of prose. */
+  /**
+   * Absolute floor: the heading line plus one line of prose.
+   *
+   * Only binds before the first measurement and for documentation shorter than it. What
+   * normally decides how short the footer may be is `docsFloor`, below.
+   */
   const MIN_DOCS = 44;
   const DEFAULT_DOCS = 88;
   const DOCS_KEY = 'archsim.traceviewer.props.docs.v1';
@@ -34,7 +39,10 @@
 
   let editorHeight = $state(0);
   let docsMeasured = $state(0);
-  let docsHeight = $state(loadDocsHeight());
+  /** The documentation's natural height, measured off the unclipped inner block. */
+  let docsContent = $state(0);
+  /** What the user last dragged to. A wish, not the height: see `docsHeight`. */
+  let docsWanted = $state(loadDocsHeight());
   let resizing = $state(false);
 
   /**
@@ -48,15 +56,34 @@
    */
   const docsMax = $derived(Math.max(MIN_DOCS, editorHeight + docsMeasured - MIN_EDITOR));
 
-  /*
-    Keeps the requested height honest when the *pane* changes size. The stylesheet's max-height
-    holds the footer back immediately, but `docsHeight` would stay too large behind it and the
-    next drag or keypress would start from a number that is not on screen. Converges in one
-    pass: the two boxes always sum to the same total, so writing the ceiling does not move it.
-  */
-  $effect(() => {
-    if (docsHeight > docsMax) docsHeight = docsMax;
-  });
+  /**
+   * How short the footer is allowed to be: exactly enough to show its text.
+   *
+   * Measured rather than estimated, because the answer depends on the pane's width, the font
+   * and which property is selected -- three things no constant can track. The measurement is
+   * taken from the inner block, which is laid out at its natural height whatever the footer
+   * around it is doing, so it stays correct even while the footer is too short to show it.
+   */
+  const docsFloor = $derived(Math.max(MIN_DOCS, docsContent));
+
+  /**
+   * The height the footer actually gets: `max(what the text needs, what the user asked for)`,
+   * and then whatever the pane can spare.
+   *
+   * Keeping the user's wish separate from the height is what stops the floor from ratcheting.
+   * Clamping the stored number up to each new floor would mean that selecting one long
+   * documentation string permanently enlarged the footer for every short one after it.
+   */
+  const docsHeight = $derived(Math.min(Math.max(docsWanted, docsFloor), docsMax));
+
+  /**
+   * The floor as the splitter reports it to assistive technology.
+   *
+   * Capped, because where the documentation cannot fit at all `docsFloor` exceeds `docsMax` --
+   * and a separator advertising a minimum above its maximum, with the current value below
+   * both, is not something a screen reader can do anything sensible with.
+   */
+  const docsAriaMin = $derived(Math.round(Math.min(docsFloor, docsMax)));
 
   function loadDocsHeight(): number {
     try {
@@ -71,22 +98,30 @@
 
   function saveDocsHeight(): void {
     try {
-      localStorage.setItem(DOCS_KEY, String(Math.round(docsHeight)));
+      localStorage.setItem(DOCS_KEY, String(Math.round(docsWanted)));
     } catch {
       // Losing a panel size is not worth breaking the app over.
     }
   }
 
+  /*
+    Clamped to the ABSOLUTE floor, not to `docsFloor`. The wish is allowed to sit below the
+    current text's needs -- that is how dragging the grip all the way down under a long
+    documentation string still shrinks the footer once a short one is selected. What the user
+    sees obeys `docsFloor`, because `docsHeight` takes the max.
+  */
   const clampDocs = (n: number): number => Math.max(MIN_DOCS, Math.min(n, docsMax));
 
   function startResize(event: PointerEvent): void {
     if (event.button !== 0) return;
     const grip = event.currentTarget as HTMLElement;
     const startY = event.clientY;
+    // Re-based on the height on screen rather than on the stored wish, so a drag is 1:1 from
+    // the first pixel even when the wish is currently being overridden by the floor.
     const startHeight = docsHeight;
 
     const move = (e: PointerEvent): void => {
-      docsHeight = clampDocs(startHeight - (e.clientY - startY));
+      docsWanted = clampDocs(startHeight - (e.clientY - startY));
     };
     const stop = (): void => {
       grip.removeEventListener('pointermove', move);
@@ -118,7 +153,7 @@
               : null;
     if (next === null) return;
     event.preventDefault();
-    docsHeight = clampDocs(next);
+    docsWanted = clampDocs(next);
     saveDocsHeight();
   }
 
@@ -467,7 +502,7 @@
     aria-orientation="horizontal"
     aria-label="Resize documentation"
     aria-valuenow={Math.round(docsHeight)}
-    aria-valuemin={MIN_DOCS}
+    aria-valuemin={docsAriaMin}
     aria-valuemax={Math.round(docsMax)}
     tabindex="0"
     onpointerdown={startResize}
@@ -477,29 +512,36 @@
   <!--
     The footer is the whole reason `PropDef.doc` is a first-class field: the tree view has no
     tooltips, so this is where a property's documentation is allowed to be long.
+
+    The inner block is not decoration. It carries the padding so that its `clientHeight` is
+    exactly the height the footer needs, and being a plain block inside an `overflow-y: auto`
+    box it is laid out at its natural height no matter how short the footer is -- which is what
+    makes `docsFloor` measurable in the one case that matters, the case where it does not fit.
   -->
   <footer class="footer" bind:clientHeight={docsMeasured} style:height={`${docsHeight}px`}>
-    {#if footerDef !== null}
-      <p class="head">
-        {footerDef.title}{#if footerSlot !== null}<span class="slot">
-            &rsaquo; {footerSlot}</span
-          >{/if}
-        <span class="type">{describeProp(footerDef)}</span>
-      </p>
-      <p class="body">{footerDef.doc}</p>
-    {:else if footerTraceField !== null}
-      <p class="head">
-        {footerTraceField.name}
-        <span class="type">
-          {footerTraceField.enumNames === undefined ? 'traced value' : 'enumeration'}
-        </span>
-      </p>
-      <p class="body">{footerTraceField.doc}</p>
-    {:else if shownSignal !== null}
-      <p class="body dim">{shownSignal.doc}</p>
-    {:else}
-      <p class="body dim">Select a property to read what it does.</p>
-    {/if}
+    <div class="doc" bind:clientHeight={docsContent}>
+      {#if footerDef !== null}
+        <p class="head">
+          {footerDef.title}{#if footerSlot !== null}<span class="slot">
+              &rsaquo; {footerSlot}</span
+            >{/if}
+          <span class="type">{describeProp(footerDef)}</span>
+        </p>
+        <p class="body">{footerDef.doc}</p>
+      {:else if footerTraceField !== null}
+        <p class="head">
+          {footerTraceField.name}
+          <span class="type">
+            {footerTraceField.enumNames === undefined ? 'traced value' : 'enumeration'}
+          </span>
+        </p>
+        <p class="body">{footerTraceField.doc}</p>
+      {:else if shownSignal !== null}
+        <p class="body dim">{shownSignal.doc}</p>
+      {:else}
+        <p class="body dim">Select a property to read what it does.</p>
+      {/if}
+    </div>
   </footer>
 </div>
 
@@ -551,13 +593,28 @@
   }
 
   /*
-    Height comes from the grip; `max-height` is the passive half of the same clamp, for the one
-    case a drag cannot catch -- the pane itself getting shorter afterwards. 5rem is MIN_EDITOR.
+    Height comes from the grip, floored by the text; `max-height` is the passive half of the
+    same clamp, for the one case a drag cannot catch -- the pane itself getting shorter
+    afterwards. 5rem is MIN_EDITOR.
+
+    `scrollbar-gutter: stable` keeps the inner block's width -- and therefore the height it
+    reports -- from changing as the scrollbar comes and goes, which is the one way a
+    measure-then-resize loop here could fail to settle.
+
+    80px rather than 5rem: MIN_EDITOR is a pixel count, and the two clamps have to agree or
+    the height this element reports stops matching the one the script computed -- which is
+    what `aria-valuenow` publishes. They only differ once the root font is not 16px, which is
+    a real user setting and not a hypothetical.
   */
   .footer {
     flex: none;
-    max-height: calc(100% - 5rem);
+    max-height: calc(100% - 80px);
     overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  /* The padding lives here, so what is measured is what the footer needs. */
+  .doc {
     padding: 0.5rem 0.625rem;
   }
 

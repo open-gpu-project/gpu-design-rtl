@@ -6,6 +6,17 @@ Read [iteration 1](./iter-1-canvas-foundation.md) first; its conventions still h
 repeated here. This document records what changed, the two design defects that a green
 type-check and a working-looking UI did not reveal, and one third-party bug you will hit.
 
+Two corrections from
+[iteration 4.1](./iter-4-1-panel-and-endpoints.md), which you should read before acting on §3:
+
+1. **Key order no longer comes from the declaration.** `propSchema` sorts every kind's `props`
+   into one canonical order — `kind`, the editable keys, then the derived ones, each group
+   alphabetical — so reordering a declaration array changes nothing. The §3 sentence below
+   that says otherwise was true when it was written and is not now.
+2. **The documentation footer sizes itself.** It is never shorter than the text in it; the grip
+   only makes it larger. §3.7's two-clamp description is now three numbers, not two, and the
+   per-suite counts in §9 have moved.
+
 ---
 
 ## 1. Scope
