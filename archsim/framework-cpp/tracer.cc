@@ -22,16 +22,18 @@ namespace {
 
 } // namespace
 
-void TraceSink::write_value_change(signal_id_t tag, std::string_view data) {
+void TraceSink::write_value_change(signal_id_t signal_id, std::string_view data, tag_t tag) {
    if (data.size() > std::numeric_limits<uint32_t>::max()) {
       throw GenericSimulationException("Traced value is too large to record",
-                                       std::pair{"signal_id", tag.index()},
+                                       std::pair{"signal_id", signal_id.index()},
                                        std::pair{"bytes", static_cast<uint64_t>(data.size())});
    }
 
    // Signal id in the high half, payload length in the low half, so a reader
    // can skip to the next record without parsing the BEVE payload.
-   uint64_t header = (static_cast<uint64_t>(tag.index()) << 32) | data.size();
+   uint64_t header = (static_cast<uint64_t>(signal_id.index()) << 32) | data.size();
+   // TODO(claude): tag is not plumbed through here
+   (void) tag;
    m_record.assign(reinterpret_cast<char const*>(&header), sizeof(header));
    m_record.append(data);
    commit_body_data(m_record);

@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cpptrace/cpptrace.hpp>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -16,6 +17,9 @@ namespace framework {
    class Entity;
    class TracerBase;
    class TraceSink;
+
+   using tag_t = uint32_t;
+   static tag_t default_tag = 0;
 
    /**
     * Represents a clock signal in the simulation. See also `Simulation::add_clock()`.

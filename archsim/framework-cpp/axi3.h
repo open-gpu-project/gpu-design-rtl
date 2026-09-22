@@ -77,26 +77,27 @@ namespace framework::axi3 {
    struct ChannelSink;
 
    template <ChannelData T>
-   struct ChannelSource {
+   struct ChannelSink {
    public:
       bool ready() const { return m_fifo.can_write(); }
       void write(T data) { m_fifo.write(data); }
 
    private:
       friend struct Channel<T>;
-      ChannelSource(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
+      ChannelSink(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
       Fifo<T, 2>& m_fifo;
    };
 
    template <ChannelData T>
-   struct ChannelSink {
+   struct ChannelSource {
    public:
       bool valid() const { return m_fifo.can_read(); }
       T read() { return m_fifo.read(); }
+      std::optional<T> peek() const { return m_fifo.can_read() ? m_fifo.peek() : std::nullopt; }
 
    private:
       friend struct Channel<T>;
-      ChannelSink(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
+      ChannelSource(Fifo<T, 2>& fifo) : m_fifo{fifo} {}
       Fifo<T, 2>& m_fifo;
    };
 

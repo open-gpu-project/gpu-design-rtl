@@ -9,6 +9,7 @@ add_executable(
    ${CMAKE_CURRENT_LIST_DIR}/test_simulation.cc
    ${CMAKE_CURRENT_LIST_DIR}/test_tracer.cc
    ${CMAKE_CURRENT_LIST_DIR}/test_tracer_codec.cc
+   archsim/framework-cpp/tests/test_fifo.cc
 )
 
 # Declare test dependencies

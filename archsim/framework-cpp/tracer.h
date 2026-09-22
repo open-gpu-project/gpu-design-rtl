@@ -59,7 +59,7 @@ namespace framework {
    public:
       virtual ~TraceSink() = default;
 
-      void write_value_change(signal_id_t, std::string_view data);
+      void write_value_change(signal_id_t, std::string_view data, tag_t tag = default_tag);
       void write_tick(unsigned tick);
 
       void register_schema(std::type_info const&, std::string_view data);
@@ -98,8 +98,18 @@ namespace framework {
    /// @brief Base class for tracers that record changes in values over time.
    class TracerBase {
    public:
-      explicit TracerBase(EntityConfig const& config)
-            : m_simulation{config.simulation}, m_entity_id{config.id} {
+      /**
+       * @param name
+       * The local name of the entity within the simulation. If empty, the
+       * entity's full name will be used instead. Otherwise, the full name of the
+       * signal is `<entity_full_name>.<local_name>`
+       */
+      explicit TracerBase(EntityConfig const& config,
+                          std::string_view name,
+                          std::string_view description)
+            : m_simulation{config.simulation}, m_entity_id{config.id}, m_local_name{name} {
+         // FIXME(claude): Use the description for the tracer.
+         (void)description;
          m_simulation.register_tracer(*this);
       }
 
@@ -107,24 +117,26 @@ namespace framework {
 
       // Set the sink for recording traced values. Called by Simulation::build(),
       // once every entity has its fully qualified name.
-      virtual void initialize(TraceSink* sink) = 0;
+      virtual void initialize(TraceSink* sink) { m_sink = sink; }
 
       // Reset the tracer to its initial state.
       virtual void reset() = 0;
 
    protected:
       /// @brief The signal name to register, qualified by the owning entity's path.
-      std::string qualified_name(std::string_view local_name) const {
+      std::string qualified_name() const {
          auto name = m_simulation.get_entity_full_name(m_entity_id);
-         if (!local_name.empty()) {
+         if (!m_local_name.empty()) {
             name += '.';
-            name += local_name;
+            name += m_local_name;
          }
          return name;
       }
 
       Simulation& m_simulation;
-      entity_id_t m_entity_id;
+      const entity_id_t m_entity_id;
+      const std::string m_local_name;
+      TraceSink* m_sink = nullptr;
    };
 
    /**
@@ -134,30 +146,45 @@ namespace framework {
    template <typename T>
    class Tracer : public TracerBase {
    public:
-      Tracer(EntityConfig const& config, std::string_view name)
-            : TracerBase{config}, m_name{name} {}
+      Tracer(EntityConfig const& config,
+             std::string_view name = "",
+             std::string_view description = "")
+            : TracerBase{config, name, description} {}
 
       void initialize(TraceSink* sink) override {
-         m_sink = sink;
-         if (m_sink == nullptr) {
-            return;
-         }
+         if (!sink) return;
+         TracerBase::initialize(sink);
          m_sink->register_schema(typeid(T), TracerCodec<T>::encode_schema());
-         m_signal_id = m_sink->register_signal(typeid(T), qualified_name(m_name));
+         m_signal_id = m_sink->register_signal(typeid(T), qualified_name());
       }
 
-      virtual void on_value_change(T const& value) {
+      virtual void on_value_change(T const& value, tag_t tag = default_tag) {
          if (!m_sink || !m_signal_id) {
             return;
          }
-         m_sink->write_value_change(*m_signal_id, TracerCodec<T>::encode(value));
+         m_sink->write_value_change(*m_signal_id, TracerCodec<T>::encode(value), tag);
       }
 
       void reset() override {}
 
    private:
-      const std::string m_name;
-      TraceSink* m_sink = nullptr;
+      std::optional<signal_id_t> m_signal_id = std::nullopt;
+   };
+
+   /**
+    * Tracer for data-less events only. TODO(claude): Implement.
+    */
+   class EventTracer : public TracerBase {
+   public:
+      EventTracer(EntityConfig const& config,
+                  std::string_view name = "",
+                  std::string_view description = "")
+            : TracerBase{config, name, description} {}
+      void initialize(TraceSink* sink) override;
+      virtual void on_event();
+      void reset() override {}
+
+   private:
       std::optional<signal_id_t> m_signal_id = std::nullopt;
    };
 
