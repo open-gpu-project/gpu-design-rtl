@@ -83,7 +83,6 @@ export class WheelController {
   #raf = 0;
 
   #gestureScale = 1;
-  #gestureAnchor: Vec2 = { x: 0, y: 0 };
   #suppressPinchUntil = 0;
 
   readonly #wheelMeansZoom: boolean;
@@ -142,20 +141,38 @@ export class WheelController {
   onGestureStart(e: Event, screen: Vec2): void {
     e.preventDefault();
     this.#gestureScale = 1;
-    this.#gestureAnchor = screen;
+    this.#anchor = screen;
     this.#suppressPinchUntil = performance.now() + SAFARI_GESTURE_SUPPRESS_MS;
   }
 
+  /**
+   * Safari's pinch, through the same accumulator as everything else.
+   *
+   * It used to apply `zoomAt` and call `onApplied()` synchronously, once per event, which made
+   * Safari the only engine not honouring the class docstring above -- and `#suppressPinchUntil`
+   * deliberately routes Safari away from the coalesced ctrl+wheel path, so it was the only engine
+   * that could take it. Measured cost: 346 gesture events produced 346 camera updates and 232
+   * full-document layouts in 20 seconds, where one per frame would have been 52 of each.
+   *
+   * It was NOT 346 grid rebuilds. `Renderer.requestFrame` already coalesces to one draw per
+   * animation frame, so those 346 events collapsed into 52 draws regardless -- which is why this
+   * is worth fixing for the invalidation it causes and not as a multiplier on the grid.
+   *
+   * A second accumulator was the obvious alternative and is why the bug existed in the first
+   * place: two of them would have to agree about anchor, ordering and clamping. `#apply` raises
+   * `Math.exp(-#zoomExp)`, so a multiplicative factor enters as minus its logarithm and the
+   * product telescopes -- `exp(-sum(-log f_i))` is exactly `prod(f_i)`.
+   */
   onGestureChange(e: Event, screen: Vec2): void {
     e.preventDefault();
     const scale = (e as GestureLikeEvent).scale;
     if (!Number.isFinite(scale) || scale <= 0) return;
     this.#suppressPinchUntil = performance.now() + SAFARI_GESTURE_SUPPRESS_MS;
-    this.#gestureAnchor = screen;
+    this.#anchor = screen;
     const factor = scale / this.#gestureScale;
     this.#gestureScale = scale;
-    this.view.zoomAt(this.#gestureAnchor, factor);
-    this.onApplied();
+    this.#zoomExp -= Math.log(factor);
+    this.#schedule();
   }
 
   onGestureEnd(e: Event): void {

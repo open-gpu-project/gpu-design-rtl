@@ -13,14 +13,26 @@ and `__workspace`.
 
 ```bash
 npm run dev                 # terminal 1, port 5183
-node verify/properties.mjs  # terminal 2
+node verify/grid.mjs        # terminal 2
+node verify/input.mjs
+node verify/properties.mjs
 node verify/docking.mjs
+node verify/trace.mjs
 
 npm run build && npm run preview   # port 4183
 node verify/production.mjs
 ```
 
-`npm run verify` runs the two dev suites against an already-running dev server.
+`npm run verify` runs all five dev suites — 158 assertions — against an already-running dev
+server. `production.mjs` is not among them: it needs `vite preview` on a different port.
+
+`grid.mjs` is the odd one out and deliberately so. It asserts on primitive counts and on pixel
+diffs taken from canvases it creates itself, never from the live one — that is
+`{ desynchronized: true }`, and low-latency canvases have a history of returning unflushed
+content. It also never asserts a frame time: canvas rasterization happens after `draw()` returns,
+in Safari's GPU process, so `performance.now()` around a draw measures nothing and this browser
+understates the real magnitude by ~3.5×. Counts here, milliseconds by hand — see
+[history/iter-3-2-measurement.md](../history/iter-3-2-measurement.md).
 
 ## What is deliberately not covered
 

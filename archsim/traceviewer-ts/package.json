@@ -11,7 +11,7 @@
     "check:watch": "svelte-check --tsconfig ./tsconfig.app.json --watch",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "node verify/properties.mjs && node verify/docking.mjs && node verify/trace.mjs"
+    "verify": "node verify/grid.mjs && node verify/input.mjs && node verify/properties.mjs && node verify/docking.mjs && node verify/trace.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

@@ -40,7 +40,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. Anything touching the canvas, the camera, DPI, or the property round trip
+iteration document. `npm run verify` is 158 assertions across five suites. Anything touching the canvas, the camera, DPI, or the property round trip
 has to be run in a real browser at `deviceScaleFactor: 2`. `verify/` is what does that.
 
 ## Controls
@@ -153,3 +153,15 @@ type-check cleanly and only fail at runtime.
 - [iter-3-trace-panel.md](history/iter-3-trace-panel.md) — the trace panel: the data model taken
   from the real `ARCHTRC` producer, flags, the tick ladder, the time cursor, and global
   selection. Why the selected flag is derived rather than stored.
+- [iter-3-1-render-performance.md](history/iter-3-1-render-performance.md) — why the canvas gets
+  slower the larger the window, and the four defects behind it. Why `createPattern` is the wrong
+  answer. Supporting measurements in
+  [safari-performance-report-1.md](history/safari-performance-report-1.md) (it is the dot geometry,
+  not the pixels) and
+  [safari-performance-report-2.md](history/safari-performance-report-2.md) (the cost is a step
+  discontinuity at each level-of-detail boundary, paid out of process).
+- [iter-3-2-measurement.md](history/iter-3-2-measurement.md) — **in progress.** The dot grid as
+  cached row strips: 31× fewer primitives at the worst zoom, pixel-identical, and flat in canvas
+  area. Safari's pinch folded into the rAF accumulator, and two readouts that dirtied the document
+  at input frequency. Holds the protocol for the one measurement only real Safari can make, and
+  the results sheet it fills in.

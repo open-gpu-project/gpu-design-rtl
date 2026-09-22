@@ -38,7 +38,7 @@
 
   <span class="ml-auto tabular-nums">
     {#if host.pointer !== null}
-      x {round(host.pointer.snapped.x)} &nbsp; y {round(host.pointer.snapped.y)}
+      x {round(host.pointer.x)} &nbsp; y {round(host.pointer.y)}
     {:else}
       &mdash;
     {/if}

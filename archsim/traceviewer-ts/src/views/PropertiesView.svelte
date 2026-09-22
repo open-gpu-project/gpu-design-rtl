@@ -292,9 +292,29 @@
     const s = scene.soleSelected();
     if (s === null) {
       const doc = scene.selection.size === 0 ? {} : scene.selectedShapes().map(docFor);
-      dropCaret();
-      push(doc, true);
-      shown = null;
+      /*
+        A real key, like the other two branches, instead of `null`.
+
+        This branch used to pass `reset: true` unconditionally, which skips `push`'s entire
+        text-equality guard -- so every re-run with nothing selected dropped the caret and called
+        `editor.set({ json: {} })`, reminting the whole tree for `{} -> {}`. Measured at +12/-15
+        top-level mutations per deselect, and the Safari stack showed it re-entering Svelte's
+        scheduler through `flushSync` mid-flush, which is a correctness hazard as much as a cost.
+
+        Carrying the selection COUNT in the key is what keeps the caret safe when a multi-selection
+        shrinks: the document is an array, and a caret at a path like `/2/...` stops resolving once
+        the list is shorter (iteration 2 defect 8). `shownCount` cannot serve here -- it is
+        `$state`, and reading state this effect writes is the feedback loop the plain `let`s at the
+        top of this file exist to prevent.
+
+        Starting from `shown === null` means the FIRST run still resets, exactly as before; only
+        the repeats become no-ops.
+      */
+      const key = scene.selection.size === 0 ? 'none' : `multi:${scene.selection.size}`;
+      const switched = key !== shown;
+      if (switched) dropCaret();
+      push(doc, switched);
+      shown = key;
       shownSpec = null;
       shownCount = scene.selection.size;
       shownSignal = null;

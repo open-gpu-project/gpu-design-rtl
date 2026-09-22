@@ -2,7 +2,7 @@ import { expandRect, rectsIntersect } from '../geom/math';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
-import { drawDotGrid } from './grid-renderer';
+import { DotGrid } from './grid-renderer';
 import type { Theme } from './theme';
 import type { ViewController } from './view.svelte';
 
@@ -23,6 +23,12 @@ export interface RenderInput {
 export class Renderer {
   #dirty = false;
   #raf = 0;
+  /**
+   * Owned here rather than by the grid module, because it caches bitmaps sized to this canvas.
+   * `Renderer` is built once per `EditorSession` and outlives pane remounts, which is the lifetime
+   * a per-canvas cache wants; a module-level one would thrash between two panes.
+   */
+  #grid = new DotGrid();
 
   constructor(
     private readonly view: ViewController,
@@ -40,6 +46,9 @@ export class Renderer {
     if (this.#raf !== 0) cancelAnimationFrame(this.#raf);
     this.#raf = 0;
     this.#dirty = false;
+    // Drops cached bitmaps only. This can run against a LIVE renderer -- the dock may mount the
+    // new pane before tearing down the old one -- so it must not leave the grid unable to draw.
+    this.#grid.dispose();
   }
 
   #tick = (): void => {
@@ -54,14 +63,23 @@ export class Renderer {
     const ctx = view.ctx;
     if (ctx === null || view.cssW <= 0 || view.cssH <= 0) return;
 
-    const { cssW, cssH, dpr, z, camX, camY } = view;
+    const { dpr, z, camX, camY } = view;
     const theme = this.theme;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Device space, not CSS space. `fillRect(0, 0, cssW, cssH)` under a dpr transform covers
+    // `[0, cssW * dpr)`, but `syncCanvasSize` ROUNDS when it assigns `canvas.width` -- so
+    // wherever it rounds up, the last device column got only fractional coverage. That was
+    // invisible while the grid's loop bound was the same unrounded `cssW * dpr` and never drew
+    // there. Now that the grid bounds itself by `canvas.width` it does, and because the context
+    // is `{ alpha: false }` and is never cleared, a partially covered column would retain a
+    // fraction of the previous frame's dot colour every frame -- a 1px smear down the right edge
+    // that builds up over a sustained pan. Filling the bitmap outright also removes one of the
+    // frame's two transform switches, and hands `drawDotGrid` the space it resets to anyway.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    drawDotGrid(ctx, camX, camY, cssW, cssH, z, dpr, theme);
+    this.#grid.draw(ctx, camX, camY, z, dpr, theme);
 
     const toWorldSpace = (): void => {
       ctx.setTransform(dpr * z, 0, 0, dpr * z, -camX * dpr * z, -camY * dpr * z);

@@ -42,8 +42,15 @@ export class ToolHost {
    * which is exactly why this counter has to exist separately.
    */
   gestureVersion = $state(0);
-  /** Live cursor readout for the status bar. */
-  pointer = $state.raw<{ readonly world: Vec2; readonly snapped: Vec2 } | null>(null);
+  /**
+   * Live cursor readout for the status bar, snapped to the grid.
+   *
+   * The snapped point and nothing else: `StatusBar` is the only reader and only ever showed
+   * `snapped`, rounded. Keeping `{ world, snapped }` and comparing on `snapped` would have left
+   * `world` stale between snap changes, which is a trap rather than a saving -- so the field
+   * narrows rather than just de-duplicating.
+   */
+  pointer = $state.raw<Vec2 | null>(null);
 
   readonly wheel: WheelController;
 
@@ -153,7 +160,16 @@ export class ToolHost {
 
   onPointerMove(e: PointerEvent): void {
     const p = this.#info(e);
-    this.pointer = { world: p.world, snapped: p.snapped };
+    // Only on a real change. This is `$state.raw`, so it compares by identity and a fresh object
+    // per event re-rendered the status bar on every single pointermove -- 48 full-document
+    // layouts per 60 moves over the canvas, against 0 for 60 moves outside it. The readout only
+    // changes when the SNAPPED point does, which is once per GRID world pixels, so most moves
+    // become no-ops. Written before the pan early-return below, as it always was: the readout has
+    // to keep up while dragging.
+    const was = this.pointer;
+    if (was === null || was.x !== p.snapped.x || was.y !== p.snapped.y) {
+      this.pointer = p.snapped;
+    }
 
     if (this.#pan !== null) {
       this.view.pan(p.screen.x - this.#pan.last.x, p.screen.y - this.#pan.last.y);
