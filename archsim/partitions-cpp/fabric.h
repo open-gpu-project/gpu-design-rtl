@@ -69,6 +69,20 @@ namespace partitions {
       void on_tick() override;
 
    private:
+      bool decide_split0(const axi3::ArChannelData&, bool&, bool&) const;
+      bool decide_split1(const axi3::AwChannelData&, bool&, bool&) const;
+      bool decide_split2(const axi3::WChannelData&, bool&, bool&) const;
+      bool decide_split3(const axi3::RChannelData&, bool&, bool&) const;
+      bool decide_split4(const axi3::RChannelData&, bool&, bool&) const;
+
+      template <axi3::ChannelData T>
+      std::optional<axi3::ChannelSource<T>> arbitrate(
+            axi3::ChannelSource<T> if1, std::optional<axi3::ChannelSource<T>> if2) const {
+         if (if1.valid()) return if1;
+         return if2;
+      }
+
+   private:
       fabric::AxiHpIfType m_axi_hp_if;
       fabric::TdsuIfType m_tdsu_if;
       fabric::UpqIfType m_upq_if;
