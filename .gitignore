@@ -22,3 +22,6 @@ results.xml
 
 # Node
 node_modules/
+
+# Chrome DevTools timeline recordings
+localhost-recording*.json
