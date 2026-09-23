@@ -372,7 +372,7 @@ t.ok(
 t.ok('and leaves every connection object identical, not merely equal', S.connStillSame);
 t.ok(
   'the saved record carries the endpoints, the routing mode and the route',
-  eq(S.keys, ['kind', 'description', 'label', 'name', 'points', 'routing', 'source', 'target']),
+  eq(S.keys, ['kind', 'description', 'label', 'name', 'routing', 'points', 'source', 'target']),
   JSON.stringify(S.keys),
 );
 t.ok('and no zIndex, since array order already is the draw order', !S.keys.includes('zIndex'));
@@ -381,11 +381,14 @@ t.ok('adding a kind needs no file-format version bump', S.version === 2, `versio
 /*
   The round trip, which `properties.mjs` also checks but only over a scene of blocks.
 
-  Worth its own assertion here because a connection is the first kind with two writers that
-  interact: `points` forces `routing` to 'manual'. Hydrating in canonical key order puts
-  `points` first, so the recorded `routing` is applied afterwards and wins -- load a saved
-  `auto` connection in the other order and it comes back pinned to `manual`, silently, for
-  every connection in the file.
+  Worth its own assertion here because `points` and `routing` were, for one iteration, a pair
+  of writers that interacted: the `points` writer forced `routing` to 'manual', so whichever
+  of the two the loader applied second decided what a saved file meant. It got that wrong once
+  already, and every `auto` connection in every file came back pinned.
+
+  The coupling is gone rather than merely ordered -- pinning a route is the segment drag's
+  job, in `connOps.resize`, not a side effect of restoring points off disk. This assertion is
+  what notices if it comes back.
 */
 const roundTrip = await page.evaluate(async () => {
   const mod = await import('/src/lib/scene/serialize.ts');
@@ -448,19 +451,36 @@ t.ok(
 /* --------------------------------------- P: what the property panel may change ---- */
 
 /*
-  A connection's geometry -- `source`, `target`, `routing`, `points` -- is `fixed` rather than
-  `edit`: saved and restored like everything else, but owned by the canvas.
+  A connection's geometry -- `source`, `target`, `points` -- is `fixed` rather than `edit`:
+  saved and restored like everything else, but owned by the canvas.
 
-  Four coupled values that only make sense together are a poor thing to hand-edit one at a
+  Three coupled values that only make sense together are a poor thing to hand-edit one at a
   time. The gestures that set them (drag a bead, drag a segment) keep them consistent by
   construction; the tree editor cannot, and every writer would have had to defend itself
-  against the other three. `name`, `label` and `description` stay editable, because those are
-  the parts a person, rather than the app, actually decides.
+  against the other two.
 
-  Both halves of that claim are checked here. The greying and the schema's `readOnly` are
+  `routing` is the deliberate exception, and is checked here too. It is not geometry, it is
+  who maintains the geometry, and the canvas can only ever move it one way -- so with it
+  read-only a hand-drawn route could never be handed back to the router at all.
+
+  Both halves of the read-only claim are checked. The greying and the schema's `readOnly` are
   signposting -- svelte-jsoneditor has no per-node read-only -- so `applyDocument`'s second
   pass is the real refusal, and a signpost with no gate behind it is worse than neither.
 */
+
+/*
+  Select a block first, so that arriving at the connection is a change of *kind* and not just
+  of object. The marking is derived from the schema the panel is showing, and until this
+  iteration that schema was assigned after the document had already been handed to the editor
+  and rendered -- so the greying was one selection behind. It could not show while `rect` was
+  the only kind. It is asserted in both directions below.
+*/
+const blockName = await page.evaluate(() => {
+  const b = window.__scene.shapes.find((s) => s.kind === 'rect');
+  window.__scene.selectOnly(b.name);
+  return b.name;
+});
+await page.waitForTimeout(400);
 
 const connName = await page.evaluate(() => {
   const sc = window.__scene;
@@ -480,15 +500,25 @@ t.ok(
 );
 t.ok(
   'the route and both endpoints are marked read-only',
-  (await greyed('points')) &&
-    (await greyed('routing')) &&
-    (await greyed('source')) &&
-    (await greyed('target')),
+  (await greyed('points')) && (await greyed('source')) && (await greyed('target')),
 );
 t.ok(
-  'and the three things a person names are not',
-  !(await greyed('name')) && !(await greyed('label')) && !(await greyed('description')),
+  'and the four a person decides — three names and the routing mode — are not',
+  !(await greyed('name')) &&
+    !(await greyed('label')) &&
+    !(await greyed('description')) &&
+    !(await greyed('routing')),
 );
+
+await page.evaluate((n) => window.__scene.selectOnly(n), blockName);
+await page.waitForTimeout(400);
+t.ok(
+  'and going the other way carries nothing over: a block’s position and size stay editable',
+  !(await greyed('position')) && !(await greyed('size')) && (await greyed('zIndex')),
+  'the marking follows the schema on screen, not the one before it',
+);
+await page.evaluate((n) => window.__scene.selectOnly(n), connName);
+await page.waitForTimeout(400);
 
 await clickKey(page, 'points');
 const pointsDoc = (await page.locator('.footer').innerText()).replace(/\s+/g, ' ');
@@ -505,25 +535,47 @@ t.ok(
     'ldst',
 );
 
-const beforeRefusal = await page.evaluate(() => ({
-  routing: window.__scene.shapes.find((s) => s.kind === 'conn').routing,
-  label: window.__scene.history.undoLabel,
-}));
-await editValue(page, 'routing', 'manual');
-const refusal = await page.evaluate(() => ({
-  routing: window.__scene.shapes.find((s) => s.kind === 'conn').routing,
-  label: window.__scene.history.undoLabel,
-  alert: (document.querySelector('.alert')?.innerText ?? '').replace(/\s+/g, ' '),
-}));
+/*
+  The escape hatch, end to end and through the panel, because it is the only way back: a
+  segment drag moves `routing` to 'manual' and nothing on the canvas moves it off again. The
+  route is pinned here with the same function the drag uses, so what is under test is the
+  un-pinning and not a hand-made route the router would never have produced.
+*/
+const pinned = await page.evaluate(() => {
+  const sc = window.__scene;
+  const c = sc.shapes.find((s) => s.kind === 'conn');
+  const auto = c.points.map((p) => [p.x, p.y]);
+  const a = c.points[0];
+  const bent = window.__route.moveSegment(c.points, 0, { x: a.x + 64, y: a.y + 64 });
+  sc.replaceShape(c, { ...c, points: bent, routing: 'manual' }, 'pin');
+  const after = sc.shapes.find((s) => s.kind === 'conn');
+  return { auto, routing: after.routing, points: after.points.map((p) => [p.x, p.y]) };
+});
+await page.waitForTimeout(300);
 t.ok(
-  'typing a routing mode into the panel changes nothing and records nothing',
-  refusal.routing === beforeRefusal.routing && refusal.label === beforeRefusal.label,
-  `${beforeRefusal.routing} -> ${refusal.routing}, history ${refusal.label}`,
+  'a route can be pinned to a shape the router would not have chosen',
+  pinned.routing === 'manual' && !eq(pinned.points, pinned.auto),
+  `${JSON.stringify(pinned.auto)} -> ${JSON.stringify(pinned.points)}`,
+);
+
+await editValue(page, 'routing', 'auto');
+const unpinned = await page.evaluate(() => {
+  const c = window.__scene.shapes.find((s) => s.kind === 'conn');
+  return {
+    routing: c.routing,
+    points: c.points.map((p) => [p.x, p.y]),
+    label: window.__scene.history.undoLabel,
+  };
+});
+t.ok(
+  'and typing “auto” in the panel hands it back to the router, which is the only way back',
+  unpinned.routing === 'auto' && eq(unpinned.points, pinned.auto),
+  `${JSON.stringify(pinned.points)} -> ${JSON.stringify(unpinned.points)}`,
 );
 t.ok(
-  'and the refusal names the key and points at where it is set instead',
-  /routing/.test(refusal.alert) && /canvas/i.test(refusal.alert),
-  refusal.alert.slice(0, 110),
+  'as one history entry, readably labelled',
+  /routing/.test(unpinned.label ?? ''),
+  String(unpinned.label),
 );
 
 /*
@@ -547,7 +599,6 @@ const gate = await page.evaluate(async (name) => {
       [0, 0],
       [0, 32],
     ],
-    routing: s.routing === 'auto' ? 'manual' : 'auto',
     source: ['nowhere', 'n'],
     target: ['nowhere', 's'],
   };
@@ -561,9 +612,14 @@ const gate = await page.evaluate(async (name) => {
 }, connName);
 
 t.ok(
-  'applyDocument refuses every one of the four, which is what the greying is drawn over',
-  ['points', 'routing', 'source', 'target'].every((k) => gate.refused[k] !== null),
+  'applyDocument refuses all three, which is what the greying is drawn over',
+  ['points', 'source', 'target'].every((k) => gate.refused[k] !== null),
   JSON.stringify(gate.refused).slice(0, 140),
+);
+t.ok(
+  'and names the key and says where it is set instead',
+  /cannot be changed/.test(gate.refused.points ?? '') && /canvas/i.test(gate.refused.points ?? ''),
+  (gate.refused.points ?? '').slice(0, 110),
 );
 t.ok('and passes an edit that touches only an editable key', gate.clean === 'label', gate.clean);
 
@@ -1290,6 +1346,19 @@ t.ok(
   'even when its bounding box is zero-height, which a horizontal run always is',
   !cull.flat || cull.strokes > 0,
   `flat: ${cull.flat} — rectsIntersect compares inclusively, so a degenerate rect still hits`,
+);
+
+/*
+  `report` prints page errors but does not fail on them, and this suite drives the property
+  panel harder than any other. A `$state` written immediately before a synchronous
+  `editor.set` makes the panel's push effect self-invalidating, and Svelte throws out of the
+  flush -- which is a thrown error on every selection change and not one failed assertion
+  anywhere. Only `verify/production.mjs` was checking for that, and it runs separately.
+*/
+t.ok(
+  'and nothing threw on the page at any point',
+  errors.length === 0,
+  errors.slice(0, 2).join(' | '),
 );
 
 const code = t.report(errors);

@@ -75,12 +75,17 @@ function checkEndpoint(
  * panel rows, the JSON Schema, the footer documentation and the saved record -- follows from
  * this one list, in the order `propSchema` sorts it into rather than the order written here.
  *
- * Only `name`, `label` and `description` are editable. The geometry -- `source`, `target`,
- * `routing` and `points` -- is `fixed`: saved and restored like everything else, but owned by
- * the canvas. A route is four coupled values that only make sense together, and the gestures
- * that change them (drag a bead, drag a segment) keep them coupled by construction, while
- * hand-editing one of the four is a way to say something the other three contradict. The
- * writers below survive because the loader still needs them; see `hydrateShape`.
+ * `source`, `target` and `points` are `fixed`: saved and restored like everything else, but
+ * owned by the canvas. They are not three facts, they are one -- the first point sits on the
+ * source anchor and the last on the target's -- and the gestures that change them (drag a
+ * bead, drag a segment) keep them consistent by construction, while hand-editing one of the
+ * three is a way to say something the other two contradict. Their writers survive because the
+ * loader still needs them; see `hydrateShape`.
+ *
+ * `routing` is editable, and deliberately so even though the canvas sets it too. It is not
+ * geometry, it is a choice about who maintains the geometry -- and dragging a segment can only
+ * ever move that choice one way, so the panel is where it goes back. Setting it to `auto` is
+ * the only way to un-pin a hand-drawn route.
  *
  * Note that there is no version bump anywhere for adding this kind. A record is a property bag
  * keyed by `kind`, so a new kind is new data in the same format, not a new format.
@@ -170,8 +175,8 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'routing',
     title: 'Routing',
-    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends. Set on the canvas: a connection starts out “auto” and dragging any of its segments switches it to “manual” for good. To get an automatic route back, delete the connection and draw it again.',
-    mode: 'fixed',
+    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends. Dragging a segment on the canvas switches this to “manual”; setting it back to “auto” here is how a hand-drawn route is handed back to the router, and it re-routes immediately.',
+    mode: 'edit',
     type: { type: 'enum', values: ['auto', 'manual'] },
     read: (s) => s.routing,
     write: (s, v): Write => {
@@ -184,7 +189,7 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'points',
     title: 'Route',
-    doc: 'The path as a list of [x, y] points in world units. The first point sits on the source anchor and the last on the target anchor, and every point must share exactly one coordinate with the next, since the route only runs horizontally and vertically. Set on the canvas: drag a square knob to slide a segment sideways, or a round bead to move an end. Loading a file applies this before “routing”, so a saved route arrives with the mode it was saved with.',
+    doc: 'The path as a list of [x, y] points in world units. The first point sits on the source anchor and the last on the target anchor, and every point must share exactly one coordinate with the next, since the route only runs horizontally and vertically. Set on the canvas: drag a square knob to slide a segment sideways, or a round bead to move an end. A route drawn by hand is kept only while “routing” says “manual”.',
     mode: 'fixed',
     type: {
       type: 'list',
@@ -207,7 +212,13 @@ const props: readonly PropDef<ConnectionShape>[] = [
           'Each point must share exactly one coordinate with the next: the route runs only horizontally and vertically.',
         );
       }
-      return { ok: true, shape: { ...s, points: collapseRoute(pts), routing: 'manual' } };
+      // Does NOT touch `routing`, and that is the whole reason this pair is safe to write in
+      // either order. The gesture that draws a route by hand is what pins it -- `connOps.resize`
+      // sets `manual` in the same write that moves the segment -- so a record's `routing` is
+      // already the answer and this writer has no business second-guessing it. A hand-written
+      // file that lists points but no mode therefore gets the router, which is what not saying
+      // “manual” means.
+      return { ok: true, shape: { ...s, points: collapseRoute(pts) } };
     },
   },
   {

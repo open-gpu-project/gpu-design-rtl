@@ -214,6 +214,28 @@
         }),
   );
 
+  /**
+   * The schema `onClassName` answers from. A plain `let`, and it has to be.
+   *
+   * `editor.set`/`editor.update` render the tree synchronously and ask `onClassName` about
+   * every node on the way through, so the answer has to be current *before* the push --
+   * whereas `shownSpec`, which the markup reads, can only be assigned after it. Writing
+   * `shownSpec` first instead makes this a self-invalidating effect: `validator` is derived
+   * from it, the synchronous render reads that derived, and Svelte throws out of the flush
+   * with `Cannot read properties of null (reading 'schedule')`.
+   *
+   * So: two variables holding the same schema, for the same reason `shown` and `pushed` are
+   * plain. This effect writes what the editor reads, and the only safe version of that is a
+   * value the reactivity graph does not know about.
+   *
+   * Getting this wrong is not subtle once a second kind exists. `defFor` returns `undefined`
+   * for a key the previous kind never had, and `undefined?.mode !== 'edit'` is true, so the
+   * marking was one selection behind: `routing` looked read-only on the first connection
+   * after a block, and -- worse -- `position` and `size` looked read-only on the first block
+   * after a connection. Invisible while `rect` was the only kind.
+   */
+  let classSpec: PropSchema | null = null;
+
   function contextFor(s: Shape): PropContext {
     return { shapes: scene.shapes, index: scene.shapes.indexOf(s) };
   }
@@ -313,6 +335,7 @@
         // Always a reset: the keys differ from whatever was there, and `set` inheriting a caret
         // that no longer resolves is iter-2 defect 8.
         if (key !== shown) dropCaret();
+        classSpec = null;
         push(doc, key !== shown);
         shown = key;
         shownSpec = null;
@@ -348,6 +371,7 @@
       const key = scene.selection.size === 0 ? 'none' : `multi:${scene.selection.size}`;
       const switched = key !== shown;
       if (switched) dropCaret();
+      classSpec = null;
       push(doc, switched);
       shown = key;
       shownSpec = null;
@@ -363,6 +387,7 @@
     if (switched) problem = '';
     const spec = opsFor(s).props;
     if (spec !== shownSpec) dropCaret();
+    classSpec = spec;
     push(docFor(s), switched);
     shown = key;
     shownSpec = spec;
@@ -464,7 +489,7 @@
       onSelect={handleSelect}
       onRenderContextMenu={simplifyContextMenu}
       onClassName={(path) =>
-        shownSpec !== null && path.length > 0 && defFor(shownSpec, path[0])?.mode !== 'edit'
+        classSpec !== null && path.length > 0 && defFor(classSpec, path[0])?.mode !== 'edit'
           ? 'archsim-readonly'
           : undefined}
     />

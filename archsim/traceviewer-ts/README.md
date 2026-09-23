@@ -44,7 +44,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 257 assertions across six suites. Anything touching the canvas, the camera, DPI, or the property round trip
+iteration document. `npm run verify` is 261 assertions across six suites. Anything touching the canvas, the camera, DPI, or the property round trip
 has to be run in a real browser at `deviceScaleFactor: 2`. `verify/` is what does that.
 
 ## Controls
@@ -149,9 +149,11 @@ changed. What the kind needed beyond the reserved seams was `anchorAt` / `resolv
 picking a point on a perimeter, and `corridors`, for saying which of its runs other connections
 may bundle onto. Iteration 4.1 added one more, `rebind`, for re-attaching an end to whatever the
 tool found under the cursor — together with a `role` on the handle record, so the select tool can
-route a drag without knowing what `end:to` means. Iteration 4.2 then made the four properties
-that describe where a connection runs read-only: they are one value, the gestures that change
-them keep them consistent, and a tree editor cannot.
+route a drag without knowing what `end:to` means. Iteration 4.2 then made the three properties
+that say where a connection runs read-only: they are one value, the gestures that change them
+keep them consistent, and a tree editor cannot. `routing` stays editable, because it says who
+maintains the route rather than what it is — and the canvas can only ever pin a route, never
+hand it back.
 
 ### Adding a tool
 
@@ -182,8 +184,10 @@ type-check cleanly and only fail at runtime.
   draggable connection endpoints. Why the handle record grew a `role`, and the round-trip bug
   the key order quietly fixed.
 - [iter-4-2-read-only-geometry.md](history/iter-4-2-read-only-geometry.md) — a connection's
-  route and endpoints become read-only in the panel. What `fixed` means once a read-only
-  property is also real saved state, and the one capability this costs.
+  route and endpoints become read-only in the panel, and `routing` deliberately does not. What
+  `fixed` means once a read-only property is also real saved state, why a writer must not set a
+  sibling key, and two defects in the panel: a read-only marking one selection behind, and the
+  self-invalidating effect that the obvious fix for it produces.
 - [iter-3-1-render-performance.md](history/iter-3-1-render-performance.md) — why the canvas gets
   slower the larger the window, and the four defects behind it. Why `createPattern` is the wrong
   answer. Supporting measurements in
