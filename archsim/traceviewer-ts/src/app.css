@@ -63,6 +63,22 @@ body {
 }
 
 /*
+  How high the app's own hover tooltip sits. Defined here rather than in the component because
+  the number is a RELATION to the dock library's stacking, which is what this file already
+  documents above -- not a preference.
+
+  It has to clear `.sv-dockmgr__window` (z-index 101), or a tooltip raised from the toolbar
+  disappears behind a floated pane, and `.sv-grid-tooltip` (10000), which is the highest layer
+  svgrid places. That the library put its own tooltip at the very top is the same conclusion
+  from the other direction: a tooltip describes whatever is topmost under the pointer, so it
+  has to be above it. `verify/docking.mjs` asserts the relation rather than the constant, so
+  raising either of theirs fails a check instead of silently hiding ours.
+*/
+:root {
+  --z-chrome-tip: 10001;
+}
+
+/*
   The property editor's tree has no per-node read-only mode, so computed and fixed properties
   are only *marked* here. `applyDocument` is what actually refuses to write them.
 */

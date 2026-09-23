@@ -1,6 +1,6 @@
 import type { SignalId, Tick } from '../trace/model';
 import type { TraceStore } from '../trace/store.svelte';
-import { flagAt, flagMeasurer, visibleFlags } from './layout';
+import { cursorFlagBox, cursorMeasurer, flagAt, flagMeasurer, visibleFlags } from './layout';
 import { CURSOR_HIT_PX, FLAG_H, FLAG_HIT_PX, GUTTER_EDGE_HIT_PX } from './theme';
 import type { TimelineView } from './view.svelte';
 
@@ -23,16 +23,24 @@ export type TraceHit =
  * Priority: the gutter's resize edge, then the cursor handle, then the timescale, then the
  * rows.
  *
- * The cursor is only grabbable **in the timescale strip**, which is where its handle is drawn.
- * Making the whole full-height line grabbable would put an invisible 12px-wide dead zone over
+ * The cursor is only grabbable **in the timescale strip**, which is where its flag is drawn.
+ * Making the whole full-height stem grabbable would put an invisible 12px-wide dead zone over
  * every row, swallowing clicks on any flag the cursor happens to be parked on -- and the cursor
  * parks on flags constantly, because selecting one moves it there.
+ *
+ * Within the strip the grab zone is the stem's tolerance **or** the flag body, which is the
+ * part of the cursor that actually looks draggable. Both come from `cursorFlagBox`, so the box
+ * that responds is the box that was painted.
  */
 export function hitTest(view: TimelineView, store: TraceStore, x: number, y: number): TraceHit {
   if (Math.abs(x - view.gutterW) <= GUTTER_EDGE_HIT_PX) return { type: 'gutter-edge' };
 
   if (y < view.laneTop) {
     if (Math.abs(x - view.toX(store.cursorTick)) <= CURSOR_HIT_PX) return { type: 'cursor' };
+    const box = cursorFlagBox(view, store.cursorTick, cursorMeasurer(view.ctx));
+    if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
+      return { type: 'cursor' };
+    }
     return { type: 'timescale', tick: Math.round(view.toTick(x)) };
   }
 

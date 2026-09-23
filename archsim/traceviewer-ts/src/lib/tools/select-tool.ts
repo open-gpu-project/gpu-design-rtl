@@ -61,8 +61,8 @@ function fingerprint(s: Shape): string {
 }
 
 export class SelectTool implements Tool {
-  readonly id = 'select';
-  readonly label = 'Select';
+  readonly id = 'pointer';
+  readonly label = 'Pointer';
   readonly defaultCursor = 'grab';
 
   #drag: Drag | null = null;
@@ -78,7 +78,7 @@ export class SelectTool implements Tool {
   }
 
   onActivate(c: ToolContext): void {
-    c.setHint('Drag to pan. Press 2 to draw a block.');
+    c.setHint('Drag to pan. Press 3 to draw a block.');
   }
 
   onDeactivate(c: ToolContext): void {
@@ -316,9 +316,10 @@ export class SelectTool implements Tool {
 }
 
 registerTool({
-  id: 'select',
-  label: 'Select',
-  shortcut: '1',
+  id: 'pointer',
+  label: 'Pointer',
+  group: 'tool',
+  order: 0,
   icon: 'M5 3l14 8-6 1.5L10.5 19z',
   make: () => new SelectTool(),
 });

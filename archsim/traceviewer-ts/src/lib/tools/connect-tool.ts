@@ -138,7 +138,7 @@ export class ConnectTool implements Tool {
         c.requestFrame();
         return true;
       }
-      c.setTool('select');
+      c.setTool('pointer');
       return true;
     }
     // Undo is refused while `isGesturing()`, so without this the key would simply do nothing
@@ -206,6 +206,7 @@ export class ConnectTool implements Tool {
       kind: 'conn',
       name: 'preview',
       label: '',
+      labelOffset: [0, 0],
       description: '',
       from: from.shape,
       fromAnchor: from.anchor.id,
@@ -276,7 +277,8 @@ export class ConnectTool implements Tool {
 registerTool({
   id: 'connect',
   label: 'Connection',
-  shortcut: '3',
+  group: 'shape',
+  order: 1,
   // Filled, not stroked: the toolbar renders `fill="currentColor"` with no stroke. An elbow
   // bar and an arrowhead, as two subpaths under the default nonzero fill rule.
   icon: 'M4 4h2v11h7v2H4V4z M12 12l7 4-7 4z',

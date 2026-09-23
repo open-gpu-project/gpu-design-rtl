@@ -4,7 +4,7 @@ import type { Modifiers, Vec2 } from '../geom/types';
 import type { SceneStore } from '../scene/scene.svelte';
 import type { DrawContext } from '../scene/shape';
 
-export type ToolId = 'select' | 'rect' | (string & {});
+export type ToolId = 'pointer' | 'rect' | (string & {});
 
 export interface PointerInfo {
   /** Raw world position under the cursor. */

@@ -3,15 +3,16 @@ import {
   ANCHOR_DOT_R_PX,
   ARROW_HALF_W_PX,
   ARROW_LEN_PX,
+  ARROW_TIP_TOL_PX,
   CONN_CORNER_R_PX,
   CONN_KNOB_PX,
   CONN_WIDTH_PX,
+  CONN_LABEL_MIN_RUN_PX,
   CONN_WIDTH_SEL_PX,
-  LABEL_MIN_PX,
   STROKE_HIT_PX,
 } from '../../canvas/theme';
-import { expandRect, pointInRect } from '../../geom/math';
-import type { Anchor, Vec2 } from '../../geom/types';
+import { expandRect, pointInRect, rectsIntersect, segmentIntersectsRect } from '../../geom/math';
+import type { Anchor, Rect, Vec2 } from '../../geom/types';
 import { opsFor, registerShape } from '../registry';
 import {
   collapseRoute,
@@ -66,6 +67,7 @@ export function makeConnection(
     kind: 'conn',
     name,
     label: '',
+    labelOffset: [0, 0],
     description: '',
     from,
     fromAnchor: a.id,
@@ -108,6 +110,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
       kind: 'conn',
       name,
       label: '',
+      labelOffset: [0, 0],
       description: '',
       from: '',
       fromAnchor: 'e',
@@ -127,6 +130,21 @@ export const connOps: ShapeOps<ConnectionShape> = {
    * margin, which is 16 CSS px of world at every zoom and so always exceeds them.
    */
   bounds: (s) => routeBounds(s.points),
+
+  /**
+   * Any run touching the band, not the bounding box of the whole route.
+   *
+   * An L-shaped wire's box is mostly empty, so a bbox test would hand the marquee every wire
+   * whose corner happened to span the band -- wires the band visibly never crossed.
+   */
+  intersects(s, r) {
+    if (!rectsIntersect(routeBounds(s.points), r)) return false;
+    for (let i = 1; i < s.points.length; i++) {
+      if (segmentIntersectsRect(s.points[i - 1]!, s.points[i]!, r)) return true;
+    }
+    // A degenerate one-point route still has a position worth catching.
+    return s.points.length === 1 && pointInRect(s.points[0]!, r);
+  },
 
   hitTest(s, p, hc) {
     const tol = STROKE_HIT_PX * hc.worldPerPx;
@@ -258,8 +276,8 @@ export const connOps: ShapeOps<ConnectionShape> = {
     ctx.stroke();
 
     const dir = endDirection(s.points);
-    if (dir !== null) {
-      const tip = dev[dev.length - 1]!;
+    const tip = dev[dev.length - 1]!;
+    if (dir !== null && headIsClear(s, dc, arrowBox(tip, dir, dpr))) {
       const len = ARROW_LEN_PX * dpr;
       const half = ARROW_HALF_W_PX * dpr;
       const bx = tip.x - dir.x * len;
@@ -371,9 +389,83 @@ export const connOps: ShapeOps<ConnectionShape> = {
   },
 
   corridors: (s) => s.points,
+
+  /**
+   * Heading is the name, not the label. A connection draws its `label` and never its `name`, so
+   * hovering is the only place the identifier other objects refer to it by is visible at all.
+   */
+  tooltip: (s) => ({ title: s.name, lines: s.description !== '' ? [s.description] : [] }),
 };
 
-/** The label rides the longest run, which is the only one reliably long enough to hold text. */
+/**
+ * Where the arrowhead sits, in device pixels, for the purpose of asking what it overlaps.
+ *
+ * The box around the triangle, with the tip discounted by ARROW_TIP_TOL_PX along the arrow's
+ * own axis -- see that constant for why the discount is axial and not a deflated block. The
+ * box rather than the triangle slightly over-reports in the two corners behind the barbs,
+ * which is the safe direction, and reports exactly for the case that actually arises: routes
+ * are rectilinear and anchors sit on faces, so the last run always meets its face square on.
+ *
+ * Exported because it is the whole of the geometry, and a pure call can pin it at a dozen
+ * zoom levels faster than one screenshot can be read.
+ */
+export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
+  const len = ARROW_LEN_PX * dpr;
+  const half = ARROW_HALF_W_PX * dpr;
+  const tol = ARROW_TIP_TOL_PX * dpr;
+  const nx = tip.x - dir.x * tol;
+  const ny = tip.y - dir.y * tol;
+  const bx = tip.x - dir.x * len;
+  const by = tip.y - dir.y * len;
+  const x0 = Math.min(nx, bx - Math.abs(dir.y) * half);
+  const x1 = Math.max(nx, bx + Math.abs(dir.y) * half);
+  const y0 = Math.min(ny, by - Math.abs(dir.x) * half);
+  const y1 = Math.max(ny, by + Math.abs(dir.x) * half);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * Is there room for the arrowhead, or would it be drawn on top of a block?
+ *
+ * Only the two blocks this connection joins are considered. The head is a constant 9 CSS px
+ * while the blocks shrink with the zoom, so the case that matters is the ordinary one: two
+ * blocks a short gap apart, zoomed out until the gap is thinner than the head and the wedge
+ * is sitting in the source block rather than pointing at the target. A bare line still says
+ * everything a line can say; a blob says less than nothing.
+ *
+ * A manual route that has been dragged into its own target lands here too, which is right for
+ * the same reason.
+ */
+function headIsClear(s: ConnectionShape, dc: DrawContext, head: Rect): boolean {
+  for (const name of [s.from, s.to]) {
+    const r = dc.boundsOf(name);
+    if (r === null) continue;
+    const a = dc.project({ x: r.x, y: r.y });
+    const b = dc.project({ x: r.x + r.w, y: r.y + r.h });
+    const box = {
+      x: a.x * dc.dpr,
+      y: a.y * dc.dpr,
+      w: (b.x - a.x) * dc.dpr,
+      h: (b.y - a.y) * dc.dpr,
+    };
+    if (rectsIntersect(head, box)) return false;
+  }
+  return true;
+}
+
+/**
+ * The label rides the longest run,
+ which is the only one reliably long enough to hold text.
+ *
+ * `labelOffset` then nudges it off that run, in CSS pixels, along two axes derived from the run
+ * itself: `par` follows the run in stored point order -- source towards target -- and `perp` is
+ * that direction turned 90 degrees clockwise on screen, so for a left-to-right run `par` moves
+ * the label towards the arrowhead and `perp` moves it below the line.
+ *
+ * Tying the axes to the run rather than to the screen is what makes one offset mean the same
+ * thing on a horizontal wire and a vertical one. The cost is that re-routing an `auto`
+ * connection can hand the label to a different run, and the offset then applies to that one.
+ */
 function drawLabel(s: ConnectionShape, dc: DrawContext, dev: readonly Vec2[]): void {
   const { ctx, dpr, theme } = dc;
   let best = -1;
@@ -385,10 +477,17 @@ function drawLabel(s: ConnectionShape, dc: DrawContext, dev: readonly Vec2[]): v
       best = i;
     }
   }
-  if (best < 0 || bestLen < LABEL_MIN_PX * dpr) return;
+  if (best < 0 || bestLen < CONN_LABEL_MIN_RUN_PX * dpr) return;
 
-  const cx = (dev[best]!.x + dev[best - 1]!.x) / 2;
-  const cy = (dev[best]!.y + dev[best - 1]!.y) / 2;
+  const p0 = dev[best - 1]!;
+  const p1 = dev[best]!;
+  // Axis-aligned by construction, and `bestLen > 0` here, so this is exactly one of the four
+  // unit vectors and needs no square root.
+  const dir = { x: Math.sign(p1.x - p0.x), y: Math.sign(p1.y - p0.y) };
+  const [par, perp] = s.labelOffset;
+  const cx = (p0.x + p1.x) / 2 + (dir.x * par - dir.y * perp) * dpr;
+  const cy = (p0.y + p1.y) / 2 + (dir.y * par + dir.x * perp) * dpr;
+
   ctx.font = `${Math.round(11 * dpr)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

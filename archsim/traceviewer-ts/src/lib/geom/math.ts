@@ -68,3 +68,38 @@ export function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   const dy = p.y - (a.y + t * vy);
   return Math.sqrt(dx * dx + dy * dy);
 }
+
+/**
+ * Does the segment `a`->`b` touch the axis-aligned rectangle `r`?
+ *
+ * Liang-Barsky slab clipping rather than four edge-vs-edge tests: it is branch-light, needs no
+ * special case for a segment that lies entirely inside `r`, and degenerates correctly to a
+ * point-in-rect test when `a` and `b` coincide.
+ */
+export function segmentIntersectsRect(a: Vec2, b: Vec2, r: Rect): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const p = [-dx, dx, -dy, dy];
+  const q = [a.x - r.x, r.x + r.w - a.x, a.y - r.y, r.y + r.h - a.y];
+
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    const pi = p[i] ?? 0;
+    const qi = q[i] ?? 0;
+    // Parallel to this slab: no crossing to find, but being outside it rules the segment out.
+    if (pi === 0) {
+      if (qi < 0) return false;
+      continue;
+    }
+    const t = qi / pi;
+    if (pi < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+  }
+  return true;
+}

@@ -3,8 +3,14 @@ import type { Vec2 } from './geom/types';
 /** World units between minor grid dots. Also the snap step for every edit in this revision. */
 export const GRID = 16;
 
-/** Every Nth dot on both axes is a major dot. Also the level-of-detail ratio when zooming out. */
-export const MAJOR_EVERY = 5;
+/**
+ * Every Nth dot on both axes is a major dot. Also the level-of-detail ratio when zooming out.
+ *
+ * Counted in minor *steps*, so this is one more than the number of minor dots you see between
+ * two majors: 6 steps puts 5 minor dots in the gap. Independent of `GRID`, which is the snap
+ * step and does not move when this does.
+ */
+export const MAJOR_EVERY = 6;
 
 /**
  * Quantum the world bounding box snaps to. A multiple of both GRID and GRID*MAJOR_EVERY, so the

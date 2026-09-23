@@ -53,7 +53,7 @@ t.ok('no dock pane scrollbar', sc.panes);
 
 const box = await page.locator('[data-panel-id="diagram"] canvas').boundingBox();
 await page.mouse.move(box.x + 120, box.y + 120);
-await page.keyboard.press('Digit2');
+await page.keyboard.press('Digit3');
 await page.mouse.move(box.x + 120, box.y + 120);
 await page.mouse.down();
 await page.mouse.move(box.x + 320, box.y + 260, { steps: 6 });
@@ -67,7 +67,7 @@ const keys = await page.evaluate(() =>
 );
 t.ok(
   'property panel populated, in canonical order: kind, then editable, then generated',
-  keys.join() === '/kind,/description,/label,/name,/position,/size,/zIndex',
+  keys.join() === '/kind,/description,/label,/labelMode,/name,/position,/size,/subtitle,/zIndex',
   JSON.stringify(keys),
 );
 t.ok(
@@ -114,6 +114,28 @@ t.ok(
   'the footer documents the selected key',
   /Extent as \[width, height\]/.test(await page.locator('.footer').innerText()),
 );
+
+/*
+  The toolbar tooltip, in the built bundle.
+
+  Worth a check here and not only in `input.mjs` because it is the one feature in the app whose
+  whole point is that it survives where a native `title` did not, and because an attachment is
+  exactly the kind of thing that can be reachable in dev and tree-shaken or mis-ordered in a
+  production chunk. Driven purely through the DOM: there are no `window.__*` hooks here.
+*/
+const prodBtn = page.locator('[data-panel-id="diagram"] button[aria-label="Select"]');
+const prodBox = await prodBtn.boundingBox();
+await page.mouse.move(prodBox.x + prodBox.width / 2, prodBox.y + prodBox.height / 2, { steps: 4 });
+await page.waitForTimeout(700);
+t.ok(
+  'the toolbar tooltip names the tool and its key in the built bundle',
+  (await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="chrome-tooltip"]');
+    return el === null ? null : el.textContent.trim();
+  })) === 'Select (2)',
+);
+await page.mouse.move(prodBox.x + prodBox.width / 2, prodBox.y + 260, { steps: 5 });
+await page.waitForTimeout(250);
 
 t.ok('no errors after interacting', errors.length === 0, errors.slice(0, 3).join(' | '));
 

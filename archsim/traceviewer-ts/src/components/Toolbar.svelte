@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { SceneStore } from '../lib/scene/scene.svelte';
   import type { ToolHost } from '../lib/tools/host.svelte';
+  import { hint, keys } from '../lib/keys';
+  import { toolTipText } from '../lib/tools/registry';
+  import { tip } from '../lib/ui/tooltip.svelte';
   import type { ViewController } from '../lib/canvas/view.svelte';
 
   interface Props {
@@ -26,28 +29,40 @@
   class="flex h-10 shrink-0 items-center border-b border-[var(--color-panel-border)]
          bg-[var(--color-panel)] text-sm select-none"
 >
-  <!-- Driven by the tool registry, so a new tool appears here just by registering itself. -->
-  <div class={group}>
-    {#each host.tools as tool (tool.id)}
-      <button
-        class="{btn} {host.activeToolId === tool.id ? active : ''}"
-        title="{tool.label}{tool.shortcut ? ` (${tool.shortcut})` : ''}"
-        aria-label={tool.label}
-        aria-pressed={host.activeToolId === tool.id}
-        onclick={() => host.setTool(tool.id)}
-      >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor"><path d={tool.icon} /></svg>
-      </button>
-    {/each}
-  </div>
+  <!--
+    Driven by the tool registry, so a new tool appears here just by registering itself -- in
+    its own cluster, because which side of the rule it belongs on is something the tool
+    declares rather than something this markup decides.
+  -->
+  {#each host.toolGroups as cluster, i (i)}
+    {#if i > 0}
+      <div class={divider}></div>
+    {/if}
+    <div class={group}>
+      {#each cluster as tool (tool.id)}
+        <button
+          class="{btn} {host.activeToolId === tool.id ? active : ''}"
+          aria-label={tool.label}
+          aria-pressed={host.activeToolId === tool.id}
+          onclick={() => host.setTool(tool.id)}
+          {@attach tip(toolTipText(tool))}
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor"><path d={tool.icon} /></svg>
+        </button>
+      {/each}
+    </div>
+  {/each}
 
   <div class={divider}></div>
 
   <div class={group}>
     <button
       class={btn}
-      title="Undo{scene.history.undoLabel ? `: ${scene.history.undoLabel}` : ''} (Cmd+Z)"
       aria-label="Undo"
+      {@attach tip(
+        () =>
+          `Undo${scene.history.undoLabel ? `: ${scene.history.undoLabel}` : ''} (${keys('cmd', 'z')})`,
+      )}
       disabled={!scene.history.canUndo}
       onclick={() => host.undo()}
     >
@@ -57,8 +72,11 @@
     </button>
     <button
       class={btn}
-      title="Redo{scene.history.redoLabel ? `: ${scene.history.redoLabel}` : ''} (Shift+Cmd+Z)"
       aria-label="Redo"
+      {@attach tip(
+        () =>
+          `Redo${scene.history.redoLabel ? `: ${scene.history.redoLabel}` : ''} (${keys('shift', 'cmd', 'z')})`,
+      )}
       disabled={!scene.history.canRedo}
       onclick={() => host.redo()}
     >
@@ -73,8 +91,8 @@
   <div class={group}>
     <button
       class={btn}
-      title="Bring to front (Cmd+])"
       aria-label="Bring to front"
+      {@attach tip(hint('Bring to front', 'cmd', ']'))}
       disabled={!hasSelection}
       onclick={() => host.bringToFront()}
     >
@@ -90,8 +108,8 @@
     </button>
     <button
       class={btn}
-      title="Bring forward (Shift+Cmd+])"
       aria-label="Bring forward"
+      {@attach tip(hint('Bring forward', 'shift', 'cmd', ']'))}
       disabled={!hasSelection}
       onclick={() => host.bringForward()}
     >
@@ -101,8 +119,8 @@
     </button>
     <button
       class={btn}
-      title="Send backward (Shift+Cmd+[)"
       aria-label="Send backward"
+      {@attach tip(hint('Send backward', 'shift', 'cmd', '['))}
       disabled={!hasSelection}
       onclick={() => host.sendBackward()}
     >
@@ -112,8 +130,8 @@
     </button>
     <button
       class={btn}
-      title="Send to back (Cmd+[)"
       aria-label="Send to back"
+      {@attach tip(hint('Send to back', 'cmd', '['))}
       disabled={!hasSelection}
       onclick={() => host.sendToBack()}
     >
@@ -128,8 +146,8 @@
     </button>
     <button
       class={btn}
-      title="Delete (Del)"
       aria-label="Delete"
+      {@attach tip(hint('Delete', 'del'))}
       disabled={!hasSelection}
       onclick={() => host.deleteSelection()}
     >
@@ -140,28 +158,38 @@
   </div>
 
   <div class="ml-auto flex items-center gap-1 px-2">
-    <button class={btn} title="Zoom out" aria-label="Zoom out" onclick={() => host.zoomByStep(-1)}>
+    <button
+      class={btn}
+      aria-label="Zoom out"
+      onclick={() => host.zoomByStep(-1)}
+      {@attach tip('Zoom out')}
+    >
       <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="7" /><path d="M8 11h6M16 16l4 4" />
       </svg>
     </button>
     <button
       class="min-w-14 rounded px-2 py-1 text-xs text-[var(--color-ink-dim)] tabular-nums hover:bg-white/5"
-      title="Reset zoom to 100% (Cmd+0)"
       onclick={() => host.resetZoom()}
+      {@attach tip(hint('Reset zoom to 100%', 'cmd', '0'))}
     >
       {Math.round(view.z * 100)}%
     </button>
-    <button class={btn} title="Zoom in" aria-label="Zoom in" onclick={() => host.zoomByStep(1)}>
+    <button
+      class={btn}
+      aria-label="Zoom in"
+      onclick={() => host.zoomByStep(1)}
+      {@attach tip('Zoom in')}
+    >
       <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="7" /><path d="M8 11h6M11 8v6M16 16l4 4" />
       </svg>
     </button>
     <button
       class={btn}
-      title="Zoom to fit (Cmd+1)"
       aria-label="Zoom to fit"
       onclick={() => host.zoomToFit()}
+      {@attach tip(hint('Zoom to fit', 'cmd', '1'))}
     >
       <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />

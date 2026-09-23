@@ -51,6 +51,24 @@ function typeSchema(t: PropType): Json {
   return scalarSchema(t);
 }
 
+const schemaCache = new Map<string, Json>();
+
+/**
+ * `jsonSchemaFor`, memoized by kind.
+ *
+ * A kind's schema is derived from a declaration that never changes at runtime, and the enum
+ * value renderer asks for it once per value node on every tree render. Building it fresh each
+ * time is a lot of garbage for an object that is a constant in all but name.
+ */
+export function schemaFor(ps: PropSchema): Json {
+  let j = schemaCache.get(ps.kind);
+  if (j === undefined) {
+    j = jsonSchemaFor(ps);
+    schemaCache.set(ps.kind, j);
+  }
+  return j;
+}
+
 /**
  * `additionalProperties: false` plus a `required` entry for every key is what makes the schema
  * reject an inserted or deleted tree node. That is most of "don't let the user break the

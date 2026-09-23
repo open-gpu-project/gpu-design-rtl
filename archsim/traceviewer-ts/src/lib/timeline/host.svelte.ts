@@ -15,7 +15,13 @@ function isEditableTarget(t: EventTarget | null): boolean {
 
 type Drag =
   | { readonly kind: 'pan'; last: Vec2 }
-  | { readonly kind: 'cursor' }
+  /**
+   * `grabDx` is where the pointer took hold relative to the stem, in CSS px, and is held
+   * constant for the drag. Zero while the grab was on the stem itself, which is every press on
+   * the timescale; non-zero when the flag body was grabbed, and the body can be forty pixels
+   * wide, so without this the cursor would jump to the pointer the instant it was picked up.
+   */
+  | { readonly kind: 'cursor'; readonly grabDx: number }
   | { readonly kind: 'gutter'; readonly startX: number; readonly startW: number };
 
 /**
@@ -115,12 +121,13 @@ export class TimelineHost {
         this.cursor = 'col-resize';
         break;
       case 'cursor':
-        this.#drag = { kind: 'cursor' };
+        this.#drag = { kind: 'cursor', grabDx: p.x - this.view.toX(this.store.cursorTick) };
         this.cursor = 'ew-resize';
         break;
       case 'timescale':
+        // The cursor has just been moved under the pointer, so there is no offset to hold.
         this.store.setCursor(hit.tick);
-        this.#drag = { kind: 'cursor' };
+        this.#drag = { kind: 'cursor', grabDx: 0 };
         this.cursor = 'ew-resize';
         break;
       case 'flag':
@@ -150,7 +157,7 @@ export class TimelineHost {
           drag.last = p;
           break;
         case 'cursor':
-          this.store.setCursor(this.view.toTick(p.x));
+          this.store.setCursor(this.view.toTick(p.x - drag.grabDx));
           break;
         case 'gutter':
           this.view.setGutterW(drag.startW + (p.x - drag.startX));

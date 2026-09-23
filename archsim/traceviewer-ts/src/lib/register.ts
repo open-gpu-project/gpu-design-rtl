@@ -4,7 +4,10 @@
  */
 import './scene/shapes/rect';
 import './scene/shapes/conn';
+// Listed in toolbar order for readability only: the order drawn comes from each tool's
+// own `group` and `order`, so moving a line here moves nothing on screen.
 import './tools/select-tool';
+import './tools/marquee-tool';
 import './tools/rect-tool';
 import './tools/connect-tool';
 import './panels/diagram-panel';

@@ -1,4 +1,4 @@
-import { unionRect } from '../geom/math';
+import { rectsIntersect, unionRect } from '../geom/math';
 import type { Rect } from '../geom/types';
 import { BUFFER, MIN_WORLD_H, MIN_WORLD_W, Q } from '../grid';
 import { opsFor } from './registry';
@@ -11,6 +11,20 @@ export function unionBounds(shapes: readonly Shape[]): Rect | null {
     acc = acc === null ? b : unionRect(acc, b);
   }
   return acc;
+}
+
+/**
+ * Every shape the marquee's band catches, in z-order.
+ *
+ * Overlap, not containment: a connection is a few pixels thick and a band that had to enclose
+ * one entirely would be most of the diagram. The per-kind answer comes from the `intersects`
+ * seam, so nothing here switches on `kind`; a kind that omits it gets its bounding box tested.
+ */
+export function shapesInRect(shapes: readonly Shape[], r: Rect): Shape[] {
+  return shapes.filter((s) => {
+    const ops = opsFor(s);
+    return ops.intersects?.(s, r) ?? rectsIntersect(ops.bounds(s), r);
+  });
 }
 
 /**

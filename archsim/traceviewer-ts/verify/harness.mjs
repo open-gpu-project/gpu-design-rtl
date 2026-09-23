@@ -105,7 +105,7 @@ export const emptySpot = (box) => ({
 export async function drawBlock(page, x1, y1, x2, y2) {
   const box = await diagramCanvas(page).boundingBox();
   await page.mouse.move(box.x + x1, box.y + y1);
-  await page.keyboard.press('Digit2');
+  await page.keyboard.press('Digit3');
   await page.mouse.move(box.x + x1, box.y + y1);
   await page.mouse.down();
   await page.mouse.move(box.x + x2, box.y + y2, { steps: 8 });
@@ -123,13 +123,33 @@ export async function drawBlock(page, x1, y1, x2, y2) {
  */
 export async function drawConnection(page, x1, y1, x2, y2) {
   const box = await diagramCanvas(page).boundingBox();
-  await page.keyboard.press('Digit3');
+  await page.keyboard.press('Digit4');
   await page.mouse.move(box.x + x1, box.y + y1, { steps: 5 });
   await page.waitForTimeout(60);
   await page.mouse.click(box.x + x1, box.y + y1);
   await page.mouse.move(box.x + x2, box.y + y2, { steps: 8 });
   await page.waitForTimeout(60);
   await page.mouse.click(box.x + x2, box.y + y2);
+  await page.waitForTimeout(250);
+  return box;
+}
+
+/**
+ * Sweep a marquee band with the marquee tool, in canvas-relative CSS pixels.
+ *
+ * `steps` matters: the band arms only past DRAG_SLOP_PX and applies the selection on move, so
+ * a single-jump drag would arm and select in one event and never exercise the live update.
+ * Leaves the marquee tool active, the way the real gesture does.
+ */
+export async function marqueeSelect(page, x1, y1, x2, y2, { shift = false } = {}) {
+  const box = await diagramCanvas(page).boundingBox();
+  await page.keyboard.press('Digit2');
+  await page.mouse.move(box.x + x1, box.y + y1);
+  if (shift) await page.keyboard.down('Shift');
+  await page.mouse.down();
+  await page.mouse.move(box.x + x2, box.y + y2, { steps: 8 });
+  await page.mouse.up();
+  if (shift) await page.keyboard.up('Shift');
   await page.waitForTimeout(250);
   return box;
 }
@@ -146,6 +166,26 @@ export async function editValue(page, key, text) {
   await page.keyboard.type(text);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(400);
+}
+
+/**
+ * Set an enum property, which the panel renders as a `<select>` and not a text row.
+ *
+ * `editValue` cannot drive one: it double-clicks and types, and there is nothing to type into.
+ * Two ways to set a value means two helpers -- the alternative is a single helper that guesses
+ * from the DOM, which would pass just as happily against a dropdown that had silently reverted
+ * to a text box.
+ */
+export async function selectValue(page, key, value) {
+  await row(page, key).locator('select.jse-enum-value').first().selectOption(value);
+  await page.waitForTimeout(400);
+}
+
+/** The options a property's dropdown offers, in order. Empty when it is not a dropdown. */
+export async function enumOptions(page, key) {
+  const sel = row(page, key).locator('select.jse-enum-value').first();
+  if ((await sel.count()) === 0) return [];
+  return await sel.locator('option').allTextContents();
 }
 
 export async function clickKey(page, key) {

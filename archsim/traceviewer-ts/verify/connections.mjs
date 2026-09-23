@@ -5,8 +5,10 @@ import {
   drawBlock,
   drawConnection,
   editValue,
+  enumOptions,
   open,
   row,
+  selectValue,
   suite,
 } from './harness.mjs';
 
@@ -372,7 +374,17 @@ t.ok(
 t.ok('and leaves every connection object identical, not merely equal', S.connStillSame);
 t.ok(
   'the saved record carries the endpoints, the routing mode and the route',
-  eq(S.keys, ['kind', 'description', 'label', 'name', 'routing', 'points', 'source', 'target']),
+  eq(S.keys, [
+    'kind',
+    'description',
+    'label',
+    'labelOffset',
+    'name',
+    'routing',
+    'points',
+    'source',
+    'target',
+  ]),
   JSON.stringify(S.keys),
 );
 t.ok('and no zIndex, since array order already is the draw order', !S.keys.includes('zIndex'));
@@ -558,7 +570,10 @@ t.ok(
   `${JSON.stringify(pinned.auto)} -> ${JSON.stringify(pinned.points)}`,
 );
 
-await editValue(page, 'routing', 'auto');
+// A dropdown since iteration 5, so this is `selectValue` and not `editValue`. The claim being
+// tested is unchanged -- setting the mode back in the panel re-routes -- and it is now tested
+// through the widget a person actually gets.
+await selectValue(page, 'routing', 'auto');
 const unpinned = await page.evaluate(() => {
   const c = window.__scene.shapes.find((s) => s.kind === 'conn');
   return {
@@ -649,7 +664,7 @@ t.ok(
 /*
   Put the focus back on the canvas before anything drives the keyboard again. The host ignores
   shortcuts while an editable element has focus, so a caret left in the JSON tree makes
-  `drawBlock`'s Digit2 vanish and the drag that follows it draw a marquee instead of a block.
+  `drawBlock`'s Digit3 vanish and the drag that follows it do nothing at all.
 */
 const afterPanel = await diagramCanvas(page).boundingBox();
 await page.mouse.click(afterPanel.x + 24, afterPanel.y + 24);
@@ -743,7 +758,7 @@ const [src, dst] = await page.evaluate(() =>
   window.__scene.shapes.filter((s) => s.kind === 'rect').map((s) => s.name),
 );
 
-await page.keyboard.press('Digit3');
+await page.keyboard.press('Digit4');
 t.ok(
   'the digit shortcut declared by the tool selects it',
   (await page.evaluate(() => window.__host.activeToolId)) === 'connect',
@@ -882,12 +897,12 @@ t.ok(
   JSON.stringify(esc1),
 );
 t.ok(
-  'and a second Escape returns to select',
-  (await page.evaluate(() => window.__host.activeToolId)) === 'select',
+  'and a second Escape returns to the pointer',
+  (await page.evaluate(() => window.__host.activeToolId)) === 'pointer',
 );
 
 // Clicking empty space while pending is the other way out.
-await page.keyboard.press('Digit3');
+await page.keyboard.press('Digit4');
 await page.mouse.move(...(await edgeOf(src, 'e')), { steps: 4 });
 await page.waitForTimeout(80);
 await page.mouse.click(...(await edgeOf(src, 'e')));
@@ -1347,6 +1362,344 @@ t.ok(
   !cull.flat || cull.strokes > 0,
   `flat: ${cull.flat} — rectsIntersect compares inclusively, so a degenerate rect still hits`,
 );
+
+/*
+  ITERATION 5 -- the label's (par, perp) offset, and the wire tooltip.
+
+  The offset is measured by intercepting `fillText` and reading back where the label was
+  actually drawn, rather than by diffing pixels. Both axes are checked, and both have to be:
+  the two are a rotation of one another, and a transposed sign or a swapped pair produces a
+  label that moves the right DISTANCE on every test that only looks at one of them.
+
+  The run under test is deliberately vertical, because that is where the rotation is doing
+  work. On a horizontal run `par`/`perp` degenerate into x/y and a wrong rotation still passes.
+*/
+const label = async (offset) =>
+  page.evaluate(async (o) => {
+    const sc = window.__scene;
+    const c = sc.shapes.find((s) => s.kind === 'conn');
+    sc.replaceShape(c, { ...c, label: 'DATA', labelOffset: o }, 'offset');
+
+    const proto = CanvasRenderingContext2D.prototype;
+    const original = proto.fillText;
+    const seen = [];
+    proto.fillText = function (text, x, y, ...rest) {
+      seen.push({ text, x, y });
+      return original.call(this, text, x, y, ...rest);
+    };
+    try {
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      window.__session.renderer.requestFrame();
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    } finally {
+      proto.fillText = original;
+    }
+    const hit = seen.find((d) => d.text === 'DATA');
+    // Device pixels, because the connection label is drawn in device space.
+    return hit === undefined ? null : { x: hit.x, y: hit.y, dpr: window.devicePixelRatio };
+  }, offset);
+
+// A route with a long vertical middle run: source on the right face, target well below-right.
+await page.evaluate(() => {
+  const sc = window.__scene;
+  const mk = (name, x, y) => ({
+    kind: 'rect',
+    name,
+    label: name,
+    subtitle: '',
+    labelMode: 'inset',
+    description: '',
+    x,
+    y,
+    w: 128,
+    h: 80,
+  });
+  sc.commit('scene', () => {
+    sc.shapes = [mk('a', 32, 32), mk('b', 480, 320)];
+  });
+});
+await page.waitForTimeout(300);
+await page.evaluate(() => {
+  const sc = window.__scene;
+  const a = window.__anchor.resolveAnchor(sc.shapes[0], 'e');
+  const b = window.__anchor.resolveAnchor(sc.shapes[1], 'w');
+  const none = { rangeX: () => [], rangeY: () => [], hasX: () => false, hasY: () => false };
+  sc.commit('wire', () => {
+    sc.shapes = [
+      ...sc.shapes,
+      {
+        kind: 'conn',
+        name: 'bus_0',
+        label: 'DATA',
+        labelOffset: [0, 0],
+        description: 'Sixty-four bit data path.',
+        from: 'a',
+        fromAnchor: 'e',
+        to: 'b',
+        toAnchor: 'w',
+        routing: 'manual',
+        points: window.__route.routeConnection(a, b, none),
+      },
+    ];
+  });
+  sc.clearSelection();
+});
+await page.waitForTimeout(300);
+// Fit, not `resetZoom`: earlier groups leave the camera wherever their last gesture put it, and
+// a culled connection draws no label at all -- which reads as "the offset did nothing".
+await page.evaluate(() => window.__view.zoomToFit(window.__scene.contentBounds));
+await page.waitForTimeout(400);
+
+const base = await label([0, 0]);
+const alongRun = await label([40, 0]);
+const acrossRun = await label([0, 24]);
+
+t.ok('a connection label is drawn at all, so the offsets below mean something', base !== null);
+
+/*
+  The chosen run points DOWNWARD (source is above the target), so `par` is +y on screen and
+  `perp`, which is `par` turned 90 degrees clockwise, is -x. Asserting the axes this explicitly
+  is the whole value of the check: it is what distinguishes the intended rotation from the
+  three others that move the label by the same distance.
+*/
+t.ok(
+  'par slides the label along the run, and nothing across it',
+  base !== null &&
+    alongRun !== null &&
+    Math.abs(alongRun.y - base.y - 40 * base.dpr) < 1 &&
+    Math.abs(alongRun.x - base.x) < 1,
+  `[0,0] -> ${JSON.stringify(base)}; [40,0] -> ${JSON.stringify(alongRun)}`,
+);
+t.ok(
+  'and perp pushes it across the run, to the right of the direction of travel',
+  base !== null &&
+    acrossRun !== null &&
+    Math.abs(acrossRun.x - base.x + 24 * base.dpr) < 1 &&
+    Math.abs(acrossRun.y - base.y) < 1,
+  `[0,0] -> ${JSON.stringify(base)}; [0,24] -> ${JSON.stringify(acrossRun)}`,
+);
+
+const offRange = await page.evaluate(async () => {
+  const mod = await import('/src/lib/scene/shapes/conn.props.ts');
+  const def = mod.connProps.props.find((d) => d.key === 'labelOffset');
+  const sc = window.__scene;
+  const c = sc.shapes.find((s) => s.kind === 'conn');
+  const ctx = { shapes: sc.shapes, index: sc.shapes.indexOf(c) };
+  return {
+    huge: def.write(c, [9999, 0], ctx).ok,
+    fractional: def.write(c, [1.5, 0], ctx).ok,
+    fine: def.write(c, [12, -12], ctx).ok,
+  };
+});
+t.ok(
+  'an offset past the cull margin is refused, so a label cannot be flung off screen',
+  !offRange.huge && !offRange.fractional && offRange.fine,
+  JSON.stringify(offRange),
+);
+
+/*
+  The wire tooltip. The heading is the connection's NAME, which is the point of it: a wire draws
+  its label and never its name, so this is the only place the identifier the panel and every
+  other record refer to it by is visible on the canvas at all.
+*/
+const wireBox = await diagramCanvas(page).boundingBox();
+const onWire = await page.evaluate(() => {
+  const v = window.__view;
+  const c = window.__scene.shapes.find((s) => s.kind === 'conn');
+  // Midpoint of the longest run, which is where there is most wire to aim at.
+  let best = 1;
+  let len = 0;
+  for (let i = 1; i < c.points.length; i++) {
+    const d =
+      Math.abs(c.points[i].x - c.points[i - 1].x) + Math.abs(c.points[i].y - c.points[i - 1].y);
+    if (d > len) {
+      len = d;
+      best = i;
+    }
+  }
+  const mx = (c.points[best].x + c.points[best - 1].x) / 2;
+  const my = (c.points[best].y + c.points[best - 1].y) / 2;
+  return { x: (mx - v.camX) * v.z, y: (my - v.camY) * v.z };
+});
+await page.mouse.move(wireBox.x + onWire.x - 40, wireBox.y + onWire.y - 40);
+await page.mouse.move(wireBox.x + onWire.x, wireBox.y + onWire.y);
+await page.waitForTimeout(800);
+const wireTip = await page.evaluate(() => {
+  const el = document.querySelector('[data-testid="canvas-tooltip"]');
+  return el === null ? null : el.innerText.replace(/\s+/g, ' ').trim();
+});
+t.ok(
+  'hovering a wire names it and describes it',
+  wireTip !== null && wireTip.startsWith('bus_0') && wireTip.includes('Sixty-four bit data path.'),
+  String(wireTip),
+);
+
+/* ------------------------------------------------ F. an arrowhead that knows when to go ---- */
+
+/*
+  The head is a constant 9 CSS px with its tip on the target's outline, while the blocks shrink
+  with the zoom. Two blocks a short gap apart therefore reach a zoom where the wedge is no
+  longer pointing at the target so much as sitting in the source, and a blob between two boxes
+  says less than the bare line does.
+
+  The geometry is pinned as a pure call and the decision is then read off the canvas, because
+  the two can disagree in exactly one interesting way: a correct box wired to nothing.
+*/
+{
+  const box = await page.evaluate(() => ({
+    east: window.__arrowBox({ x: 100, y: 50 }, { x: 1, y: 0 }, 2),
+    south: window.__arrowBox({ x: 100, y: 50 }, { x: 0, y: 1 }, 2),
+  }));
+  // 9px long and 9px across at dpr 2 is 18 by 18 device px, less the 3 device px of tip that
+  // is discounted along the arrow's own axis -- so 15 by 18 going east, 18 by 15 going south.
+  t.ok(
+    "the arrowhead's box is the head, less the tip resting on the outline",
+    JSON.stringify(box.east) === JSON.stringify({ x: 82, y: 41, w: 15, h: 18 }) &&
+      JSON.stringify(box.south) === JSON.stringify({ x: 91, y: 32, w: 18, h: 15 }),
+    JSON.stringify(box),
+  );
+}
+
+{
+  await page.keyboard.press('Digit1');
+  await page.evaluate(() => {
+    const sc = window.__scene;
+    const mk = (name, x, y) => ({
+      kind: 'rect',
+      name,
+      label: name,
+      subtitle: '',
+      labelMode: 'inset',
+      description: '',
+      x,
+      y,
+      w: 120,
+      h: 80,
+    });
+    sc.commit('scene', () => {
+      // One pair with room between them and one pair almost touching. Same wire, same
+      // direction, same everything else: the gap is the only variable.
+      sc.shapes = [
+        mk('far_a', 0, 0),
+        mk('far_b', 400, 0),
+        mk('near_a', 0, 200),
+        mk('near_b', 140, 200),
+      ];
+    });
+    sc.setSelection(new Set());
+    const v = window.__view;
+    v.z = 1;
+    v.camX = -40;
+    v.camY = -40;
+    v.clampCamera();
+    window.__session.renderer.requestFrame();
+  });
+  await page.waitForTimeout(400);
+
+  // Click-click through the real tool, in page coordinates: `edgeOf` already resolves to
+  // those, which is what the rest of this suite drives the pointer with.
+  const wire = async (fromName, toName) => {
+    const a = await edgeOf(fromName, 'e');
+    const b = await edgeOf(toName, 'w');
+    await page.keyboard.press('Digit4');
+    await page.mouse.move(a[0], a[1], { steps: 5 });
+    await page.waitForTimeout(60);
+    await page.mouse.click(a[0], a[1]);
+    await page.mouse.move(b[0], b[1], { steps: 8 });
+    await page.waitForTimeout(60);
+    await page.mouse.click(b[0], b[1]);
+    await page.waitForTimeout(250);
+  };
+  await wire('far_a', 'far_b');
+  await wire('near_a', 'near_b');
+  await page.keyboard.press('Digit1');
+  // Deselect: the tool leaves the wire it just drew selected, and a selected wire strokes
+  // amber -- which the `connStroke` match below would read as no wire at all.
+  await page.evaluate(() => {
+    window.__scene.setSelection(new Set());
+    window.__session.renderer.requestFrame();
+  });
+  await page.waitForTimeout(400);
+
+  /**
+   * Connection-coloured pixels in a box over the last 11 CSS px of a wire.
+   *
+   * Matched against `connStroke` with a tolerance rather than by "anything not background",
+   * because at the zoom that matters the box lies mostly inside the source block, whose fill
+   * and blue outline would otherwise swamp the count.
+   */
+  const headInk = (from) =>
+    page.evaluate((f) => {
+      const v = window.__view;
+      const c = window.__scene.shapes.find((s) => s.kind === 'conn' && s.from === f);
+      if (c === undefined) return { n: -1, why: 'no connection' };
+      const pts = c.points;
+      const tip = v.toScreen(pts[pts.length - 1]);
+      const prev = v.toScreen(pts[pts.length - 2]);
+      // The box below is written for a rightward run, so say so rather than measure noise.
+      if (Math.abs(prev.y - tip.y) > 0.5 || prev.x >= tip.x) return { n: -1, why: 'not eastward' };
+      const x0 = Math.round((tip.x - 11) * v.dpr);
+      const x1 = Math.round((tip.x + 1) * v.dpr);
+      const y0 = Math.round((tip.y - 6) * v.dpr);
+      const y1 = Math.round((tip.y + 6) * v.dpr);
+      if (x0 < 0 || y0 < 0 || x1 > v.canvas.width || y1 > v.canvas.height)
+        return { n: -1, why: 'off screen' };
+      const d = v.canvas.getContext('2d').getImageData(x0, y0, x1 - x0, y1 - y0).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (
+          Math.abs(d[i] - 148) < 30 &&
+          Math.abs(d[i + 1] - 163) < 30 &&
+          Math.abs(d[i + 2] - 184) < 30
+        )
+          n++;
+      }
+      return { n, why: '' };
+    }, from);
+
+  const wide = { far: await headInk('far_a'), near: await headInk('near_a') };
+  t.ok(
+    'with room either side, both wires draw their head',
+    wide.far.n > 100 && wide.near.n > 100,
+    JSON.stringify(wide),
+  );
+
+  // 20 world units of gap at z=0.2 is 4 CSS px, less than half the head's length; the far
+  // pair's 280 becomes 56 and stays comfortable.
+  await page.evaluate(() => {
+    const v = window.__view;
+    v.zoomTo(0.2, { x: v.cssW / 2, y: v.cssH / 2 });
+    window.__session.renderer.requestFrame();
+  });
+  await page.waitForTimeout(400);
+  const tight = { far: await headInk('far_a'), near: await headInk('near_a') };
+
+  t.ok(
+    'zoomed out until the head would land inside the source block, it is not drawn',
+    tight.near.n >= 0 && tight.near.n < wide.near.n / 3,
+    JSON.stringify(tight),
+  );
+  t.ok(
+    'but the line is still there, which is the whole point of dropping the head',
+    tight.near.n > 0,
+    JSON.stringify(tight),
+  );
+  t.ok(
+    'and a wire with room at the same zoom keeps its head',
+    tight.far.n > 100,
+    JSON.stringify(tight),
+  );
+
+  // Back again: the rule reads the zoom every frame, so it has to be reversible.
+  await page.evaluate(() => {
+    const v = window.__view;
+    v.zoomTo(1, { x: v.cssW / 2, y: v.cssH / 2 });
+    window.__session.renderer.requestFrame();
+  });
+  await page.waitForTimeout(400);
+  const again = await headInk('near_a');
+  t.ok('zooming back in brings it back', again.n > 100, JSON.stringify({ again, wide: wide.near }));
+}
 
 /*
   `report` prints page errors but does not fail on them, and this suite drives the property

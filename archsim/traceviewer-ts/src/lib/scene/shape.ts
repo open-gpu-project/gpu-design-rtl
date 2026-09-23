@@ -20,6 +20,18 @@ export interface ShapeBase {
   readonly label: string;
 }
 
+/**
+ * How a block's label is presented.
+ *
+ * - `inset`        label centred in the block, subtitle centred under it.
+ * - `tabbed_left`  label in a tab above the block's top-left corner; body left empty.
+ * - `tabbed_right` the same, above the top-right corner.
+ *
+ * The tabbed modes have nowhere to put a second line, so the subtitle moves into the hover
+ * tooltip rather than being dropped.
+ */
+export type LabelMode = 'inset' | 'tabbed_left' | 'tabbed_right';
+
 /** A block in the architecture diagram. The only entity kind so far. */
 export interface RectShape extends ShapeBase {
   readonly kind: 'rect';
@@ -27,7 +39,10 @@ export interface RectShape extends ShapeBase {
   readonly y: number;
   readonly w: number;
   readonly h: number;
-  /** Free-text note on what this hardware block is. Never rendered on the canvas. */
+  /** Second line under an inset label. Moves into the tooltip in the tabbed modes. */
+  readonly subtitle: string;
+  readonly labelMode: LabelMode;
+  /** Free-text note on what this hardware block is. Shown as a tooltip on hover. */
   readonly description: string;
 }
 
@@ -53,7 +68,15 @@ export interface ConnectionShape extends ShapeBase {
   readonly points: readonly Vec2[];
   /** Flips to `'manual'` the moment the user drags a segment or types a route. */
   readonly routing: 'auto' | 'manual';
-  /** Free-text note on what this link carries. Never rendered on the canvas. */
+  /**
+   * Nudge for the drawn label, in CSS pixels, as `[par, perp]` relative to the run it rides.
+   *
+   * Screen pixels rather than world units because the label is drawn at a fixed size at every
+   * zoom: a screen-constant nudge holds the same visual relationship to the wire, where a
+   * world-unit one would drift away from it as you zoom in.
+   */
+  readonly labelOffset: readonly [number, number];
+  /** Free-text note on what this link carries. Shown as a tooltip on hover. */
   readonly description: string;
 }
 
@@ -135,6 +158,14 @@ export interface AnchorTarget {
 export interface HitContext {
   /** World units per screen CSS pixel (= 1 / zoom). Multiply screen-px tolerances by this. */
   readonly worldPerPx: number;
+  /**
+   * Width of a string in CSS pixels, at whatever font the caller's decoration uses.
+   *
+   * Optional, because only a kind whose hit box depends on rendered text needs it and only one
+   * of the four call sites can supply one. A kind that asks for it must cope with its absence,
+   * and `textMeasurer`'s estimate fallback is how.
+   */
+  readonly measure?: (text: string) => number;
 }
 
 export interface DrawContext {
@@ -151,6 +182,30 @@ export interface DrawContext {
   toDeviceSpace(): () => void;
   /** Project a world point to CSS pixels. */
   project(p: Vec2): Vec2;
+  /**
+   * World bounds of ANOTHER shape, by name, or null when the scene has no such shape.
+   *
+   * The one thing a `draw` can learn about the rest of the scene, and deliberately the least
+   * that answers a real question: a connection's arrowhead is sized in screen pixels and has
+   * to know whether, at this zoom, it would land inside a block it is attached to. Handing
+   * over the shape itself instead would let one kind read another kind's fields and re-enter
+   * `draw`, and the purity contract below would stop being enforceable.
+   *
+   * Null is normal, not exceptional: a ghost connection is bound to nothing at its loose end.
+   */
+  boundsOf(name: ShapeName): Rect | null;
+}
+
+/**
+ * What a hover tooltip shows for one shape: a heading and zero or more lines under it.
+ *
+ * Lines rather than one blob, because the two kinds contribute different numbers of them and
+ * the component renders each as its own paragraph. Producing it is a per-kind question -- a
+ * block's answer depends on its `labelMode` -- so it is a seam on `ShapeOps`, not a switch.
+ */
+export interface ShapeTooltip {
+  readonly title: string;
+  readonly lines: readonly string[];
 }
 
 export interface RenderFlags {
@@ -173,6 +228,13 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
 
   /** Body hit test. Derive tolerances from `hc.worldPerPx` so they stay screen-constant. */
   hitTest(s: S, p: Vec2, hc: HitContext): boolean;
+
+  /**
+   * What hovering this shape should say, or null for nothing worth a tooltip.
+   *
+   * Optional: a kind with no prose to show simply omits it and never gets a tooltip.
+   */
+  tooltip?(s: S): ShapeTooltip | null;
 
   /**
    * Edit handles in world space, in hit-priority order -- the caller takes the first match.
@@ -204,6 +266,16 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
   blank(name: ShapeName): S;
 
   /* ---------------- optional seams: a kind implements only what it has ---------------- */
+
+  /**
+   * Does this shape overlap the world-space rectangle `r`? Used by the marquee.
+   *
+   * Optional, and the fallback is `rectsIntersect(bounds(s), r)`. A kind implements it when its
+   * bounding box is a poor stand-in for its ink: a connection's `bounds` is the box around its
+   * whole route, so an L-shaped wire's box covers a large region it does not occupy, and a
+   * band dropped in that empty corner would select a wire it never touched.
+   */
+  intersects?(s: S, r: Rect): boolean;
 
   /**
    * Rewrite references to a shape that was just renamed. A connection updates its endpoints.

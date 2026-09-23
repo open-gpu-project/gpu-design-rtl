@@ -36,6 +36,65 @@ t.ok(
     'flex',
 );
 
+/*
+  ITERATION 5.3 -- the tooltip layer outranks a floated pane.
+
+  The layer is mounted at the app root and a floating dock window is not, so which one wins is
+  decided by `z-index` alone. Caught here rather than by review: the first version used 100 and
+  `.sv-dockmgr__window` is 101, so every toolbar tooltip vanished behind a floated panel.
+
+  The assertion is the RELATION, not the constant. svgrid raising its own stacking is exactly
+  the change that would silently re-break this, and a hardcoded `10001` would still pass.
+*/
+{
+  const btn = page.locator('[data-panel-id="diagram"] button[aria-label="Zoom to fit"]').first();
+  const box = await btn.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+  await page.waitForTimeout(750);
+  const stack = await page.evaluate(() => {
+    const tipEl = document.querySelector('[data-testid="chrome-tooltip"]');
+    const float = document.querySelector('.sv-dockmgr__window');
+    const z = (el) => (el === null ? null : Number(getComputedStyle(el).zIndex));
+    return { tip: z(tipEl), float: z(float) };
+  });
+  t.ok(
+    'a tooltip outranks the floating pane it would otherwise hide behind',
+    stack.tip !== null && stack.float !== null && stack.tip > stack.float,
+    JSON.stringify(stack),
+  );
+  /*
+    And the layer is still genuinely viewport-positioned. `position: fixed` silently becomes
+    pane-relative the moment any ancestor grows a `transform`, `filter`, `contain` or
+    `will-change` -- an invisible review miss that this catches by walking the real chain.
+  */
+  const escapes = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="chrome-tooltip"]');
+    if (el === null) return null;
+    const bad = [];
+    for (let n = el.parentElement; n !== null; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (
+        cs.transform !== 'none' ||
+        cs.filter !== 'none' ||
+        cs.perspective !== 'none' ||
+        cs.backdropFilter !== 'none' ||
+        cs.contain !== 'none' ||
+        cs.willChange !== 'auto'
+      ) {
+        bad.push(n.tagName.toLowerCase() + '.' + String(n.className).split(' ')[0]);
+      }
+    }
+    return bad;
+  });
+  t.ok(
+    'and no ancestor makes a containing block, so it is viewport-fixed not pane-fixed',
+    Array.isArray(escapes) && escapes.length === 0,
+    JSON.stringify(escapes),
+  );
+  await page.mouse.move(box.x + box.width / 2, box.y + 300, { steps: 5 });
+  await page.waitForTimeout(200);
+}
+
 await page.evaluate(() => {
   window.__view.camX = 77;
   window.__view.camY = 88;

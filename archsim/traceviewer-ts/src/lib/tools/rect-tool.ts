@@ -76,7 +76,7 @@ export class RectTool implements Tool {
         this.#cancel(c);
         return true;
       }
-      c.setTool('select');
+      c.setTool('pointer');
       return true;
     }
     return false;
@@ -94,7 +94,8 @@ export class RectTool implements Tool {
 registerTool({
   id: 'rect',
   label: 'Rectangle',
-  shortcut: '2',
+  group: 'shape',
+  order: 0,
   icon: 'M4 5h16v14H4z',
   make: () => new RectTool(),
 });

@@ -1,3 +1,4 @@
+import { CONN_LABEL_OFFSET_MAX } from '../../canvas/theme';
 import type { Vec2 } from '../../geom/types';
 import {
   propSchema,
@@ -18,6 +19,15 @@ function bad(error: string): Write {
 
 function asString(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
+}
+
+/** A tuple of exactly two integers. The twin of `rect.props.ts`'s, for `labelOffset`. */
+function asIntPair(v: unknown): [number, number] | null {
+  if (!Array.isArray(v) || v.length !== 2) return null;
+  const [a, b] = v;
+  if (typeof a !== 'number' || typeof b !== 'number') return null;
+  if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+  return [a, b];
 }
 
 /** A `[block, anchor]` pair. Both halves are text; neither may be empty. */
@@ -222,9 +232,36 @@ const props: readonly PropDef<ConnectionShape>[] = [
     },
   },
   {
+    key: 'labelOffset',
+    title: 'Label offset',
+    doc: 'Nudge for the drawn label, as [par, perp], to move it clear of whatever it collides with. The two axes come from the run the label sits on, not from the screen, so one offset means the same thing on a horizontal wire and a vertical one: “par” slides the label along the run in the direction of the arrow, and “perp” pushes it sideways, positive being to the right of that direction — below a left-to-right run. Measured in screen pixels rather than world units, unlike every other geometry here, because the label is drawn at a fixed size at every zoom and a nudge in world units would drift away from its wire as you zoom in. An automatically routed connection can move its label to a different run when the blocks move, and the offset then applies to that run.',
+    mode: 'edit',
+    type: {
+      type: 'tuple',
+      items: [
+        { type: 'integer', minimum: -CONN_LABEL_OFFSET_MAX, maximum: CONN_LABEL_OFFSET_MAX },
+        { type: 'integer', minimum: -CONN_LABEL_OFFSET_MAX, maximum: CONN_LABEL_OFFSET_MAX },
+      ],
+      labels: ['par', 'perp'],
+    },
+    read: (s) => [s.labelOffset[0], s.labelOffset[1]],
+    write: (s, v): Write => {
+      const p = asIntPair(v);
+      if (p === null) return bad('Label offset must be two whole numbers, [par, perp].');
+      // Re-checked here and not left to the schema: ajv is advisory in this editor, and an
+      // offset past the renderer's cull margin makes the label vanish near the viewport edge.
+      if (p.some((n) => Math.abs(n) > CONN_LABEL_OFFSET_MAX)) {
+        return bad(
+          `Label offset must be between -${CONN_LABEL_OFFSET_MAX} and ${CONN_LABEL_OFFSET_MAX} pixels.`,
+        );
+      }
+      return { ok: true, shape: { ...s, labelOffset: [p[0], p[1]] } };
+    },
+  },
+  {
     key: 'description',
     title: 'Description',
-    doc: 'Free-text note describing what this connection carries. Never drawn on the canvas; it is here to document the design for whoever reads the diagram next.',
+    doc: 'Free-text note describing what this connection carries. Not drawn on the canvas — it appears as a tooltip when you hover the wire, under the connection’s name, so it can be as long as it needs to be without crowding the diagram.',
     mode: 'edit',
     type: { type: 'string' },
     read: (s) => s.description,

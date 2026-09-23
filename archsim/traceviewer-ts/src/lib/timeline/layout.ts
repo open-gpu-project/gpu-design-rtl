@@ -1,3 +1,4 @@
+import { textMeasurer } from '../canvas/text';
 import {
   summarize,
   lowerBound,
@@ -6,7 +7,19 @@ import {
   type Tick,
   type TraceSignal,
 } from '../trace/model';
-import { FLAG_FONT, FLAG_MAX_W, FLAG_MIN_PX, FLAG_PAD_X, MAX_SCAN_PER_ROW } from './theme';
+import {
+  CURSOR_EST_CHAR_PX,
+  CURSOR_FLAG_H,
+  CURSOR_FLAG_PAD_X,
+  CURSOR_FLAG_TOP,
+  CURSOR_FONT,
+  FLAG_FONT,
+  FLAG_MAX_W,
+  FLAG_MIN_PX,
+  FLAG_PAD_X,
+  MAX_SCAN_PER_ROW,
+} from './theme';
+import { formatTick } from './ticks';
 import type { TimelineView } from './view.svelte';
 
 /** Measures flag labels. Falls back to an estimate when there is no context to measure with. */
@@ -100,6 +113,34 @@ export function visibleFlags(
   }
 
   return out;
+}
+
+/** Measures the cursor's readout. Same shape as `flagMeasurer`, with its own font. */
+export function cursorMeasurer(ctx: CanvasRenderingContext2D | null): (s: string) => number {
+  return textMeasurer(ctx, CURSOR_FONT, CURSOR_EST_CHAR_PX);
+}
+
+/**
+ * The cursor's flag: a body hanging off the stem, holding the tick.
+ *
+ * **The single source of that rectangle**, for exactly the reason `visibleFlags` is for an
+ * event's: the body is sized to the text it holds and is the obvious thing to grab, so a hit
+ * box derived separately would drift off the drawn one as the tick's digit count changed.
+ *
+ * All CSS pixels. `x` is the stem, and the body runs right from it unless that would take it
+ * off the right edge, in which case it flies the other way -- the rule the old detached readout
+ * already used, kept because the alternative is a readout that disappears at the end of a trace.
+ */
+export function cursorFlagBox(
+  view: TimelineView,
+  tick: Tick,
+  measure: (s: string) => number,
+): { x: number; y: number; w: number; h: number; label: string } {
+  const label = formatTick(tick);
+  const x = view.toX(tick);
+  const w = measure(label) + 2 * CURSOR_FLAG_PAD_X;
+  const left = x + w <= view.cssW ? x : x - w;
+  return { x: left, y: CURSOR_FLAG_TOP, w, h: CURSOR_FLAG_H, label };
 }
 
 /** The flag box containing or nearest to `x`, within `tol` CSS px of its stem or body. */

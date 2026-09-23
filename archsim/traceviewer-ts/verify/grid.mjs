@@ -248,19 +248,30 @@ t.ok(
 );
 
 /*
-  The same boundary at z = 0.1, where `level` goes 1 -> 2 and the 8-CSS-px spacing returns.
-  Iteration 3.1 section 7.5 flagged it as unmeasured; it is the same cliff and the same fix.
+  The SECOND boundary, which iteration 3.1 section 7.5 flagged as unmeasured at z = 0.1 -- and
+  which iteration 5 removed from the product rather than measuring.
+
+  Boundaries sit at MIN_DOT_PX / (GRID * MAJOR_EVERY^k): z = 0.5, then 0.1, then 0.02 at the old
+  ratio of 5. Raising it to 6 moves the second one to 8/96 = 0.0833, which is below ZOOM_MIN =
+  0.1 and so unreachable -- leaving z = 0.5 as the only level change a user can provoke.
+
+  So this no longer probes a cliff at 0.1; it asserts there is no cliff anywhere between the
+  minimum zoom and the one boundary that remains. That is the stronger claim, and it is the one
+  that breaks if ZOOM_MIN is lowered or MAJOR_EVERY is put back, either of which would quietly
+  reintroduce an unmeasured step discontinuity.
 */
-const lo1 = (await renderModes(0.099, ['batch', 'strips'])).ops;
-const hi1 = (await renderModes(0.101, ['batch', 'strips'])).ops;
 const tot = (o) => o.rect + o.fillRect + o.drawImage;
+const lodBand = [0.1, 0.13, 0.17, 0.22, 0.29, 0.37, 0.45, 0.4999];
+const lodSweep = [];
+for (const z of lodBand) {
+  lodSweep.push({ z, ops: tot((await renderModes(z, ['strips'])).ops.strips) });
+}
+const lodSteps = lodSweep.slice(1).map((s, i) => s.ops / Math.max(1, lodSweep[i].ops));
 t.ok(
-  'the z=0.1 boundary behaves the same way',
-  tot(hi1.strips) / tot(lo1.strips) < 6 &&
-    tot(hi1.strips) < 1000 &&
-    tot(hi1.batch) / tot(lo1.batch) > 10,
-  `batch ${tot(lo1.batch)} -> ${tot(hi1.batch)}` +
-    `; strips ${tot(lo1.strips)} -> ${tot(hi1.strips)}`,
+  'z=0.5 is the only level change in reach: the band below it has no step in it',
+  lodSteps.every((r) => r < 2),
+  `worst adjacent step ${Math.max(...lodSteps).toFixed(2)}x across ` +
+    lodSweep.map((s) => `${s.z}:${s.ops}`).join(' '),
 );
 
 /*
@@ -531,6 +542,89 @@ t.ok(
   'and it did that at a fractional CSS width, where the bitmap has to be rounded',
   !Number.isInteger(geom.css[0] * geom.dpr) || !Number.isInteger(geom.css[1] * geom.dpr),
   `css=${geom.css} x dpr ${geom.dpr} -> bitmap ${geom.bitmap}`,
+);
+
+/*
+  THE DOT HIERARCHY -- iteration 5 changed MAJOR_EVERY from 5 to 6.
+
+  Counted off the pixels rather than read off the constant, which is the only version of this
+  check worth having: `MAJOR_EVERY` is simultaneously the highlight interval and the
+  level-of-detail ratio, and an expression that got one of those right while getting the other
+  wrong would still satisfy any assertion phrased in terms of the constant itself.
+
+  Dots are two device pixels wide at dpr 1, so inked columns are grouped into runs before being
+  counted -- counting columns gives ten and the answer is five.
+*/
+const hierarchy = await page.evaluate(() => {
+  const g = window.__grid;
+  const c = document.createElement('canvas');
+  c.width = 1200;
+  c.height = 64;
+  const cx = c.getContext('2d');
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.fillStyle = g.theme.background;
+  cx.fillRect(0, 0, c.width, c.height);
+  // dpr 1 and z 1, so one world unit is one pixel and the spacing is GRID exactly.
+  g.draw(cx, 0, 0, 1, 1, g.theme);
+  const d = cx.getImageData(0, 0, c.width, c.height).data;
+  const at = (x, y) => {
+    const i = (y * c.width + x) * 4;
+    return `${d[i]},${d[i + 1]},${d[i + 2]}`;
+  };
+  const bg = at(3, 40);
+
+  // The row holding the most ink is a dot row; dots are a couple of pixels tall.
+  let best = { y: 0, cols: [] };
+  for (let y = 0; y < 40; y++) {
+    const cols = [];
+    for (let x = 0; x < c.width; x++) if (at(x, y) !== bg) cols.push({ x, c: at(x, y) });
+    if (cols.length > best.cols.length) best = { y, cols };
+  }
+
+  // Group adjacent inked columns into one dot, and call it major if any column is major-coloured.
+  const hex = (s) =>
+    s
+      .replace('#', '')
+      .match(/../g)
+      .map((h) => parseInt(h, 16))
+      .join(',');
+  const majorRGB = hex(g.theme.gridDotMajor);
+  const dots = [];
+  for (const col of best.cols) {
+    const last = dots[dots.length - 1];
+    if (last !== undefined && col.x <= last.x1 + 1) {
+      last.x1 = col.x;
+      last.major = last.major || col.c === majorRGB;
+    } else {
+      dots.push({ x0: col.x, x1: col.x, major: col.c === majorRGB });
+    }
+  }
+
+  const majorAt = dots.map((dot, i) => (dot.major ? i : -1)).filter((i) => i >= 0);
+  const gaps = majorAt.slice(1).map((i, k) => i - majorAt[k] - 1);
+  const spacing = majorAt.slice(1).map((i, k) => dots[i].x0 - dots[majorAt[k]].x0);
+  return {
+    dots: dots.length,
+    majors: majorAt.length,
+    gaps: [...new Set(gaps)],
+    spacing: [...new Set(spacing)],
+  };
+});
+
+t.ok(
+  'exactly five minor dots sit between two major ones',
+  hierarchy.majors >= 4 && hierarchy.gaps.length === 1 && hierarchy.gaps[0] === 5,
+  `gaps ${JSON.stringify(hierarchy.gaps)} across ${hierarchy.majors} majors of ${hierarchy.dots} dots`,
+);
+/*
+  Within a pixel, and that pixel is real: a major dot inks three columns to a minor's two, and
+  the one at x = 0 is clipped by the left edge, so its leading column sits where its centre
+  would be. The claim is the spacing, not the rasterization.
+*/
+t.ok(
+  'and they are 6 steps of the unchanged 16-unit grid apart, so the snap step did not move',
+  hierarchy.spacing.length > 0 && hierarchy.spacing.every((d) => Math.abs(d - 96) <= 1),
+  `majors every ${JSON.stringify(hierarchy.spacing)}px at z=1 — want 96 = 16 x 6`,
 );
 
 const code = t.report(errors);

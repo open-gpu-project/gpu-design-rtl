@@ -1,6 +1,8 @@
 <script lang="ts">
   import TimelineSurface from '../components/TimelineSurface.svelte';
+  import { hint } from '../lib/keys';
   import { useSession } from '../lib/session.svelte';
+  import { tip } from '../lib/ui/tooltip.svelte';
 
   const session = useSession();
   const { trace, timeline, timelineHost, timelineRenderer } = session;
@@ -87,7 +89,7 @@
     <div class={group}>
       <button
         class={btn}
-        title="First event on the selected trace (Home)"
+        {@attach tip(hint('First event on the selected trace', 'home'))}
         aria-label="First event"
         onclick={() => jump('first')}
       >
@@ -97,7 +99,7 @@
       </button>
       <button
         class={btn}
-        title="Previous event on the selected trace (Left arrow)"
+        {@attach tip(hint('Previous event on the selected trace', 'left'))}
         aria-label="Previous event"
         onclick={() => step(-1)}
       >
@@ -107,7 +109,7 @@
       </button>
       <button
         class={btn}
-        title="Next event on the selected trace (Right arrow)"
+        {@attach tip(hint('Next event on the selected trace', 'right'))}
         aria-label="Next event"
         onclick={() => step(1)}
       >
@@ -117,7 +119,7 @@
       </button>
       <button
         class={btn}
-        title="Last event on the selected trace (End)"
+        {@attach tip(hint('Last event on the selected trace', 'end'))}
         aria-label="Last event"
         onclick={() => jump('last')}
       >
@@ -151,17 +153,22 @@
     <div class={divider}></div>
 
     <div class={group}>
-      <button class={btn} title="Zoom out" aria-label="Zoom out" onclick={() => zoom(-2)}>
+      <button class={btn} {@attach tip('Zoom out')} aria-label="Zoom out" onclick={() => zoom(-2)}>
         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="7" /><path d="M8 11h6M20 20l-4.5-4.5" />
         </svg>
       </button>
-      <button class={btn} title="Zoom in" aria-label="Zoom in" onclick={() => zoom(2)}>
+      <button class={btn} {@attach tip('Zoom in')} aria-label="Zoom in" onclick={() => zoom(2)}>
         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="7" /><path d="M8 11h6M11 8v6M20 20l-4.5-4.5" />
         </svg>
       </button>
-      <button class={btn} title="Fit the whole trace (Cmd+1)" aria-label="Fit trace" onclick={fit}>
+      <button
+        class={btn}
+        {@attach tip(hint('Fit the whole trace', 'cmd', '1'))}
+        aria-label="Fit trace"
+        onclick={fit}
+      >
         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
         </svg>

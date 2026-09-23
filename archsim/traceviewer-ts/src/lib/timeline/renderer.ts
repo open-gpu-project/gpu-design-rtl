@@ -1,8 +1,17 @@
 import { alignStroke } from '../canvas/pixel';
+import { fitText } from '../canvas/text';
 import { localName, type SignalId, type Tick, type TraceDoc } from '../trace/model';
 import type { SelectedEvent } from '../trace/store.svelte';
-import { flagMeasurer, visibleFlags, type FlagBox } from './layout';
-import { FLAG_FONT, FLAG_H, ROW_H, TIMESCALE_H, type TimelineTheme } from './theme';
+import { cursorFlagBox, cursorMeasurer, flagMeasurer, visibleFlags, type FlagBox } from './layout';
+import {
+  CURSOR_FLAG_PAD_X,
+  CURSOR_FONT,
+  FLAG_FONT,
+  FLAG_H,
+  ROW_H,
+  TIMESCALE_H,
+  type TimelineTheme,
+} from './theme';
 import { firstIndexAtOrAfter, formatTick, tickTiers } from './ticks';
 import type { TimelineView } from './view.svelte';
 
@@ -16,22 +25,6 @@ export interface TimelineRenderInput {
 
 const FONT = 'ui-sans-serif, system-ui, sans-serif';
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-
-/** Truncate to fit `maxW`, with an ellipsis. Returns '' when not even the ellipsis fits. */
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
-  if (maxW <= 0) return '';
-  if (ctx.measureText(text).width <= maxW) return text;
-  const ell = '…';
-  if (ctx.measureText(ell).width > maxW) return '';
-  let lo = 0;
-  let hi = text.length;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo === 0 ? ell : text.slice(0, lo) + ell;
-}
 
 /**
  * Drop leading path segments until the name fits, so the informative tail survives.
@@ -459,34 +452,36 @@ export class TimelineRenderer {
     ctx.rect(view.laneX, 0, view.laneW, view.cssH);
     ctx.clip();
 
+    const box = cursorFlagBox(view, input.cursorTick, cursorMeasurer(ctx));
+
+    /*
+      A flag, in the same two parts as an event's: a stem marking the exact tick, and a body
+      hanging off the top of it holding the tick number.
+
+      The stem now starts at the top of the body rather than at the timescale baseline, which is
+      the whole difference from the arrow-and-detached-pill this replaced. A readout floating
+      beside a cursor is a second object the eye has to associate with the first; a flag on a
+      pole is one object, and it is the object the rest of this panel is already built out of.
+
+      CSS space and not device-aligned, for the reason the event stems are not: a 1px line is
+      allowed to be soft, and rounding it to a device pixel would move it off the tick it exists
+      to point at.
+    */
     ctx.strokeStyle = t.cursor;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x, TIMESCALE_H);
+    ctx.moveTo(x, box.y);
     ctx.lineTo(x, view.cssH);
     ctx.stroke();
 
-    // The handle: a triangle on the baseline plus the tick, as sketched.
     ctx.fillStyle = t.cursorHandleFill;
-    ctx.beginPath();
-    ctx.moveTo(x, TIMESCALE_H - 9);
-    ctx.lineTo(x - 5, TIMESCALE_H);
-    ctx.lineTo(x + 5, TIMESCALE_H);
-    ctx.closePath();
-    ctx.fill();
+    ctx.fillRect(box.x, box.y, box.w, box.h);
 
-    const label = formatTick(input.cursorTick);
-    ctx.font = `10px ${MONO}`;
-    const tw = ctx.measureText(label).width;
-    // Flip to the left of the cursor when the readout would run off the right edge.
-    const pillW = tw + 8;
-    const left = x + 7 + pillW <= view.cssW ? x + 7 : x - 7 - pillW;
-    ctx.fillStyle = t.cursorHandleFill;
-    ctx.fillRect(left, 2, pillW, 13);
+    ctx.font = CURSOR_FONT;
     ctx.fillStyle = t.cursorHandleText;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText(label, left + 4, 9);
+    ctx.fillText(box.label, box.x + CURSOR_FLAG_PAD_X, box.y + box.h / 2);
 
     ctx.restore();
   }

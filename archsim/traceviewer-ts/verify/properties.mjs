@@ -4,9 +4,11 @@ import {
   drawBlock,
   editValue,
   emptySpot,
+  enumOptions,
   health,
   open,
   row,
+  selectValue,
   sized,
   suite,
 } from './harness.mjs';
@@ -401,6 +403,117 @@ t.ok(
   JSON.stringify(m),
 );
 await page.keyboard.press('Escape');
+
+/*
+  GROUP T -- iteration 5's two new block properties.
+
+  The load-bearing one is the second: `subtitle` and `labelMode` were added to a shape kind that
+  already had saved files in the wild, and the claim that no version bump was needed rests
+  entirely on `hydrateShape` filling a missing key from the blank. That is the assertion that
+  fails if the default is dropped or `labelMode` is given a writer that rejects absence -- and it
+  fails silently, because a scene that loads with no label mode at all still renders.
+*/
+await page.evaluate(() => window.__scene.setSelection(new Set()));
+await page.waitForTimeout(200);
+await drawBlock(page, 120, 120, 300, 230);
+await page.waitForTimeout(300);
+
+const T = await page.evaluate(() => {
+  const sc = window.__scene;
+  const b = sc.shapes[sc.shapes.length - 1];
+  sc.commit('describe', () => {
+    sc.shapes = sc.shapes.map((s) =>
+      s === b ? { ...s, label: 'XU', subtitle: 'Execution unit', labelMode: 'tabbed_right' } : s,
+    );
+  });
+  const doc = window.__dump();
+  const rec = doc.shapes.find((r) => r.name === b.name);
+
+  // A record as an older file would have written it: the three new keys simply absent.
+  const legacy = { ...rec };
+  delete legacy.subtitle;
+  delete legacy.labelMode;
+  return { keys: Object.keys(rec), rec, legacy };
+});
+
+t.ok(
+  'the saved block record carries the subtitle and the label mode, in canonical order',
+  JSON.stringify(T.keys) ===
+    JSON.stringify([
+      'kind',
+      'description',
+      'label',
+      'labelMode',
+      'name',
+      'position',
+      'size',
+      'subtitle',
+    ]),
+  JSON.stringify(T.keys),
+);
+
+// Imported by URL, like the round-trip check above: `serialize.ts` holds no module-level state,
+// so a second instance of it is the same function.
+const load = (rec) =>
+  page.evaluate(async (r) => {
+    const mod = await import('/src/lib/scene/serialize.ts');
+    return mod
+      .deserializeScene({ version: 2, shapes: [r] })
+      .map((s) => ({ subtitle: s.subtitle, labelMode: s.labelMode, label: s.label }));
+  }, rec);
+
+const roundTrip = await load(T.rec);
+t.ok(
+  'and both survive a save and load unchanged',
+  roundTrip.length === 1 &&
+    roundTrip[0].subtitle === 'Execution unit' &&
+    roundTrip[0].labelMode === 'tabbed_right',
+  JSON.stringify(roundTrip),
+);
+
+const legacyLoad = await load(T.legacy);
+t.ok(
+  'a file written before these keys existed still loads, defaulting to the old appearance',
+  legacyLoad.length === 1 &&
+    legacyLoad[0].subtitle === '' &&
+    legacyLoad[0].labelMode === 'inset' &&
+    legacyLoad[0].label === 'XU',
+  JSON.stringify(legacyLoad),
+);
+
+/*
+  The dropdown. Two halves, and the second is the one worth keeping: an editable enum SHOULD be
+  a select, and a read-only one should NOT be -- a dropdown on `kind` would look like a choice
+  and be refused by `applyDocument` whichever way it was moved.
+*/
+await page.evaluate(() => {
+  const sc = window.__scene;
+  sc.setSelection(new Set([sc.shapes[sc.shapes.length - 1].name]));
+});
+await page.waitForTimeout(400);
+
+t.ok(
+  'an editable enum is a dropdown offering exactly its declared values',
+  JSON.stringify(await enumOptions(page, 'labelMode')) ===
+    JSON.stringify(['inset', 'tabbed_left', 'tabbed_right']),
+  JSON.stringify(await enumOptions(page, 'labelMode')),
+);
+t.ok(
+  'and a read-only one is not, so nothing offers a choice it will refuse',
+  (await enumOptions(page, 'kind')).length === 0,
+  JSON.stringify(await enumOptions(page, 'kind')),
+);
+
+await selectValue(page, 'labelMode', 'tabbed_left');
+const picked = await page.evaluate(() => {
+  const sc = window.__scene;
+  return { mode: sc.soleSelected()?.labelMode, label: sc.history.undoLabel };
+});
+t.ok(
+  'picking from it commits, as one labelled history entry',
+  picked.mode === 'tabbed_left' && typeof picked.label === 'string' && picked.label !== '',
+  `${picked.mode} / ${picked.label}`,
+);
 
 /*
   Last, because it drops the scene: reloading keeps only what was persisted.

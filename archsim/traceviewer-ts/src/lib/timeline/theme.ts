@@ -131,6 +131,24 @@ export const FLAG_PAD_X = 10;
  */
 export const FLAG_FONT = '11px ui-sans-serif, system-ui, sans-serif';
 
+/* -------------------------------------------------------------------------- the cursor ---- */
+
+/**
+ * The cursor's readout font, and the per-character estimate to fall back on.
+ *
+ * Exported for the same reason `FLAG_FONT` is: the cursor's flag is sized to the tick it shows,
+ * so the box you can grab has to be measured with the font the box was drawn with.
+ */
+export const CURSOR_FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+export const CURSOR_EST_CHAR_PX = 6;
+
+/** Cursor flag body height, and the padding either side of the tick inside it. */
+export const CURSOR_FLAG_H = 15;
+export const CURSOR_FLAG_PAD_X = 5;
+
+/** Gap between the top of the timescale strip and the top of the cursor flag. */
+export const CURSOR_FLAG_TOP = 2;
+
 /**
  * Most records one row will walk in a frame.
  *

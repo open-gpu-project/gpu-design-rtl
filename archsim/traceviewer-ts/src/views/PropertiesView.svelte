@@ -5,12 +5,17 @@
     isJSONContent,
     isKeySelection,
     isValueSelection,
+    renderJSONSchemaEnum,
+    renderValue,
     type Content,
     type JSONEditorSelection,
+    type JSONSchema,
+    type RenderValueComponentDescription,
+    type RenderValueProps,
   } from 'svelte-jsoneditor';
   import { simplifyContextMenu } from '../lib/props/context-menu';
   import { applyDocument, projectShape } from '../lib/props/project';
-  import { describeProp } from '../lib/props/schema';
+  import { describeProp, schemaFor } from '../lib/props/schema';
   import { defFor, type PropContext, type PropDef, type PropSchema } from '../lib/props/spec';
   import { makeValidator } from '../lib/props/validate';
   import { opsFor } from '../lib/scene/registry';
@@ -235,6 +240,31 @@
    * after a connection. Invisible while `rect` was the only kind.
    */
   let classSpec: PropSchema | null = null;
+
+  /**
+   * Render an editable enum as a dropdown, and everything else as the editor normally would.
+   *
+   * A property whose whole definition is "one of these three strings" should not be a free-text
+   * box that silently refuses the fourth thing you type. `renderJSONSchemaEnum` reads the enum
+   * straight out of the generated schema, so the options are the declaration -- there is no
+   * second list of allowed values to fall out of step with `labelMode`'s writer.
+   *
+   * Restricted to `edit` properties on purpose. A read-only enum -- `kind` -- would otherwise
+   * get a dropdown that looks like a choice and is refused by `applyDocument` whichever way you
+   * move it, which is a worse lie than the greyed text row it replaces.
+   *
+   * Reads `classSpec`, not `shownSpec`, for the reason spelled out on `classSpec`: this is
+   * called from inside the editor's synchronous render, so only the plain variable is current.
+   */
+  function renderProperty(props: RenderValueProps): RenderValueComponentDescription[] {
+    const spec = classSpec;
+    const key = props.path[0];
+    if (spec !== null && typeof key === 'string' && defFor(spec, key)?.mode === 'edit') {
+      const enumed = renderJSONSchemaEnum(props, schemaFor(spec) as JSONSchema);
+      if (enumed !== undefined) return enumed;
+    }
+    return renderValue(props);
+  }
 
   function contextFor(s: Shape): PropContext {
     return { shapes: scene.shapes, index: scene.shapes.indexOf(s) };
@@ -485,6 +515,7 @@
       navigationBar={false}
       statusBar={false}
       {validator}
+      onRenderValue={renderProperty}
       onChange={handleChange}
       onSelect={handleSelect}
       onRenderContextMenu={simplifyContextMenu}

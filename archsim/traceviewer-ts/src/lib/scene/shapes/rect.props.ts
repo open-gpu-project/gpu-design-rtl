@@ -1,3 +1,4 @@
+import { keys } from '../../keys';
 import {
   propSchema,
   type PropContext,
@@ -117,9 +118,38 @@ const props: readonly PropDef<RectShape>[] = [
     },
   },
   {
+    key: 'subtitle',
+    title: 'Subtitle',
+    doc: 'A second, shorter line under the label — what this block is, where the label is what it is called. In the “inset” label mode it is drawn under the label on the canvas, in a smaller and quieter type, and it disappears before the label does as the block shrinks. In the two tabbed modes there is nowhere on the block to put it, so it moves to the top of the hover tooltip instead. May be left empty.',
+    mode: 'edit',
+    type: { type: 'string' },
+    read: (s) => s.subtitle,
+    write: (s, v): Write => {
+      const subtitle = asString(v);
+      return subtitle === null
+        ? bad('Subtitle must be text.')
+        : { ok: true, shape: { ...s, subtitle } };
+    },
+  },
+  {
+    key: 'labelMode',
+    title: 'Label mode',
+    doc: 'Where the label goes. “inset” centres it in the block with the subtitle beneath it, which is the usual choice for a block big enough to hold text. “tabbed_left” and “tabbed_right” put it in a small tab above the block’s top-left or top-right corner and leave the body empty, which suits a block whose shape matters more than its text, or one too short for two lines. The tab is part of the block: clicking it selects the block.',
+    mode: 'edit',
+    type: { type: 'enum', values: ['inset', 'tabbed_left', 'tabbed_right'] },
+    read: (s) => s.labelMode,
+    write: (s, v): Write => {
+      const m = asString(v);
+      if (m !== 'inset' && m !== 'tabbed_left' && m !== 'tabbed_right') {
+        return bad('Label mode must be “inset”, “tabbed_left” or “tabbed_right”.');
+      }
+      return { ok: true, shape: { ...s, labelMode: m } };
+    },
+  },
+  {
     key: 'description',
     title: 'Description',
-    doc: 'Free-text note describing what this hardware block does. Never drawn on the canvas; it is here to document the design for whoever reads the diagram next.',
+    doc: 'Free-text note describing what this hardware block does. Not drawn on the canvas — it appears as a tooltip when you hover the block, so it can be as long as it needs to be without crowding the diagram.',
     mode: 'edit',
     type: { type: 'string' },
     read: (s) => s.description,
@@ -133,7 +163,7 @@ const props: readonly PropDef<RectShape>[] = [
   {
     key: 'zIndex',
     title: 'Draw order',
-    doc: 'Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored, so it cannot be typed here — use the bring-forward and send-backward buttons in the toolbar, or Cmd+[ and Cmd+].',
+    doc: `Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored, so it cannot be typed here — use the bring-forward and send-backward buttons in the toolbar, or ${keys('cmd', '[')} and ${keys('cmd', ']')}.`,
     mode: 'computed',
     type: { type: 'integer', minimum: 0 },
     read: (_s, ctx: PropContext) => ctx.index,

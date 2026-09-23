@@ -50,9 +50,9 @@ export function getGridMode(): GridMode {
 /**
  * Which tiers to draw at all. Orthogonal to `GridMode`, and scaffolding for the same session.
  *
- * Crossing z = 0.5 drops `level` by one, so `minorStep` goes 80 -> 16 and `majorStep` goes
- * 400 -> 80 **together**: both tiers reach their densest on-screen spacing at the same instant.
- * The major tier is 200 CSS px apart just below the boundary and 40 CSS px apart just above it,
+ * Crossing z = 0.5 drops `level` by one, so `minorStep` goes 96 -> 16 and `majorStep` goes
+ * 576 -> 96 **together**: both tiers reach their densest on-screen spacing at the same instant.
+ * The major tier is 288 CSS px apart just below the boundary and 48 CSS px apart just above it,
  * which is the closest it ever gets at any zoom. So "the stutter is where the highlighted dots
  * are densest" and "the stutter is where the minor tier explodes" are the same observation, and
  * nothing about watching the canvas can separate them.
@@ -62,6 +62,11 @@ export function getGridMode(): GridMode {
  * for no output pixels -- while the 590 major dots are the only thing visible. If drawing the
  * major tier alone stutters, cost is not proportional to primitive count and this whole iteration
  * is aimed at the wrong tier.
+ *
+ * The rect counts above were measured in iteration 3.1 at MAJOR_EVERY = 5, and iteration 5 raised
+ * it to 6. Only the major tier's share moves -- it is now 36x sparser rather than 25x -- and the
+ * minor tier at the boundary, which is where all of the cost is, is governed by MIN_DOT_PX and is
+ * unchanged. The conclusion the numbers were taken to support survives the constant.
  */
 export type GridTiers = 'both' | 'minor' | 'major';
 
@@ -84,7 +89,7 @@ export function getGridTiers(): GridTiers {
  * break-even is in `rows` alone -- `cols` cancels.
  *
  * A dot-count floor was tried first and was wrong in a way worth recording. The major tier is
- * always MAJOR_EVERY^2 = 25x sparser than the minor one, so any threshold high enough to exclude
+ * always MAJOR_EVERY^2 = 36x sparser than the minor one, so any threshold high enough to exclude
  * a tiny high-zoom grid also excluded the major tier at every realistic window size -- leaving it
  * on the O(area) path, emitting 570 of the 910 rects per frame at report 2's geometry and 9 216 of
  * them on a 5120x2880 canvas. That defeats the entire point: the cost stops being flat. A

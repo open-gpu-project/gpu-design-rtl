@@ -482,7 +482,7 @@ await page.waitForTimeout(150);
 
 // Draw a block on the diagram, which selects it.
 await page.mouse.move(dbox.x + 80, dbox.y + 80);
-await page.keyboard.press('Digit2');
+await page.keyboard.press('Digit3');
 await page.mouse.move(dbox.x + 80, dbox.y + 80);
 await page.mouse.down();
 await page.mouse.move(dbox.x + 220, dbox.y + 180, { steps: 8 });
@@ -558,6 +558,124 @@ s.ok(
   afterArrow.cursorTick === beforeArrow.cursorTick,
   `${beforeArrow.cursorTick} -> ${afterArrow.cursorTick}`,
 );
+
+/* ------------------------------------------------ 10. the cursor flag (iteration 5) ---- */
+
+/*
+  The cursor used to be an arrow on the timescale baseline with a detached readout beside it;
+  it is now a flag on the stem, in the same two parts as an event's.
+
+  That makes the body a real affordance, so it has to be a real grab target -- and grabbing it
+  must NOT move the cursor, which is the whole reason the drag carries a `grabDx`. Picking a
+  press point forty pixels from the stem is deliberate: at anything inside CURSOR_HIT_PX the
+  old stem-only hit test would pass this too.
+*/
+const cBox = await canvas.boundingBox();
+
+// Fit first. Earlier groups leave the time axis wherever their last zoom put it, and at that
+// zoom tick 600 sits 24 000 px off the left edge -- a press aimed at its flag lands outside the
+// canvas and moves nothing, which reads as "the flag is not grabbable".
+await page.evaluate(() => window.__timeline.zoomToFit());
+await page.waitForTimeout(300);
+
+const flagGeom = await page.evaluate(async () => {
+  const mod = await import('/src/lib/timeline/layout.ts');
+  const v = window.__timeline;
+  window.__trace.setCursor(600);
+  const box = mod.cursorFlagBox(v, 600, mod.cursorMeasurer(v.ctx));
+  return { box, stemX: v.toX(600), cssW: v.cssW };
+});
+s.ok(
+  'the flag hangs off the stem, inside the timescale strip',
+  flagGeom.box.x === flagGeom.stemX && flagGeom.box.w > 20 && flagGeom.box.y + flagGeom.box.h <= 24,
+  JSON.stringify(flagGeom.box),
+);
+s.ok('and it reads the tick it marks', flagGeom.box.label === '600', String(flagGeom.box.label));
+
+await page.waitForTimeout(250);
+const pressX = flagGeom.stemX + Math.min(40, flagGeom.box.w - 6);
+await page.mouse.move(cBox.x + pressX, cBox.y + 10);
+await page.mouse.down();
+await page.waitForTimeout(150);
+const onPress = (await tr()).cursorTick;
+await page.mouse.move(cBox.x + pressX + 60, cBox.y + 10, { steps: 6 });
+await page.waitForTimeout(150);
+const onDrag = (await tr()).cursorTick;
+await page.mouse.up();
+await page.waitForTimeout(150);
+
+s.ok(
+  'pressing the flag body grabs the cursor without moving it',
+  onPress === 600,
+  `600 -> ${onPress} after a press ${Math.round(pressX - flagGeom.stemX)}px from the stem`,
+);
+s.ok(
+  'and dragging it then moves the cursor, by the drag and not to the pointer',
+  onDrag > onPress,
+  `${onPress} -> ${onDrag}`,
+);
+
+/*
+  At the right-hand edge the body would run off the lane, so it flies the other way -- the rule
+  the detached readout already had, kept because a cursor whose tick vanishes at the end of the
+  trace is exactly where you most want to read it.
+*/
+const flip = await page.evaluate(async () => {
+  const mod = await import('/src/lib/timeline/layout.ts');
+  const v = window.__timeline;
+  const measure = mod.cursorMeasurer(v.ctx);
+  const midTick = Math.round(v.toTick(v.laneX + (v.cssW - v.laneX) / 2));
+  // Floor, so the stem lands at or left of the probe point. Rounding up can put the stem itself
+  // past the right edge, where the renderer skips the cursor entirely and there is no flag to
+  // make a claim about.
+  const edgeTick = Math.floor(v.toTick(v.cssW - 4));
+  const mid = mod.cursorFlagBox(v, midTick, measure);
+  const edge = mod.cursorFlagBox(v, edgeTick, measure);
+  return {
+    midFliesRight: mid.x >= v.toX(midTick) - 0.01,
+    edgeFliesLeft: edge.x + edge.w <= v.toX(edgeTick) + 0.01,
+    edgeFits: edge.x + edge.w <= v.cssW,
+  };
+});
+s.ok(
+  'the flag flies right normally and flips left at the edge, staying on screen',
+  flip.midFliesRight && flip.edgeFliesLeft && flip.edgeFits,
+  JSON.stringify(flip),
+);
+
+/*
+  ITERATION 5.3 -- this panel's controls are on the same tooltip as the diagram's.
+
+  The trace panel has its own control strip, built from the same icon-button pattern and, until
+  this iteration, the same native `title`. It is checked here rather than in `input.mjs` for the
+  usual reason -- that file is scoped to the diagram pane -- but it is the SAME layer, mounted
+  once at the app root, and that is what these two assertions are for. Two layers would be two
+  tooltips the moment the pointer crossed panels.
+*/
+{
+  const btn = page.locator('[data-panel-id="trace"] button[aria-label="Next event"]').first();
+  const box = await btn.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+  await page.waitForTimeout(700);
+  const tip = await page.evaluate(() => {
+    const all = document.querySelectorAll('[data-testid="chrome-tooltip"]');
+    return { n: all.length, text: all[0]?.textContent.trim() ?? null };
+  });
+  s.ok(
+    "a trace control raises the app's tooltip, not one of its own",
+    tip.n === 1 && tip.text === 'Next event on the selected trace (→)',
+    JSON.stringify(tip),
+  );
+  // As in the diagram pane: a leftover `title` would stack a second, untestable tooltip on top.
+  s.ok(
+    'and no trace control carries a native title any more',
+    (await page.evaluate(
+      () => document.querySelectorAll('[data-panel-id="trace"] [title]').length,
+    )) === 0,
+  );
+  await page.mouse.move(box.x + box.width / 2, box.y + 200, { steps: 5 });
+  await page.waitForTimeout(200);
+}
 
 const code = s.report(errors.filter((e) => !e.includes("reading 'id'")));
 await browser.close();

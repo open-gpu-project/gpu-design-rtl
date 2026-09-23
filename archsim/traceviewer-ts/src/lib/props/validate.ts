@@ -5,7 +5,7 @@ import {
   type ValidationError,
   type Validator,
 } from 'svelte-jsoneditor';
-import { jsonSchemaFor } from './schema';
+import { schemaFor } from './schema';
 import type { PropSchema } from './spec';
 
 /** ajv compiles the schema, so this must happen once per kind and not once per keystroke. */
@@ -14,7 +14,7 @@ const compiled = new Map<string, Validator>();
 function ajvFor(ps: PropSchema): Validator {
   let v = compiled.get(ps.kind);
   if (v === undefined) {
-    v = createAjvValidator({ schema: jsonSchemaFor(ps) as JSONSchema });
+    v = createAjvValidator({ schema: schemaFor(ps) as JSONSchema });
     compiled.set(ps.kind, v);
   }
   return v;

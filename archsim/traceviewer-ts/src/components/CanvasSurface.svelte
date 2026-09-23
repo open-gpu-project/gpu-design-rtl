@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CanvasTooltip from './CanvasTooltip.svelte';
   import type { Renderer } from '../lib/canvas/renderer';
   import type { ViewController } from '../lib/canvas/view.svelte';
   import type { SceneStore } from '../lib/scene/scene.svelte';
@@ -156,6 +157,7 @@
     onpointerleave={() => host.onPointerLeave()}
     oncontextmenu={(e) => e.preventDefault()}
   ></canvas>
+  <CanvasTooltip tip={host.hover} stageW={view.cssW} stageH={view.cssH} />
 </div>
 
 <style>

@@ -1,9 +1,9 @@
 import { expandRect, rectsIntersect } from '../geom/math';
-import type { Vec2 } from '../geom/types';
+import type { Rect, Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { DotGrid } from './grid-renderer';
-import type { Theme } from './theme';
+import { CULL_MARGIN_PX, type Theme } from './theme';
 import type { ViewController } from './view.svelte';
 
 export interface RenderInput {
@@ -88,6 +88,19 @@ export class Renderer {
 
     const viewport = view.viewportWorld;
     const worldPerPx = 1 / z;
+
+    // Read before `dc` is built, because `boundsOf` closes over it.
+    const input = this.getInput();
+    /**
+     * Built on first ask and thrown away with the frame.
+     *
+     * Lazy because a scene with no connections in view never asks, and per-frame because a
+     * cache that outlived the frame would index shapes that have since moved. Every shape,
+     * not just the ones drawn below: a wire can be on screen while the block it points at is
+     * culled, and that is exactly when its arrowhead is deciding what to do.
+     */
+    let bounds: Map<ShapeName, Rect> | null = null;
+
     const dc: DrawContext = {
       ctx,
       worldPerPx,
@@ -105,11 +118,20 @@ export class Renderer {
       project(p: Vec2): Vec2 {
         return { x: (p.x - camX) * z, y: (p.y - camY) * z };
       },
+      boundsOf(name: ShapeName): Rect | null {
+        if (name === '') return null;
+        if (bounds === null) {
+          bounds = new Map();
+          for (const s of input.shapes) bounds.set(s.name, opsFor(s).bounds(s));
+        }
+        return bounds.get(name) ?? null;
+      },
     };
 
-    const input = this.getInput();
-    // Margin covers strokes and handle knobs that stick out past the geometric bounds.
-    const cull = expandRect(viewport, 16 * worldPerPx);
+    // Margin covers everything sized in screen pixels rather than world units -- strokes, handle
+    // knobs, arrowheads, label plates and a block's tab -- all of which stick out past the
+    // geometric bounds. See CULL_MARGIN_PX for what it has to clear.
+    const cull = expandRect(viewport, CULL_MARGIN_PX * worldPerPx);
 
     for (const s of input.shapes) {
       const ops = opsFor(s);

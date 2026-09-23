@@ -3,6 +3,7 @@
   import { GRID } from '../lib/grid';
   import type { SceneStore } from '../lib/scene/scene.svelte';
   import type { ToolHost } from '../lib/tools/host.svelte';
+  import { tip } from '../lib/ui/tooltip.svelte';
 
   interface Props {
     scene: SceneStore;
@@ -45,6 +46,6 @@
   </span>
   <span class="tabular-nums">{scene.shapes.length} blocks</span>
   <span class="tabular-nums">{scene.selection.size} selected</span>
-  <span class="tabular-nums" title="World bounds (x,y w x h)">world {worldLabel}</span>
-  <span class="tabular-nums" title="Device pixel ratio">dpr {view.dpr}</span>
+  <span class="tabular-nums" {@attach tip('World bounds (x,y w x h)')}>world {worldLabel}</span>
+  <span class="tabular-nums" {@attach tip('Device pixel ratio')}>dpr {view.dpr}</span>
 </div>
