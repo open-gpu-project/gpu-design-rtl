@@ -83,7 +83,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'size',
     title: 'Size',
-    doc: `Extent as [along, across] in world units — how far the interface runs along the border, and how deep it is across it. The box straddles the border, so half of the depth is inside the parent and half outside. At least ${MIN_NIF_LENGTH} along.`,
+    doc: `Extent as [along, across] in world units — how far the interface runs along the border, and how deep it is into the parent. The box sits wholly INSIDE the border, with its outward edge on the border line, so the across extent is clamped to the parent rather than allowed to punch through the far side. At least ${MIN_NIF_LENGTH} along.`,
     mode: 'edit',
     type: {
       type: 'tuple',
@@ -130,7 +130,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'modport',
     title: 'Modport',
-    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. Drawn as a tick on the outward face, pointing out for a master and in for a slave. A connection between two masters, or two slaves, is a violation.',
+    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. It is the colour of the interface’s border — violet for a master, sky for a slave — which is why selecting one, and turning that border amber, hides it until you deselect. A connection between two masters, or two slaves, is a violation.',
     mode: 'edit',
     type: { type: 'enum', values: [...MODPORTS] },
     read: (s) => s.modport,
@@ -141,6 +141,14 @@ const props: readonly PropDef<NifShape>[] = [
     },
   },
   descriptionProp('what this interface carries'),
+  {
+    key: 'inward',
+    title: 'Inward edge',
+    doc: 'Whether this interface also accepts connections on its inward edge — the one facing into the parent’s body. Decided by the parent, not here: a fabric offers it, because the links inside a crossbar are as real as the ones outside it, and a block does not. It is why some interfaces take two connections and others one.',
+    mode: 'computed',
+    type: { type: 'boolean' },
+    read: (s) => s.inward,
+  },
   {
     key: 'box',
     title: 'Box',

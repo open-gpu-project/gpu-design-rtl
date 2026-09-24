@@ -123,9 +123,19 @@ export interface NifShape extends ShapeBase {
    * `translate` nor `resize` is given it -- only `reroute` is. So `translate` records the
    * gesture here and `reroute` consumes it, resolves the face, and zeroes it again.
    *
-   * `computed`, so it never reaches the file: a saved interface is always already resolved.
+   * It has no `PropDef` at all -- not a `computed` one -- so it is absent from the schema and
+   * from the file both. There is nothing to show a user about a gesture that has already been
+   * resolved by the time anything can read it.
    */
   readonly pending: readonly [number, number];
+  /**
+   * Whether this interface's parent offers it an INWARD edge, cached from `interfaceInward`.
+   *
+   * Cached on the child because it has to be: `anchorAt`, `resolveAnchor` and `anchors` are pure
+   * functions of one shape and never see the parent. `reroute` does see it, and writes this the
+   * same way it writes the box. `computed` -- re-derived on load, never saved.
+   */
+  readonly inward: boolean;
   /** Derived from the parent's box by `reroute`. `computed` -- never authored, never saved. */
   readonly x: number;
   readonly y: number;
@@ -518,6 +528,16 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * its interfaces to two borders but takes a wire anywhere on its perimeter.
    */
   interfaceSides?(s: S): readonly Side[];
+
+  /**
+   * Whether an interface on this shape also takes connections on its INWARD edge -- the one
+   * facing into the body. Omitted means outward only.
+   *
+   * Asked of the PARENT, like `interfaceSides`, so a `nif` never switches on its parent's kind.
+   * A fabric is the one place an inward link means something: the wires INSIDE a crossbar are as
+   * real as the ones outside it, and they are how its internal routing is drawn.
+   */
+  interfaceInward?(s: S): boolean;
 
   /**
    * What is wrong with this shape, given its dependencies. Empty means nothing is.

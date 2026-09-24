@@ -603,6 +603,214 @@ async function connect(a, b) {
   t.ok('and keeps its manual flag', manual?.routing === 'manual', JSON.stringify(manual));
 }
 
+// ------------------------------------------ an interface's two anchors, and the edge rule ----
+
+/*
+  An interface offers exactly two connection points: the centre of its outward edge, and -- on a
+  fabric's ports only -- the centre of its inward one. Three things here are invisible to the
+  type checker.
+
+  The ids are EDGES, not compass points, and that fixes a live defect. `resolveAnchor` used to
+  redirect only the face directly opposite the outward one, so a port dragged from the top border
+  to the right-hand one left its wire attached to the short end of the box, running along the
+  border instead of away from it. An id that does not name a side cannot go stale when the side
+  changes.
+
+  The normals must be the shared references out of `NORMALS`, because identity on a normal is a
+  legitimate thing for a caller to test.
+
+  And the edge a wire used is a rule of its own: outward-to-inward is a line drawn through a
+  border, not a bus.
+*/
+{
+  const anchors = await page.evaluate(() => {
+    const ops = window.__ops('nif');
+    const base = {
+      kind: 'nif',
+      name: 'p',
+      label: '',
+      description: '',
+      parent: 'f',
+      side: 'n',
+      offset: 0,
+      length: 48,
+      depth: 16,
+      protocol: 'axi3',
+      channel: 'all',
+      modport: 'slave',
+      pending: [0, 0],
+      inward: false,
+      x: 100,
+      y: 200,
+      w: 48,
+      h: 16,
+    };
+    const at = (p) => ({ ...base, ...p });
+    const shot = (a) => (a === null ? null : { id: a.id, x: a.pos.x, y: a.pos.y, n: a.normal });
+    const inward = at({ inward: true });
+    // An `e`-side port, same box, to show the id does not carry the side with it.
+    const east = at({ side: 'e' });
+    return {
+      plain: ops.anchors(at({})).map((a) => a.id),
+      fabric: ops.anchors(inward).map((a) => a.id),
+      out: shot(ops.resolveAnchor(at({}), 'out')),
+      in: shot(ops.resolveAnchor(inward, 'in')),
+      legacy: shot(ops.resolveAnchor(at({}), 'n:16')),
+      nonsense: shot(ops.resolveAnchor(at({}), 'wat')),
+      inOnBlock: shot(ops.resolveAnchor(at({}), 'in')),
+      eastOut: shot(ops.resolveAnchor(east, 'out')),
+      shared:
+        ops.resolveAnchor(at({}), 'out').normal ===
+        window.__ops('rect').anchors({
+          kind: 'rect',
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+        })[0].normal,
+    };
+  });
+
+  t.ok(
+    'a block’s port offers one anchor, its outward edge',
+    JSON.stringify(anchors.plain) === JSON.stringify(['out']),
+    JSON.stringify(anchors.plain),
+  );
+  t.ok(
+    'a fabric’s port offers two',
+    JSON.stringify(anchors.fabric) === JSON.stringify(['out', 'in']),
+    JSON.stringify(anchors.fabric),
+  );
+  t.ok(
+    'the outward anchor is the centre of the outward edge, pointing away',
+    anchors.out.x === 124 && anchors.out.y === 200 && anchors.out.n.y === -1,
+    JSON.stringify(anchors.out),
+  );
+  t.ok(
+    'the inward one is the centre of the opposite edge, pointing in',
+    anchors.in.x === 124 && anchors.in.y === 216 && anchors.in.n.y === 1,
+    JSON.stringify(anchors.in),
+  );
+  t.ok('and the normal is the shared table reference, not an equal copy', anchors.shared);
+
+  /*
+    One rule covers three cases: a legacy `n:16` from a file written before the ids were edges,
+    an `in` on a port whose parent does not offer one, and plain nonsense. A wire that cannot
+    find its end would otherwise vanish, and the outward edge is the one a port always has.
+  */
+  t.ok(
+    'a legacy compass id resolves to the outward edge',
+    anchors.legacy?.id === 'out',
+    JSON.stringify(anchors.legacy),
+  );
+  t.ok('so does nonsense', anchors.nonsense?.id === 'out', JSON.stringify(anchors.nonsense));
+  t.ok(
+    'and so does “in” on a port whose parent offers no inward edge',
+    anchors.inOnBlock?.id === 'out',
+    JSON.stringify(anchors.inOnBlock),
+  );
+  /*
+    The defect the edge ids delete. With a compass id, a port dragged from `n` to `e` kept a
+    wire pinned to whichever face the id named -- the short end of the box -- and the wire ran
+    along the parent's border instead of away from it.
+  */
+  t.ok(
+    'and the same id follows a port dragged to another border',
+    anchors.eastOut?.n.x === 1 && anchors.eastOut?.n.y === 0,
+    JSON.stringify(anchors.eastOut),
+  );
+
+  const edge = await page.evaluate(() => {
+    const ops = window.__ops('conn');
+    const nif = (n, mp, inward) => ({
+      kind: 'nif',
+      name: n,
+      parent: 'f',
+      side: 'n',
+      offset: 0,
+      length: 48,
+      depth: 16,
+      protocol: 'axi3',
+      channel: 'all',
+      modport: mp,
+      label: '',
+      description: '',
+      pending: [0, 0],
+      inward,
+      x: 0,
+      y: 0,
+      w: 48,
+      h: 16,
+    });
+    const wire = (fa, ta, path = 'curve') => ({
+      kind: 'conn',
+      name: 'w',
+      label: '',
+      description: '',
+      labelOffset: [0, 0],
+      from: 'a',
+      to: 'b',
+      fromAnchor: fa,
+      toAnchor: ta,
+      routing: 'auto',
+      path,
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+      ],
+    });
+    // One master and one slave throughout, so the modport rule never contributes a message.
+    const run = (fa, ta, ia = true, ib = true, path = 'curve') =>
+      ops.diagnose(
+        wire(fa, ta, path),
+        new Map([
+          ['a', nif('a', 'master', ia)],
+          ['b', nif('b', 'slave', ib)],
+        ]),
+      );
+    return {
+      outOut: run('out', 'out'),
+      inIn: run('in', 'in'),
+      mixed: run('out', 'in'),
+      unavailable: run('out', 'in', true, false),
+      legacy: run('n:16', 'out'),
+      ortho: run('out', 'in', true, true, 'ortho'),
+    };
+  });
+
+  t.ok('two outward edges are clean', edge.outOut.length === 0, JSON.stringify(edge.outOut));
+  t.ok(
+    'and so are two inward ones — a crossbar’s internal routing is real',
+    edge.inIn.length === 0,
+    JSON.stringify(edge.inIn),
+  );
+  t.ok(
+    'one of each is a violation',
+    edge.mixed.length === 1 && /inward edge/.test(edge.mixed[0]),
+    JSON.stringify(edge.mixed),
+  );
+  /*
+    A hand-edited file may say `in` on a port whose parent offers no inward edge. It is DRAWN on
+    the outward edge, so the outward edge is what has to be reported on -- otherwise the file
+    earns a violation about a wire nobody can see.
+  */
+  t.ok(
+    'an “in” the parent does not offer is judged as the outward edge it is drawn on',
+    edge.unavailable.length === 0,
+    JSON.stringify(edge.unavailable),
+  );
+  t.ok(
+    'a legacy id counts as outward here too',
+    edge.legacy.length === 0,
+    JSON.stringify(edge.legacy),
+  );
+  t.ok(
+    'and a plain arrow is still never checked',
+    edge.ortho.length === 0,
+    JSON.stringify(edge.ortho),
+  );
+}
+
 const failed = t.report(errors);
 await browser.close();
 process.exit(failed > 0 ? 1 : 0);

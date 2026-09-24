@@ -74,7 +74,7 @@ function checkEndpoint(
   if (ops.resolveAnchor === undefined)
     return `“${block}” is not something a connection can attach to.`;
   if (ops.resolveAnchor(target, anchor) === null) {
-    return `“${anchor}” is not a valid anchor. Use a side (n, e, s, w) optionally followed by a distance along it, such as “e:48”.`;
+    return `“${anchor}” is not a valid anchor. On a block use a side (n, e, s, w) optionally followed by a distance along it, such as “e:48”; on a network interface use “out” or “in”.`;
   }
   return null;
 }
@@ -142,7 +142,7 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'source',
     title: 'Source',
-    doc: 'Where the connection starts, as [block, anchor]. The anchor is a side — n, e, s or w — optionally followed by a distance in world units along that side from its top or left corner, such as “e:48”. A bare side means the middle of that side. Set on the canvas: drag the round bead at this end of the line along its edge, or onto a different block.',
+    doc: 'Where the connection starts, as [block, anchor]. On a block the anchor is a side — n, e, s or w — optionally followed by a distance in world units along that side from its top or left corner, such as “e:48”; a bare side means the middle of that side. A network interface has two named edges instead: “out”, facing away from its parent, and “in”, facing into it, which only a fabric’s interfaces offer. Anything else on an interface is read as “out”. Set on the canvas: drag the round bead at this end of the line along its edge, or onto a different block.',
     mode: 'fixed',
     type: {
       type: 'tuple',

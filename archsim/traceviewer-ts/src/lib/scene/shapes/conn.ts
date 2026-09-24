@@ -52,6 +52,9 @@ import type {
   ShapeOps,
 } from '../shape';
 import { connProps } from './conn.props';
+// The pure geometry module, never the kind: `nif.ts` registers itself, and importing it here
+// would close a cycle through the registry.
+import { nifEdge } from './nif-geom';
 
 const SEGMENT_HANDLE = /^seg:(\d+)$/;
 const END_HANDLE = /^end:(from|to)$/;
@@ -603,6 +606,22 @@ export const connOps: ShapeOps<ConnectionShape> = {
     if (a.modport === b.modport) {
       out.push(
         `Both ends are ${a.modport}s. A master drives the transaction and a slave answers it, so one of each is what a link needs.`,
+      );
+    }
+    /*
+      Which EDGE each end used. A wire from the outside of one port to the inside of another is
+      not a bus; it is a line drawn through a border.
+
+      The modport rule above is untouched by this and needs to be: inside a fabric, a slave port
+      routing to a master port is still one of each.
+    */
+    const ea = nifEdge(s.fromAnchor, a.inward);
+    const eb = nifEdge(s.toAnchor, b.inward);
+    if (ea !== eb) {
+      const inner = ea === 'in' ? a : b;
+      const outer = ea === 'in' ? b : a;
+      out.push(
+        `${inner.name} is joined on its inward edge and ${outer.name} on its outward edge. A link runs between two outward edges, or between two inward ones — an inward edge faces the inside of its own parent.`,
       );
     }
     return out;

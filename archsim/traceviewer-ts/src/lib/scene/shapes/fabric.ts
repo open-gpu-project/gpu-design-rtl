@@ -96,6 +96,16 @@ export const fabricOps: ShapeOps<FabricShape> = {
 
   interfaceSides: () => FABRIC_SIDES,
 
+  /**
+   * A fabric's ports take links on their inward edge too.
+   *
+   * It is the one place an inward link means something: a crossbar's internal routing is a real
+   * set of wires between its own ports, and drawing them is the whole reason the seam exists.
+   * A plain block does not implement this -- a wire between two ports across the inside of a
+   * block would be describing something the block has not said it has.
+   */
+  interfaceInward: () => true,
+
   expand: (s, existing, mint) =>
     expandInterfaces(s.name, box(s), FABRIC_SIDES[0]!, s.interfaces, existing, mint),
 };

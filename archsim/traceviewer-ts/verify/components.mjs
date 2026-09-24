@@ -640,17 +640,24 @@ const clear = async () => {
 
   /*
     Raising the count keeps the interfaces already placed -- they may have been dragged -- so the
-    new ones cannot simply take their slot in the new even spread: the spread for four and the
-    spread for six do not line up, and one of the new ones lands on top of an old one. Observed
-    as a fourth interface at 288 and a sixth at 304, overlapping by 28 of their 32 units.
+    new one cannot simply take its slot in the new even spread: the spread for four and the
+    spread for five do not line up, and it lands on top of an old one. Observed, back when an
+    interface was 32 units long, as a fourth at 288 and a sixth at 304, overlapping by 28 of
+    their 32.
+
+    Five and not six, deliberately. At the current 48-unit length six of them need 288 of this
+    face's 336, and the four already placed sit at the FOUR-way spread positions -- which
+    fragments what is left into gaps no 48-unit interface fits in. `freeOffset` then does the
+    documented thing and overlaps, because a hidden interface would be worse than a crowded one.
+    A face that is genuinely full is not what this assertion is about.
   */
-  const six = await spans(6);
+  const five = await spans(5);
   t.ok(
     'raising the count adds to the end and leaves the others put',
-    six.length === 6 && JSON.stringify(six.slice(0, 4)) === JSON.stringify(four),
-    JSON.stringify(six),
+    five.length === 5 && JSON.stringify(five.slice(0, 4)) === JSON.stringify(four),
+    JSON.stringify(five),
   );
-  t.ok('and finds free slots for the new ones', !overlapping(six), JSON.stringify(six));
+  t.ok('and finds a free slot for the new one', !overlapping(five), JSON.stringify(five));
 
   const two = await spans(2);
   t.ok(
@@ -669,6 +676,25 @@ const clear = async () => {
     JSON.stringify(await page.evaluate(() => window.__ops('rect').interfaceSides({}))) ===
       JSON.stringify(['n', 'e', 's', 'w']),
   );
+
+  /*
+    The inward edge, asked of the PARENT and cached on the child.
+
+    `anchorAt`, `resolveAnchor` and `anchors` are pure functions of one shape and never see the
+    parent, so the answer has to be carried on the interface -- written by `reroute`, which does
+    have the parent, exactly the way the box is. And it has to be in `reroute`'s unchanged
+    comparison: a field in the returned object but not in the guard makes every commit allocate,
+    and `commit` compares by identity, so each one records an undo entry that undoes nothing.
+  */
+  const inward = await page.evaluate(() => {
+    const sc = window.__scene;
+    const ops = window.__ops('nif');
+    const pin = sc.shapes.find((s) => s.kind === 'nif');
+    const deps = new Map(sc.shapes.map((s) => [s.name, s]));
+    return { cached: pin.inward, stable: ops.reroute(pin, deps) === pin };
+  });
+  t.ok('a fabric’s interfaces are given an inward edge', inward.cached === true);
+  t.ok('and re-rerouting one allocates nothing, so the undo history stays clean', inward.stable);
 }
 
 // ------------------------------------------------------ z-order, delete, cascade ----
@@ -746,6 +772,177 @@ const clear = async () => {
   );
 }
 
+// ------------------------------------------------- the interface's box and its label ----
+
+/*
+  The interface is FLUSH INSIDE its parent's border, not centred on it.
+
+  Straddling read as a pin glued to the outside, and a pin is the wrong picture for a bus port.
+  Two consequences are worth asserting rather than assuming: the whole box must be inside the
+  parent with its outward edge exactly on the border line, and `depth` must now be clamped --
+  half of an over-deep box used to hang outside, where there was always room, and the whole of
+  one has nowhere to go.
+
+  `nif-geom.ts` is pure, so importing it by URL is safe here; it is `scene/registry.ts` that
+  must never be reached that way.
+*/
+{
+  const geom = await page.evaluate(async () => {
+    const m = await import('/src/lib/scene/shapes/nif-geom.ts');
+    const pr = { x: 100, y: 200, w: 320, h: 80 };
+    const boxes = {};
+    for (const side of ['n', 'e', 's', 'w']) boxes[side] = m.nifBox(pr, side, 64, 48, 16);
+    return {
+      pr,
+      boxes,
+      // A parent shallower than the interface is deep. Nowhere to put the overflow.
+      shallow: m.nifBox({ x: 0, y: 0, w: 200, h: 10 }, 'n', 0, 48, 16),
+      depth: m.NIF_DEPTH,
+      length: m.NIF_LENGTH,
+    };
+  });
+
+  const inside = (b) =>
+    b.x >= geom.pr.x &&
+    b.y >= geom.pr.y &&
+    b.x + b.w <= geom.pr.x + geom.pr.w &&
+    b.y + b.h <= geom.pr.y + geom.pr.h;
+  t.ok(
+    'an interface is wholly inside its parent on every border',
+    Object.values(geom.boxes).every(inside),
+    JSON.stringify(geom.boxes),
+  );
+
+  const coincident = {
+    n: geom.boxes.n.y === geom.pr.y,
+    s: geom.boxes.s.y + geom.boxes.s.h === geom.pr.y + geom.pr.h,
+    e: geom.boxes.e.x + geom.boxes.e.w === geom.pr.x + geom.pr.w,
+    w: geom.boxes.w.x === geom.pr.x,
+  };
+  t.ok(
+    'with its outward edge exactly on the border line',
+    Object.values(coincident).every(Boolean),
+    JSON.stringify(coincident),
+  );
+  t.ok(
+    'a parent shallower than the interface clamps the depth instead of punching through',
+    geom.shallow.h === 10,
+    JSON.stringify(geom.shallow),
+  );
+
+  /*
+    And the label is drawn INSIDE, which is what the depth is for. It used to be painted past
+    the outward face -- over the background, outside the parent -- and dropped outright on the
+    `e` and `w` borders, silently losing half the positions a block offers.
+  */
+  await clear();
+  const blk = await draw('Digit3', 'rect', slot(0, 0), { w: 260, h: 140 }, { interfaces: 1 });
+  const pin = (await nifs())[0].name;
+
+  /** Bright label ink inside the port's box, and in a band just outside its outward edge. */
+  const ink = async (side) => {
+    await patchShape(pin, { side, offset: 32, label: 'MEM', length: 64, depth: 20 });
+    await page.evaluate(() => window.__scene.clearSelection());
+    await page.waitForTimeout(180);
+    return page.evaluate(
+      ([n, f]) => {
+        const s = window.__scene.shapes.find((x) => x.name === n);
+        const v = window.__view;
+        const g = document.querySelector('[data-panel-id="diagram"] canvas').getContext('2d');
+        // Near-white, which only the label is. The two modport border colours and the amber of
+        // a selected port all fail this on at least one component.
+        const bright = (x, y) => {
+          const d = g.getImageData(Math.round(x * v.dpr), Math.round(y * v.dpr), 1, 1).data;
+          return d[0] > 180 && d[1] > 180 && d[2] > 180;
+        };
+        const a = v.toScreen({ x: s.x, y: s.y });
+        const b = v.toScreen({ x: s.x + s.w, y: s.y + s.h });
+        let within = 0;
+        for (let x = a.x + 2; x < b.x - 2; x += 1) {
+          for (let y = a.y + 2; y < b.y - 2; y += 1) if (bright(x, y)) within++;
+        }
+        // A band of the same thickness on the far side of the outward edge, which is the
+        // parent's border -- so this is outside the parent altogether.
+        const away = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[s.side];
+        let beyond = 0;
+        for (let x = a.x; x <= b.x; x += 1) {
+          for (let y = a.y; y <= b.y; y += 1) {
+            const px = x + away[0] * (b.x - a.x + 3);
+            const py = y + away[1] * (b.y - a.y + 3);
+            if (bright(px, py)) beyond++;
+          }
+        }
+        return { within, beyond, side: s.side, ok: f !== '' };
+      },
+      [pin, blk],
+    );
+  };
+
+  t.ok(
+    'a block’s port has no inward edge — a block has not said it has an inside',
+    (await shape(pin))?.inward === false,
+    String((await shape(pin))?.inward),
+  );
+
+  const north = await ink('n');
+  t.ok('a label is drawn inside the interface box', north.within > 0, JSON.stringify(north));
+  t.ok('and nothing is drawn past its outward edge', north.beyond === 0, JSON.stringify(north));
+
+  /*
+    `e` and `w` are the halves that used to be dropped. The text is turned a quarter turn so it
+    runs along the border, always anticlockwise, so it reads bottom-to-top rather than upside
+    down on one of the two.
+  */
+  const east = await ink('e');
+  t.ok(
+    'an e-side port has a label at all, turned to run along the border',
+    east.within > 0,
+    JSON.stringify(east),
+  );
+  t.ok('and it stays inside the box too', east.beyond === 0, JSON.stringify(east));
+
+  /*
+    And the label has a floor on the box's DEPTH, not just its width. `fitText` bounds width
+    alone, so a port zoomed out until it is a few pixels deep would otherwise render glyphs
+    taller than the box holding them -- the same shrink budget `insetType` applies to a block's
+    heading.
+  */
+  const zoomed = await page.evaluate(
+    ([n]) => {
+      const v = window.__view;
+      v.zoomTo(0.25, { x: v.cssW / 2, y: v.cssH / 2 });
+      return { depth: window.__scene.shapes.find((x) => x.name === n).depth * 0.25 };
+    },
+    [pin],
+  );
+  await page.waitForTimeout(200);
+  const faint = await page.evaluate(
+    ([n]) => {
+      const s = window.__scene.shapes.find((x) => x.name === n);
+      const v = window.__view;
+      const g = document.querySelector('[data-panel-id="diagram"] canvas').getContext('2d');
+      const a = v.toScreen({ x: s.x, y: s.y });
+      const b = v.toScreen({ x: s.x + s.w, y: s.y + s.h });
+      let lit = 0;
+      for (let x = a.x - 2; x <= b.x + 2; x += 0.5) {
+        for (let y = a.y - 2; y <= b.y + 2; y += 0.5) {
+          const d = g.getImageData(Math.round(x * v.dpr), Math.round(y * v.dpr), 1, 1).data;
+          if (d[0] > 180 && d[1] > 180 && d[2] > 180) lit++;
+        }
+      }
+      return lit;
+    },
+    [pin],
+  );
+  t.ok(
+    'a port too shallow on screen drops its label rather than overflowing',
+    zoomed.depth < 11 && faint === 0,
+    `${zoomed.depth}px deep, ${faint} lit`,
+  );
+  await page.evaluate(() => window.__view.resetZoom());
+  await page.waitForTimeout(160);
+}
+
 // ------------------------------------------------------------ dragging a pin ----
 
 {
@@ -771,11 +968,17 @@ const clear = async () => {
       ([n, f]) => {
         const s = window.__scene.shapes.find((x) => x.name === n);
         const p = window.__scene.shapes.find((x) => x.name === f);
-        const mid = s.y + s.h / 2;
+        // The OUTWARD edge is what sits on the border line -- the box is wholly inside the
+        // parent, not centred on the border, so its midpoint is half a depth in from it.
         return {
           side: s.side,
           offset: s.offset,
-          on: Math.abs(mid - p.y) < 0.01 ? 'n' : Math.abs(mid - (p.y + p.h)) < 0.01 ? 's' : 'off',
+          on:
+            Math.abs(s.y - p.y) < 0.01
+              ? 'n'
+              : Math.abs(s.y + s.h - (p.y + p.h)) < 0.01
+                ? 's'
+                : 'off',
           within: s.x >= p.x && s.x + s.w <= p.x + p.w,
           right: s.x + s.w,
           edge: p.x + p.w,
@@ -839,7 +1042,7 @@ const clear = async () => {
     ([n, f]) => {
       const s = window.__scene.shapes.find((x) => x.name === n);
       const p = window.__scene.shapes.find((x) => x.name === f);
-      return { offset: s.offset, onBorder: Math.abs(s.y + s.h / 2 - p.y) < 0.01 };
+      return { offset: s.offset, onBorder: Math.abs(s.y - p.y) < 0.01 };
     },
     [pin, fab],
   );

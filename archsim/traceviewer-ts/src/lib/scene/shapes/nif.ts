@@ -1,20 +1,20 @@
 import { alignStroke } from '../../canvas/pixel';
 import { fitText } from '../../canvas/text';
-import { NIF_LABEL_FONT, NIF_LABEL_PAD_PX } from '../../canvas/theme';
-import { pointInRect, rectsIntersect } from '../../geom/math';
-import type { Rect, Side } from '../../geom/types';
+import {
+  ANCHOR_HIT_PX,
+  NIF_LABEL_FONT,
+  NIF_LABEL_MIN_PX,
+  NIF_LABEL_PAD_PX,
+} from '../../canvas/theme';
+import { dist2, expandRect, pointInRect, rectsIntersect } from '../../geom/math';
+import type { Anchor, Rect, Side } from '../../geom/types';
 import { opsFor, registerShape } from '../registry';
 import type { NifShape, Shape, ShapeName, ShapeOps } from '../shape';
-import { boxAnchorAt, boxAnchors, NORMALS, OPPOSITE, resolveBoxAnchor, SIDES } from './box';
-import { MIN_NIF_LENGTH, NIF_DEPTH, NIF_LENGTH, nifBox, projectPin } from './nif-geom';
+import { SIDES } from './box';
+import { MIN_NIF_LENGTH, NIF_DEPTH, NIF_LENGTH, nifAnchors, nifBox, projectPin } from './nif-geom';
 import { nifProps } from './nif.props';
 
 const NO_PENDING: readonly [number, number] = [0, 0];
-
-/** The face a wire arrives on: the one pointing away from the parent. */
-export function outwardSide(s: NifShape): Side {
-  return s.side;
-}
 
 function box(s: NifShape): Rect {
   return { x: s.x, y: s.y, w: s.w, h: s.h };
@@ -23,6 +23,16 @@ function box(s: NifShape): Rect {
 /** Which faces this interface's parent permits, resolved through the parent rather than guessed. */
 function allowedOn(parent: Shape): readonly Side[] {
   return opsFor(parent).interfaceSides?.(parent) ?? SIDES;
+}
+
+/** Whether the parent offers an inward edge. Same rule: ask the parent, never the child's kind. */
+function inwardOn(parent: Shape): boolean {
+  return opsFor(parent).interfaceInward?.(parent) ?? false;
+}
+
+/** The anchors this interface presents, which is the single source all three seams read. */
+function anchorsOf(s: NifShape): readonly Anchor[] {
+  return nifAnchors(box(s), s.side, s.inward);
 }
 
 export function makeNif(
@@ -46,7 +56,9 @@ export function makeNif(
     channel,
     modport: 'slave',
     pending: NO_PENDING,
-    // Placeholder. `reroute` runs in the same commit that creates this and owns the real box.
+    // Placeholders, both of them. `reroute` runs in the same commit that creates this and owns
+    // the real box, and the real answer about the parent's inward edge.
+    inward: false,
     x: 0,
     y: 0,
     w: NIF_LENGTH,
@@ -133,6 +145,7 @@ export const nifOps: ShapeOps<NifShape> = {
     if (parent === undefined) return s;
     const pr = opsFor(parent).bounds(parent);
     const allowed = allowedOn(parent);
+    const inward = inwardOn(parent);
 
     // A parent may narrow what it permits -- or the interface may arrive from a file naming a
     // face this parent does not offer. Fall back to a legal one rather than draw off the border.
@@ -150,10 +163,16 @@ export const nifOps: ShapeOps<NifShape> = {
 
     const b = nifBox(pr, side, offset, s.length, s.depth);
     const settled = s.pending === NO_PENDING || (s.pending[0] === 0 && s.pending[1] === 0);
+    /*
+      Every field in the returned object participates here. A guard that misses one allocates on
+      a commit that changed nothing, and `SceneStore.commit` -- which compares by identity --
+      records an undo entry that undoes nothing.
+    */
     if (
       settled &&
       side === s.side &&
       offset === s.offset &&
+      inward === s.inward &&
       b.x === s.x &&
       b.y === s.y &&
       b.w === s.w &&
@@ -161,31 +180,63 @@ export const nifOps: ShapeOps<NifShape> = {
     ) {
       return s;
     }
-    return { ...s, side, offset, pending: NO_PENDING, x: b.x, y: b.y, w: b.w, h: b.h };
+    return {
+      ...s,
+      side,
+      offset,
+      inward,
+      pending: NO_PENDING,
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      h: b.h,
+    };
   },
 
   /*
-    Anchors on the OUTWARD face only.
+    Two anchors, not a face of them.
 
-    A wire has to arrive from outside, and the inward half of the box is buried in the parent's
-    fill. Restricting the faces here is what stops a connection attaching to the back of an
-    interface and then being drawn straight through the fabric it belongs to.
+    A box kind offers a continuous perimeter because a wire may meaningfully land anywhere along
+    a block's edge. An interface is not a surface, it is a port: it has an outward edge, and --
+    where its parent allows it -- an inward one. Two discrete points is what it actually offers,
+    and offering a slider along a 48-unit edge only invited a wire to attach somewhere the port
+    does not mean anything.
+
+    All three seams read `nifAnchors`, so none of them can drift from the others.
   */
-  anchorAt: (s, p, hc) => boxAnchorAt(box(s), p, hc, [outwardSide(s)]),
+  anchorAt(s, p, hc) {
+    const r = box(s);
+    const tol = ANCHOR_HIT_PX * hc.worldPerPx;
+    // The same halo test `boxAnchorAt` uses, so the reach of a port is the reach of a block's
+    // edge and the connect tool feels no different over one.
+    if (!pointInRect(p, expandRect(r, tol))) return null;
 
-  resolveAnchor(s, id) {
-    const a = resolveBoxAnchor(box(s), id);
-    if (a === null) return null;
-    // A saved anchor on a face this interface no longer presents outward -- it was dragged to
-    // another border -- is answered on the current outward face instead of refused, so the wire
-    // follows the interface around the corner rather than vanishing.
-    if (a.normal === NORMALS[OPPOSITE[outwardSide(s)]]) {
-      return resolveBoxAnchor(box(s), outwardSide(s));
+    let best: Anchor | null = null;
+    let bestD = Infinity;
+    for (const a of anchorsOf(s)) {
+      const d = dist2(p, a.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = a;
+      }
     }
-    return a;
+    return best;
   },
 
-  anchors: (s) => boxAnchors(box(s)).filter((a) => a.id === outwardSide(s)),
+  /**
+   * Anything unrecognised resolves to the OUTWARD edge rather than to nothing.
+   *
+   * That covers three cases with one rule: a legacy `'n:16'` from a file written before the ids
+   * were edges, an `'in'` on an interface whose parent does not offer one, and plain nonsense.
+   * A wire that cannot find its end would otherwise vanish, and the outward edge is the one an
+   * interface always has.
+   */
+  resolveAnchor(s, id) {
+    const all = anchorsOf(s);
+    return all.find((a) => a.id === id) ?? all[0] ?? null;
+  },
+
+  anchors: anchorsOf,
 
   draw(s, dc, flags) {
     const { ctx, theme, dpr } = dc;
@@ -204,50 +255,58 @@ export const nifOps: ShapeOps<NifShape> = {
     const x1 = alignStroke(b.x * dpr, wDev);
     const y1 = alignStroke(b.y * dpr, wDev);
 
-    ctx.lineWidth = wDev;
-    ctx.strokeStyle = flags.selected ? theme.shapeStrokeSelected : theme.nifStroke;
-    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-
     /*
-      The modport, as a tick on the outward face rather than a glyph.
+      The modport is the BORDER's colour, not a tick inside it.
 
-      A master DRIVES the bus, so its tick points out of the interface; a slave is driven, so it
-      points in. At the size an interface is drawn -- half a grid cell across -- a letter would be
-      illegible long before the box was, and the direction reads at any zoom.
+      The tick it replaces claimed to point out for a master and in for a slave -- and did not:
+      both branches drew the same two endpoints in the opposite order, so the two differed only
+      in colour anyway. Colour is also the half that survived being drawn at half a grid cell
+      across, which is what the old geometry gave it. Selection still wins, because a selected
+      thing is amber everywhere else on this canvas; `nifMarkMaster` is kept clear of that amber
+      so a selected slave cannot be misread as a master.
     */
-    const n = NORMALS[outwardSide(s)];
-    const cx = (x0 + x1) / 2;
-    const cy = (y0 + y1) / 2;
-    const reach = Math.min(x1 - x0, y1 - y0) * 0.35;
-    const sign = s.modport === 'master' ? 1 : -1;
-    ctx.beginPath();
-    ctx.moveTo(cx - n.x * reach * sign, cy - n.y * reach * sign);
-    ctx.lineTo(cx + n.x * reach * sign, cy + n.y * reach * sign);
-    ctx.strokeStyle = s.modport === 'master' ? theme.nifMarkMaster : theme.nifMarkSlave;
-    ctx.stroke();
+    ctx.lineWidth = wDev;
+    ctx.strokeStyle = flags.ghost
+      ? theme.ghostStroke
+      : flags.selected
+        ? theme.shapeStrokeSelected
+        : s.modport === 'master'
+          ? theme.nifMarkMaster
+          : theme.nifMarkSlave;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     restore();
 
     if (flags.ghost || s.label === '') return;
 
     /*
-      The label goes OUTSIDE, past the outward face, because there is no room for it inside: the
-      box is one grid step across. Drawn in CSS space so the width measured is the width drawn,
-      and skipped entirely on a vertical face, where a horizontal string would run across the
-      parent it belongs to.
+      The label goes INSIDE the box, which is the point of a box deep enough to hold one.
+
+      In CSS-pixel space, so the width measured by `fitText` is the width drawn. On a vertical
+      border the text is turned a quarter turn so it runs ALONG the border rather than across
+      the parent -- always anticlockwise, so it reads bottom-to-top on both sides and never
+      upside down. The old code simply dropped the label on `e` and `w`, which silently lost
+      half the positions a block offers.
     */
-    const side = outwardSide(s);
-    if (side !== 'n' && side !== 's') return;
     const screen = dc.toScreenSpace();
     const p0 = dc.project({ x: r.x, y: r.y });
     const p1 = dc.project({ x: r.x + r.w, y: r.y + r.h });
-    ctx.font = NIF_LABEL_FONT;
-    const text = fitText(ctx, s.label, Math.max(0, p1.x - p0.x) * 2);
-    if (text !== '') {
-      ctx.fillStyle = theme.shapeSubtitle;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = side === 'n' ? 'bottom' : 'top';
-      const y = side === 'n' ? p0.y - NIF_LABEL_PAD_PX : p1.y + NIF_LABEL_PAD_PX;
-      ctx.fillText(text, (p0.x + p1.x) / 2, y);
+    const vertical = s.side === 'e' || s.side === 'w';
+    const along = vertical ? p1.y - p0.y : p1.x - p0.x;
+    const across = vertical ? p1.x - p0.x : p1.y - p0.y;
+
+    if (across >= NIF_LABEL_MIN_PX) {
+      ctx.font = NIF_LABEL_FONT;
+      const text = fitText(ctx, s.label, Math.max(0, along - 2 * NIF_LABEL_PAD_PX));
+      if (text !== '') {
+        ctx.save();
+        ctx.translate((p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+        if (vertical) ctx.rotate(-Math.PI / 2);
+        ctx.fillStyle = theme.shapeLabel;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
     }
     screen();
   },

@@ -1,7 +1,7 @@
 import { clampNum } from '../../geom/math';
-import type { Rect, Side, Vec2 } from '../../geom/types';
+import type { Anchor, Rect, Side, Vec2 } from '../../geom/types';
 import { GRID, snap } from '../../grid';
-import { faceLength, SIDES } from './box';
+import { faceLength, NORMALS, OPPOSITE, SIDES } from './box';
 
 /**
  * Where a network interface sits on its parent's border, as pure geometry.
@@ -11,21 +11,30 @@ import { faceLength, SIDES } from './box';
  * that puts the constants in the temporal dead zone.
  */
 
-/** Extent across the border. One grid step, so a pin reads as a pin and not as a second box. */
-export const NIF_DEPTH = GRID / 2;
+/** Extent across the border. Deep enough to hold a label; see `nifBox` for why it is inside. */
+export const NIF_DEPTH = GRID;
 
-/** Extent along the border, by default. */
-export const NIF_LENGTH = GRID * 2;
+/** Extent along the border, by default. Three grid steps, so a short name fits without fitting. */
+export const NIF_LENGTH = GRID * 3;
 
 /** The shortest interface worth drawing, along the border. */
 export const MIN_NIF_LENGTH = GRID / 2;
 
 /**
- * The interface's box.
+ * The interface's box: flush INSIDE the parent's border, not straddling it.
  *
- * It STRADDLES the border, centred on it, so that half the box is inside the parent and half
- * outside. That is what makes it read as part of the parent rather than as a separate box parked
- * against it, and it leaves an outward face clear of the parent's fill for a wire to land on.
+ * It used to be centred on the border with half of it hanging outside. That reads as a pin, and
+ * a pin is the wrong picture -- an interface is a port ON the thing, the way a connector is part
+ * of the chip package rather than a stub glued to it. Flush inside also gives the label somewhere
+ * to go, and it is what makes an INWARD edge mean anything: the far edge of the box now faces the
+ * parent's interior, which is where a fabric's internal routing has to land.
+ *
+ * The outward edge is coincident with the parent's border line, so a wire still stops at the
+ * outline rather than short of it.
+ *
+ * `depth` is clamped to the parent the way `length` already is. Half of an over-deep box used to
+ * hang outside where there was always room; the whole of one has nowhere to go, and would punch
+ * through the far border.
  *
  * `offset` is clamped here and not where it is stored. Shrinking a parent past an interface and
  * growing it back therefore restores the interface's place, the same property `makeBoxAnchor`
@@ -36,11 +45,65 @@ export function nifBox(pr: Rect, side: Side, offset: number, length: number, dep
   // A parent narrower than one interface still gets an interface; it just fills the face.
   const l = Math.min(Math.max(length, MIN_NIF_LENGTH), Math.max(len, MIN_NIF_LENGTH));
   const off = clampNum(offset, 0, Math.max(0, len - l));
-  const half = depth / 2;
-  if (side === 'n') return { x: pr.x + off, y: pr.y - half, w: l, h: depth };
-  if (side === 's') return { x: pr.x + off, y: pr.y + pr.h - half, w: l, h: depth };
-  if (side === 'e') return { x: pr.x + pr.w - half, y: pr.y + off, w: depth, h: l };
-  return { x: pr.x - half, y: pr.y + off, w: depth, h: l };
+  const across = side === 'n' || side === 's' ? pr.h : pr.w;
+  const dep = Math.min(Math.max(depth, 1), Math.max(across, 1));
+  if (side === 'n') return { x: pr.x + off, y: pr.y, w: l, h: dep };
+  if (side === 's') return { x: pr.x + off, y: pr.y + pr.h - dep, w: l, h: dep };
+  if (side === 'e') return { x: pr.x + pr.w - dep, y: pr.y + off, w: dep, h: l };
+  return { x: pr.x, y: pr.y + off, w: dep, h: l };
+}
+
+/**
+ * The two anchor ids, which are edges rather than compass points.
+ *
+ * Naming them by side was a live defect, not merely a clumsy spelling. `resolveAnchor` could
+ * only redirect the face directly OPPOSITE the outward one, so dragging a port from the top
+ * border to the right-hand one left its wire attached to the short end of the box, running
+ * along the border instead of away from it. An id that does not name a side cannot go stale
+ * when the side changes.
+ */
+export const NIF_OUT = 'out';
+export const NIF_IN = 'in';
+
+/**
+ * The interface's connection points: the centre of its outward edge, and of its inward one.
+ *
+ * One function behind all three anchor seams -- `anchors`, `anchorAt` and `resolveAnchor` --
+ * so they cannot disagree about where a wire lands.
+ *
+ * The normals are the shared references out of `NORMALS`, never fresh objects: identity on a
+ * normal is a legitimate thing for a caller to test, and two equal-but-distinct vectors would
+ * make that test quietly false.
+ */
+export function nifAnchors(r: Rect, side: Side, inward: boolean): readonly Anchor[] {
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const mid = (f: Side): Vec2 =>
+    f === 'n'
+      ? { x: cx, y: r.y }
+      : f === 's'
+        ? { x: cx, y: r.y + r.h }
+        : f === 'e'
+          ? { x: r.x + r.w, y: cy }
+          : { x: r.x, y: cy };
+
+  const out: Anchor[] = [{ id: NIF_OUT, pos: mid(side), normal: NORMALS[side] }];
+  if (inward) {
+    const back = OPPOSITE[side];
+    out.push({ id: NIF_IN, pos: mid(back), normal: NORMALS[back] });
+  }
+  return out;
+}
+
+/**
+ * Which edge an anchor id names, with anything unrecognised meaning the outward one.
+ *
+ * `inward` is a parameter rather than an assumption, and that is what stops a hand-edited file
+ * earning a false violation: an id of `'in'` on an interface whose parent does not offer an
+ * inward edge is DRAWN on the outward edge, so the outward edge is what must be reported on.
+ */
+export function nifEdge(id: string, inward: boolean): 'in' | 'out' {
+  return inward && id === NIF_IN ? 'in' : 'out';
 }
 
 /** Distance from `p` to the infinite LINE of a face, not to the face segment. */
