@@ -280,3 +280,14 @@ type-check cleanly and only fail at runtime.
   area. Safari's pinch folded into the rAF accumulator, and two readouts that dirtied the document
   at input frequency. Holds the protocol for the one measurement only real Safari can make, and
   the results sheet it fills in.
+- [iter-6-components.md](history/iter-6-components.md) — the four component kinds: queues,
+  network interfaces, the fabric that carries them, and curved links between two interfaces with
+  waypoint editing and cross-shape validation. Why an interface is a first-class child shape
+  rather than data nested in its parent, why the reconcile runs in `commit` rather than in
+  `resolve.ts`, and a props file that must never import its own kind.
+- [iter-6-1-refinements.md](history/iter-6-1-refinements.md) — three things iteration 6 specified
+  too loosely: a queue's ghost that drew neither its dividers nor the length it would commit, an
+  interface straddling its parent's border with anchor ids that went stale when it was dragged,
+  and two incompatible styles of hand-written icon. Why a derived extent has to be derived by
+  every writer including the one running mid-gesture, why an anchor id must not name anything that
+  can change under it, and why a semantic colour cannot share a hue with the selection.
