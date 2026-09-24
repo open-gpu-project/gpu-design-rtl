@@ -11,7 +11,11 @@ into windows, or collapsed to an edge. Three panels exist so far.
   divider pitch (set the count to `-1` for an unbounded queue, drawn as one cell, a stretchable
   gap and three more), and **fabrics**, which carry **network interfaces** on their borders. An
   interface is a first-class object with its own name, protocol and modport, but it is not drawn
-  from the toolbar: you set how many a fabric or a block carries and drag them into place. Every
+  from the toolbar: you set how many a fabric or a block carries and drag them into place. A
+  link drawn between two interfaces is a **curve** rather than a rectilinear wire — straight
+  when the two face each other, bowed when they do not, and bent through waypoints you insert.
+  Joining two interfaces that disagree — different channels, or two masters — badges the link,
+  and clicking the badge says what is wrong. Every
   box kind carries a label and a subtitle, and `labelMode` decides how they are shown: `inset`
   centres the label in the block with the subtitle beneath it, while `tabbed_left` and
   `tabbed_right` put the label in a small folder tab above a top corner and leave the body
@@ -59,37 +63,41 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 451 assertions across nine suites. Anything touching
+iteration document. `npm run verify` is 495 assertions across ten suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
 ## Controls
 
-| Gesture                                        | Action                                                     |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| Drag empty space / middle-drag / space+drag    | Pan                                                        |
-| Two-finger scroll (trackpad)                   | Pan                                                        |
-| Mouse wheel, trackpad pinch                    | Zoom at the cursor                                         |
-| `⌘`+wheel / `⇧`+wheel                          | Force zoom / force horizontal pan                          |
-| `1` / `2` / `3` / `4` / `5` / `6`              | Pointer / Select / Rectangle / Connection / Queue / Fabric |
-| Drag with the select tool                      | Select everything the band touches                         |
-| `⇧`+drag with the select tool                  | Add the band's contents to the selection                   |
-| Drag with the rectangle tool                   | Draw a block, snapped to the grid                          |
-| Drag with the queue or fabric tool             | Draw a FIFO or a switch fabric                             |
-| Drag a network interface                       | Slide it along its parent's border, or onto another        |
-| Click two block edges with the connection tool | Draw an arrow between them                                 |
-| Drag a segment of a selected connection        | Reshape its route, pinning it to manual routing            |
-| Drag a round bead on a selected connection     | Slide that end along its edge, or onto another block       |
-| Click a block, then drag its body or handles   | Move or resize                                             |
-| Hold the pointer still over a block or wire    | Show its description as a tooltip                          |
-| Hold the pointer still over a toolbar button   | Show its name and keyboard shortcut                        |
-| `⇧`+click                                      | Add to or remove from the selection                        |
-| `⌫`                                            | Delete the selection                                       |
-| `⌘C` / `⌘X` / `⌘V`                             | Copy / cut / paste the selection                           |
-| `⌘Z` / `⇧⌘Z`                                   | Undo / redo                                                |
-| `⌘]` `⌘[` `⇧⌘]` `⇧⌘[`                          | To front / to back / forward / backward                    |
-| `⌘0` / `⌘1`                                    | Reset zoom / zoom to fit                                   |
-| `Esc`                                          | Cancel the current gesture, then clear the selection       |
+| Gesture                                               | Action                                                     |
+| ----------------------------------------------------- | ---------------------------------------------------------- |
+| Drag empty space / middle-drag / space+drag           | Pan                                                        |
+| Two-finger scroll (trackpad)                          | Pan                                                        |
+| Mouse wheel, trackpad pinch                           | Zoom at the cursor                                         |
+| `⌘`+wheel / `⇧`+wheel                                 | Force zoom / force horizontal pan                          |
+| `1` / `2` / `3` / `4` / `5` / `6`                     | Pointer / Select / Rectangle / Connection / Queue / Fabric |
+| Drag with the select tool                             | Select everything the band touches                         |
+| `⇧`+drag with the select tool                         | Add the band's contents to the selection                   |
+| Drag with the rectangle tool                          | Draw a block, snapped to the grid                          |
+| Drag with the queue or fabric tool                    | Draw a FIFO or a switch fabric                             |
+| Drag a network interface                              | Slide it along its parent's border, or onto another        |
+| Click two network interfaces with the connection tool | Draw a curved bus link between them                        |
+| Click the `+` on a selected curve                     | Insert a waypoint there                                    |
+| Click a waypoint, then `⌫`                            | Remove just that waypoint                                  |
+| Click a red `!` badge                                 | List what is wrong with that link                          |
+| Click two block edges with the connection tool        | Draw an arrow between them                                 |
+| Drag a segment of a selected connection               | Reshape its route, pinning it to manual routing            |
+| Drag a round bead on a selected connection            | Slide that end along its edge, or onto another block       |
+| Click a block, then drag its body or handles          | Move or resize                                             |
+| Hold the pointer still over a block or wire           | Show its description as a tooltip                          |
+| Hold the pointer still over a toolbar button          | Show its name and keyboard shortcut                        |
+| `⇧`+click                                             | Add to or remove from the selection                        |
+| `⌫`                                                   | Delete the selection                                       |
+| `⌘C` / `⌘X` / `⌘V`                                    | Copy / cut / paste the selection                           |
+| `⌘Z` / `⇧⌘Z`                                          | Undo / redo                                                |
+| `⌘]` `⌘[` `⇧⌘]` `⇧⌘[`                                 | To front / to back / forward / backward                    |
+| `⌘0` / `⌘1`                                           | Reset zoom / zoom to fit                                   |
+| `Esc`                                                 | Cancel the current gesture, then clear the selection       |
 
 In the trace panel:
 

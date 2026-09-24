@@ -156,7 +156,17 @@ export interface FifoShape extends Headed {
 }
 
 /**
- * A directed rectilinear link between two block perimeters.
+ * Which family of geometry a connection's `points` describe.
+ *
+ * Kept SEPARATE from `routing`, which is a different question. `routing` says who maintains the
+ * geometry -- the router, or the user who dragged it. This says what the geometry IS. Folding
+ * them into one four-valued enum would encode a 2x2 product as a flat list, and `conn.props.ts`
+ * already argues that distinction the other way round for `routing` itself.
+ */
+export type PathStyle = 'ortho' | 'curve';
+
+/**
+ * A directed link between two shape perimeters.
  *
  * The route is stored, not re-derived on read: `points` is the truth the renderer, the hit test
  * and the file all use. While `routing` is `'auto'` it is re-derived on every commit that moves
@@ -171,8 +181,18 @@ export interface ConnectionShape extends ShapeBase {
   readonly to: ShapeName;
   readonly toAnchor: string;
   /**
-   * The full route in world units. `points[0]` is the source anchor and the last point is the
-   * target anchor; every consecutive pair shares exactly one coordinate.
+   * `'ortho'` for the rectilinear router, `'curve'` for a Catmull-Rom spline.
+   *
+   * The connect tool picks it from what the two ends prefer (see `preferredPath`), so a link
+   * between two network interfaces curves and everything else stays square.
+   */
+  readonly path: PathStyle;
+  /**
+   * The route in world units. `points[0]` is the source anchor and the last is the target.
+   *
+   * What lies between depends on `path`. For `'ortho'` it is the polyline itself, and every
+   * consecutive pair shares exactly one coordinate. For `'curve'` it is the CONTROL POLYGON of a
+   * centripetal Catmull-Rom spline -- the user's waypoints -- so two points is a straight line.
    */
   readonly points: readonly Vec2[];
   /** Flips to `'manual'` the moment the user drags a segment or types a route. */
@@ -192,7 +212,7 @@ export interface ConnectionShape extends ShapeBase {
 /** Widen as kinds are added: `| LabelShape`. */
 export type Shape = RectShape | FifoShape | FabricShape | NifShape | ConnectionShape;
 
-/** The eight box handles, plus kind-specific ids like a connection's `seg:0` or `end:from`. */
+/** The eight box handles, plus kind-specific ids like a connection's `way:1` or `end:from`. */
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | (string & {});
 
 /**
@@ -201,11 +221,17 @@ export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | (stri
  * - `reshape` moves this shape's own geometry. The tool calls `resize`.
  * - `rebind` attaches an end of this shape to some *other* shape's perimeter, so the tool has
  *   to resolve what is under the cursor first and calls `rebind` with the answer.
+ * - `action` does something once on press instead of starting a drag: the tool calls `resize`
+ *   with the press point and commits, and a drag continuing from it carries on normally. The
+ *   insert-waypoint badge on a curve is one. It is a handle rather than a bespoke affordance
+ *   because it wants hit priority over the line it sits on, a screen-constant grab radius and a
+ *   drawn knob -- all of which a handle already has, and none of which `hit.ts` offers anything
+ *   else.
  *
  * Declared on the handle rather than inferred from its id, so the select tool can route a drag
  * without knowing that `end:to` means something different from `se`.
  */
-export type HandleRole = 'reshape' | 'rebind';
+export type HandleRole = 'reshape' | 'rebind' | 'action';
 
 interface HandleCommon {
   readonly id: HandleId;
@@ -215,6 +241,15 @@ interface HandleCommon {
   readonly cursor: string;
   /** Whether to draw a visible knob. False means an invisible grab affordance. */
   readonly visible: boolean;
+  /**
+   * What the knob should look like. Omitted is the plain square every resize handle uses.
+   *
+   * `'plus'` is drawn smaller and quieter with a cross through it, because an `action` handle
+   * does something different from a `reshape` one and two affordances that look identical are
+   * worse than one: a curve's waypoints and its insert badges sat side by side as the same
+   * square, so nothing said which one you could drag.
+   */
+  readonly glyph?: 'plus';
   /** Omitted means `'reshape'`, which is what all eight box handles are. */
   readonly role?: HandleRole;
 }
@@ -321,6 +356,17 @@ export interface RenderFlags {
   readonly selected: boolean;
   /** An uncommitted preview: draw it dashed and faint. */
   readonly ghost: boolean;
+  /**
+   * How many violations `diagnose` found for this shape, so `draw` can badge it.
+   *
+   * Passed in rather than looked up, because `DrawContext` deliberately exposes only
+   * `boundsOf` and widening that to "read the scene" is the wrong move -- a `draw` that could
+   * see other shapes could re-enter `draw`, and the purity contract would stop being
+   * enforceable. The renderer computes the map once per frame instead.
+   */
+  readonly problems?: number | undefined;
+  /** Which sub-part is selected, for a kind that has them. Tool state, not document state. */
+  readonly activePart?: number | undefined;
 }
 
 /**
@@ -472,6 +518,54 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * its interfaces to two borders but takes a wire anywhere on its perimeter.
    */
   interfaceSides?(s: S): readonly Side[];
+
+  /**
+   * What is wrong with this shape, given its dependencies. Empty means nothing is.
+   *
+   * Cross-shape validation, which no property writer can do: a connection between two network
+   * interfaces is well formed as a record whatever it joins, and only the pair together says
+   * whether joining them made sense.
+   *
+   * Prose, not codes. It is shown to the person who drew the diagram, and a hardware designer
+   * reading "AW cannot drive AR" needs no lookup table.
+   */
+  diagnose?(s: S, deps: ReadonlyMap<ShapeName, Shape>): readonly string[];
+
+  /* ----------------------------------------------------------------- sub-parts ---- */
+
+  /**
+   * Which editable sub-part of this shape a handle names, or null.
+   *
+   * A sub-part is something inside one shape that the user can select and delete on its own --
+   * a curve's waypoint is the only one today. Named generically, and returned as a plain index,
+   * so `SelectTool` can hold a cursor on one without knowing what a waypoint is. The alternative
+   * was the tool parsing `way:3` out of a handle id, which would put the id grammar in two
+   * files and make the tool kind-aware in all but name.
+   */
+  subPartOf?(s: S, handle: HandleId): number | null;
+
+  /** What the status bar should say about one, or null when the index is stale. */
+  subPart?(
+    s: S,
+    index: number,
+  ): {
+    readonly count: number;
+    readonly ordinal: number;
+    readonly pos: Vec2;
+    readonly noun: string;
+  } | null;
+
+  /** Remove one. MUST return `s` by reference when it refuses, as `rebind` does. */
+  removeSubPart?(s: S, index: number): S;
+
+  /**
+   * Which path family a connection landing on this shape should take. Omitted means `'ortho'`.
+   *
+   * Asked of BOTH ends by the connect tool, which takes `'curve'` only when they agree -- which
+   * is what makes "a plain arrow may still be drawn to an interface" true by construction rather
+   * than by a rule written down somewhere.
+   */
+  preferredPath?(s: S): PathStyle;
 
   /**
    * False to refuse direct deletion. Omitted means deletable.

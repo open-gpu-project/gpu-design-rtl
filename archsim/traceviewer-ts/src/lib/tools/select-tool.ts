@@ -1,10 +1,17 @@
 import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
-import { DRAG_SLOP_PX, HANDLE_SIZE_PX, SELECT_ON_PRESS_BEGINS_MOVE } from '../canvas/theme';
+import {
+  BADGE_HIT_PX,
+  DRAG_SLOP_PX,
+  HANDLE_SIZE_PX,
+  SELECT_ON_PRESS_BEGINS_MOVE,
+} from '../canvas/theme';
 import type { Vec2 } from '../geom/types';
 import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
+import { badgeScreen } from '../scene/shapes/conn';
+import { toggleViolations } from '../ui/violations.svelte';
 import { rerouteAll } from '../scene/resolve';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
@@ -60,6 +67,11 @@ function fingerprint(s: Shape): string {
   return JSON.stringify(serializeShape(opsFor(s).props, s, NO_CONTEXT));
 }
 
+/** Exact equality: both points came from the same snapped pointer, so no tolerance is wanted. */
+function samePos(a: Vec2, b: Vec2): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
 export class SelectTool implements Tool {
   readonly id = 'pointer';
   readonly label = 'Pointer';
@@ -72,6 +84,16 @@ export class SelectTool implements Tool {
    * screen pixels of drift when zoomed out -- and pushes a spurious entry onto the undo stack.
    */
   #armed = false;
+  /**
+   * The selected sub-part -- a curve's waypoint -- or null.
+   *
+   * On the tool, not in `SceneStore`. `selection` is part of the undo record, and a waypoint
+   * cursor is not document state: undo must not restore it, and `#setSelection` is also the
+   * funnel `EditorSession` hangs the global trace-selection rule off, which a sub-part is not.
+   * Mirrored onto `ToolHost` through `ToolContext.setSubPart` so the status bar can read it,
+   * because the fields here are plain rather than runes.
+   */
+  #subPart: { shape: ShapeName; index: number } | null = null;
 
   isGesturing(): boolean {
     return this.#drag !== null;
@@ -87,9 +109,75 @@ export class SelectTool implements Tool {
 
   onPointerDown(p: PointerInfo, c: ToolContext): void {
     if (p.button !== 0) return;
+
+    /*
+      The violation badge, before anything else.
+
+      It cannot be a `Handle`, which is what everything else clickable on a shape is: handles
+      exist only on SELECTED shapes, and a badge that only appeared once you had selected the
+      thing it is warning you about would be useless. So it gets its own pass, ahead of the
+      normal hit test, reading its position from the same function `draw` places it with.
+    */
+    if (this.#hitBadge(p, c)) return;
+
     const hit = c.hitTest(p);
 
     if (hit.type === 'handle') {
+      const ops = opsFor(hit.shape);
+
+      /*
+        An `action` handle does its thing once, on press, and commits -- it does not wait for a
+        drag. The insert-waypoint badge is the only one: clicking it has to produce a waypoint
+        whether or not the pointer then moves, and the drag that may follow is an ordinary move
+        of the point it just made.
+      */
+      if (hit.handle.role === 'action') {
+        const before = c.scene.shapes;
+        const next = ops.resize(hit.shape, hit.handle.id, p.snapped, p.mods);
+        if (next === hit.shape) {
+          c.requestFrame();
+          return;
+        }
+        c.scene.commit('insert point', () => {
+          c.scene.shapes = before.map((x) => (x.name === hit.shape.name ? next : x));
+        });
+
+        /*
+          Then carry straight on into a drag of the point just made, so click-and-place is one
+          gesture. The new point's own handle is found by asking the shape which sub-part each
+          of its handles names and taking the one that now sits under the cursor -- rather than
+          by guessing an id, which would put the `ins:N` / `way:N` grammar in this file too.
+        */
+        const made = c.scene.shapes.find((x) => x.name === hit.shape.name);
+        if (made !== undefined) {
+          const madeOps = opsFor(made);
+          const knob = madeOps
+            .handles(made)
+            .find((h) => madeOps.subPartOf?.(made, h.id) !== null && samePos(h.pos, p.snapped));
+          if (knob !== undefined) {
+            this.#setSubPart(c, {
+              shape: made.name,
+              index: madeOps.subPartOf?.(made, knob.id) ?? 0,
+            });
+            this.#drag = {
+              kind: 'resize',
+              snapshot: c.scene.shapes,
+              name: made.name,
+              handle: knob,
+              downScreen: p.screen,
+            };
+            this.#armed = false;
+          }
+        }
+        c.requestFrame();
+        return;
+      }
+
+      // Clicking a sub-part's handle selects that sub-part. Held on the tool, not in the
+      // document: it is a cursor, not something undo should restore.
+      const part = ops.subPartOf?.(hit.shape, hit.handle.id) ?? null;
+      this.#setSubPart(c, part === null ? null : { shape: hit.shape.name, index: part });
+
       this.#drag = {
         kind: 'resize',
         snapshot: c.scene.shapes,
@@ -100,6 +188,9 @@ export class SelectTool implements Tool {
       this.#armed = false;
       return;
     }
+
+    // Any press that is not on a sub-part's handle drops the cursor.
+    this.#setSubPart(c, null);
 
     if (hit.type === 'empty') {
       if (!p.mods.shift) c.scene.clearSelection();
@@ -264,10 +355,39 @@ export class SelectTool implements Tool {
     this.#abort(c);
   }
 
+  /**
+   * `Delete` removes the selected SUB-PART when there is one, and otherwise falls through.
+   *
+   * This is the whole of the waypoint-delete feature, and nothing in `ToolHost` changes for it:
+   * `host.onKeyDown` gives the active tool first refusal before `#globalKey` ever sees the key,
+   * which is the same seam `ConnectTool` uses to intercept undo mid-gesture. Returning `false`
+   * is what lets the ordinary "delete the selected shapes" path run.
+   */
   onKeyDown(e: KeyboardEvent, c: ToolContext): boolean {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const cur = this.#liveSubPart(c);
+      if (cur === null) return false;
+      const shape = c.scene.shapes.find((x) => x.name === cur.shape);
+      if (shape === undefined) return false;
+      const next = opsFor(shape).removeSubPart?.(shape, cur.index) ?? shape;
+      if (next === shape) return false;
+      const before = c.scene.shapes;
+      c.scene.commit('delete point', () => {
+        c.scene.shapes = before.map((x) => (x.name === cur.shape ? next : x));
+      });
+      this.#setSubPart(c, null);
+      c.requestFrame();
+      return true;
+    }
+
     if (e.key !== 'Escape') return false;
     if (this.#drag !== null) {
       this.#abort(c);
+      return true;
+    }
+    if (this.#subPart !== null) {
+      this.#setSubPart(c, null);
+      c.requestFrame();
       return true;
     }
     if (c.scene.selection.size > 0) {
@@ -276,6 +396,36 @@ export class SelectTool implements Tool {
       return true;
     }
     return false;
+  }
+
+  /**
+   * The cursor, re-validated on every read rather than maintained.
+   *
+   * Deriving beats invalidating here. The cursor dies for four unrelated reasons -- the shape
+   * was deselected, several things were selected, the shape was deleted, the index stopped
+   * existing after a collapse -- and checking the three conditions that actually matter at the
+   * point of use covers all of them without a hook per cause. Undo and redo are the exception:
+   * they swap the document wholesale with nothing to observe, so `ToolHost` clears it there.
+   */
+  #liveSubPart(c: ToolContext): { shape: ShapeName; index: number } | null {
+    const cur = this.#subPart;
+    if (cur === null) return null;
+    if (c.scene.selection.size !== 1 || !c.scene.selection.has(cur.shape)) return null;
+    const shape = c.scene.shapes.find((x) => x.name === cur.shape);
+    if (shape === undefined) return null;
+    return opsFor(shape).subPart?.(shape, cur.index) === null ? null : cur;
+  }
+
+  #setSubPart(c: ToolContext, next: { shape: ShapeName; index: number } | null): void {
+    const same =
+      (this.#subPart === null && next === null) ||
+      (this.#subPart !== null &&
+        next !== null &&
+        this.#subPart.shape === next.shape &&
+        this.#subPart.index === next.index);
+    if (same) return;
+    this.#subPart = next;
+    c.setSubPart(next);
   }
 
   drawOverlay(dc: DrawContext, c: ToolContext): void {
@@ -290,11 +440,19 @@ export class SelectTool implements Tool {
     ctx.strokeStyle = dc.theme.handleStroke;
     ctx.lineWidth = lw;
 
+    const plus: { x: number; y: number }[] = [];
+
     for (const s of c.scene.shapes) {
       if (!selection.has(s.name)) continue;
       for (const h of opsFor(s).handles(s)) {
         if (!h.visible) continue;
         const p = dc.project(h.pos);
+        if (h.glyph === 'plus') {
+          // Gathered and drawn after, so the two kinds of knob are two batches rather than a
+          // style change per handle.
+          plus.push({ x: p.x * dpr, y: p.y * dpr });
+          continue;
+        }
         // Knobs are sized in screen pixels, so the grab zone feels identical at every zoom.
         const x = alignStroke(p.x * dpr - size / 2, lw);
         const y = alignStroke(p.y * dpr - size / 2, lw);
@@ -302,7 +460,72 @@ export class SelectTool implements Tool {
         ctx.strokeRect(x, y, size, size);
       }
     }
+
+    /*
+      The insert badges, deliberately quieter and smaller than a resize knob.
+
+      They sit on the same line as the waypoints they insert between, and drawn identically the
+      two read as one row of interchangeable handles -- nothing says which you drag and which
+      you click. Smaller, dimmer, and with a cross through it says "add one here".
+    */
+    if (plus.length > 0) {
+      // Big enough that the cross inside it is legible: at 2.6 the arms came out 1.4 CSS px and
+      // the badge read as a small blank square rather than as a plus.
+      const r = Math.max(4, Math.round((HANDLE_SIZE_PX * dpr) / 2.2));
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      for (const q of plus) {
+        const x = alignStroke(q.x - r, lw);
+        const y = alignStroke(q.y - r, lw);
+        ctx.rect(x, y, r * 2, r * 2);
+      }
+      ctx.fillStyle = dc.theme.handleFill;
+      ctx.fill();
+      ctx.strokeStyle = dc.theme.handleStroke;
+      ctx.stroke();
+
+      ctx.beginPath();
+      for (const q of plus) {
+        const x = alignStroke(q.x, lw);
+        const y = alignStroke(q.y, lw);
+        ctx.moveTo(x - r + lw, y);
+        ctx.lineTo(x + r - lw, y);
+        ctx.moveTo(x, y - r + lw);
+        ctx.lineTo(x, y + r - lw);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     restore();
+  }
+
+  /** Open the violations popup if the press landed on a badge. True when it did. */
+  #hitBadge(p: PointerInfo, c: ToolContext): boolean {
+    const problems = c.scene.diagnostics;
+    if (problems.size === 0) return false;
+    const tol = BADGE_HIT_PX;
+    const project = (q: Vec2): Vec2 => c.view.toScreen(q);
+
+    // Top-down, so the badge of the shape drawn last wins where two overlap.
+    for (let i = c.scene.shapes.length - 1; i >= 0; i--) {
+      const s = c.scene.shapes[i]!;
+      const lines = problems.get(s.name);
+      if (lines === undefined || s.kind !== 'conn') continue;
+      const at = badgeScreen(s, project);
+      if (Math.hypot(at.x - p.screen.x, at.y - p.screen.y) > tol) continue;
+
+      const box = c.view.canvas?.getBoundingClientRect();
+      toggleViolations({
+        shape: s.name,
+        title: `${s.name}: ${lines.length} problem${lines.length === 1 ? '' : 's'}`,
+        lines,
+        x: (box?.left ?? 0) + at.x,
+        y: (box?.top ?? 0) + at.y,
+      });
+      c.requestFrame();
+      return true;
+    }
+    return false;
   }
 
   #abort(c: ToolContext): void {

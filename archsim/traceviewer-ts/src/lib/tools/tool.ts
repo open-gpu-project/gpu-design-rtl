@@ -2,6 +2,7 @@ import type { HitResult } from '../canvas/hit';
 import type { ViewController } from '../canvas/view.svelte';
 import type { Modifiers, Vec2 } from '../geom/types';
 import type { SceneStore } from '../scene/scene.svelte';
+import type { ShapeName } from '../scene/shape';
 import type { DrawContext } from '../scene/shape';
 
 export type ToolId = 'pointer' | 'rect' | (string & {});
@@ -28,6 +29,14 @@ export interface ToolContext {
   setTool(id: ToolId): void;
   /** Hand the current gesture to the host's pan handler. */
   startPan(p: PointerInfo): void;
+  /**
+   * Publish the selected sub-part -- a curve's waypoint -- so the status bar can show it.
+   *
+   * A tool's own fields are plain, not runes, so nothing reactive can read them. This mirrors
+   * the value onto `ToolHost`, the same way the hover tooltip already does. It is deliberately
+   * NOT in `SceneStore`: a sub-part cursor is not document state and undo must not restore it.
+   */
+  setSubPart(part: { readonly shape: ShapeName; readonly index: number } | null): void;
   /** Coalesced repaint request; safe to call many times per frame. */
   requestFrame(): void;
 }

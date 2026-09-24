@@ -1,5 +1,6 @@
 import { expandRect, rectsIntersect } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
+import type { Diagnostics } from '../scene/diagnostics';
 import { opsFor } from '../scene/registry';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { DotGrid } from './grid-renderer';
@@ -9,6 +10,10 @@ import type { ViewController } from './view.svelte';
 export interface RenderInput {
   readonly shapes: readonly Shape[];
   readonly selection: ReadonlySet<ShapeName>;
+  /** Cross-shape violations, computed once per commit rather than once per frame. */
+  readonly problems: Diagnostics;
+  /** The selected sub-part, so the shape that owns it can draw that one differently. */
+  readonly activePart: { readonly shape: ShapeName; readonly index: number } | null;
   /** Uncommitted preview, drawn above everything as a ghost. */
   readonly draft: Shape | null;
   /** The active tool's overlay: selection handles, marquees. Drawn in world space. */
@@ -136,7 +141,12 @@ export class Renderer {
     for (const s of input.shapes) {
       const ops = opsFor(s);
       if (!rectsIntersect(ops.bounds(s), cull)) continue;
-      ops.draw(s, dc, { selected: input.selection.has(s.name), ghost: false });
+      ops.draw(s, dc, {
+        selected: input.selection.has(s.name),
+        ghost: false,
+        problems: input.problems.get(s.name)?.length ?? 0,
+        activePart: input.activePart?.shape === s.name ? input.activePart.index : undefined,
+      });
     }
 
     input.overlay?.(dc);

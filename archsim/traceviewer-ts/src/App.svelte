@@ -1,5 +1,6 @@
 <script lang="ts">
   import ChromeTooltip from './components/ChromeTooltip.svelte';
+  import ViolationsPopover from './components/ViolationsPopover.svelte';
   import WorkspaceShell from './components/WorkspaceShell.svelte';
   import {
     DotGrid,
@@ -27,6 +28,14 @@
     routeConnection,
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
+  import {
+    autoWaypoints,
+    collapseCurve,
+    curveAt,
+    curveEndDirection,
+    curveSpans,
+    flattenCurve,
+  } from './lib/scene/curve';
   import { arrowBox } from './lib/scene/shapes/conn';
   import { fitInsetLine, insetType } from './lib/scene/shapes/heading';
   import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
@@ -198,6 +207,22 @@
         and takes every suite after it in the chain down too.
       */
       __ops: (kind: string) => opsForKind(kind),
+      /*
+        The spline algebra as pure functions, for the same reason `__route` exists.
+
+        A curve is the part of a connection least likely to be wrong in a way a screenshot
+        shows: whether the parameterisation cusps, whether the flattening is tight enough for
+        the hit test, whether the end tangent really is parallel to the last chord -- all
+        arithmetic, and none of it visible in a pixel diff.
+      */
+      __curve: {
+        curveSpans,
+        flattenCurve,
+        curveEndDirection,
+        curveAt,
+        autoWaypoints,
+        collapseCurve,
+      },
       /** The file format, through the app's own registry, for the same reason as `__ops`. */
       __doc: { serializeScene, deserializeScene },
       __dump: () => serializeScene(session.scene.shapes),
@@ -213,4 +238,5 @@
   <WorkspaceShell />
   <!-- Outside every pane on purpose; see the note in the component for what goes wrong inside one. -->
   <ChromeTooltip />
+  <ViolationsPopover />
 </main>

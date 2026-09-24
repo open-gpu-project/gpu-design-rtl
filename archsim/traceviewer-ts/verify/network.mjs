@@ -1,0 +1,608 @@
+import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
+
+/*
+  Iteration 6's curved links: the spline, the waypoint editing on it, and the badge that says
+  two interfaces should not have been joined.
+
+  Almost none of this is visible in a screenshot, which is why it is here as arithmetic. Whether
+  the parameterisation cusps, whether the end tangent is really parallel to the last chord (the
+  arrowhead's orientation depends on it), whether a straight shot stays exactly straight, whether
+  a writer allocates when nothing changed -- all of it passes a pixel diff either way.
+
+  `window.__curve`, `__ops` and `__doc` reach the app's own modules. Importing `scene/registry.ts`
+  by URL from inside `page.evaluate` is the trap iteration 4.1 wrote down; pure modules like
+  `curve.ts` are safe to import that way, and are, where it reads better.
+*/
+
+const t = suite('network');
+const { browser, page, errors } = await open(DEV_URL);
+
+const canvas = diagramCanvas(page);
+const box = await canvas.boundingBox();
+
+const toScreen = (x, y) =>
+  page.evaluate(
+    ([a, b]) => {
+      const p = window.__view.toScreen({ x: a, y: b });
+      return { x: p.x, y: p.y };
+    },
+    [x, y],
+  );
+
+async function click(at) {
+  await page.mouse.move(box.x + at.x, box.y + at.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(140);
+}
+
+async function drag(from, to) {
+  await page.mouse.move(box.x + from.x, box.y + from.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(220);
+}
+
+/** Load a document straight in, so every coordinate in a check is one the check chose. */
+async function seed(shapes) {
+  await page.evaluate((list) => {
+    const sc = window.__scene;
+    sc.commit('seed', () => {
+      sc.shapes = window.__doc.deserializeScene({ version: 2, shapes: list });
+      sc.setSelection(new Set());
+    });
+  }, shapes);
+  await page.waitForTimeout(220);
+}
+
+const fabric = (name, x, y, w, h, interfaces) => ({
+  kind: 'fabric',
+  name,
+  label: name,
+  subtitle: '',
+  labelMode: 'inset',
+  description: '',
+  position: [x, y],
+  size: [w, h],
+  interfaces,
+});
+const block = (name, x, y, w, h) => ({
+  kind: 'rect',
+  name,
+  label: name,
+  subtitle: '',
+  labelMode: 'inset',
+  description: '',
+  position: [x, y],
+  size: [w, h],
+  interfaces: 0,
+});
+
+async function setPins(parent, spec) {
+  await page.evaluate(
+    ([p, list]) => {
+      const sc = window.__scene;
+      sc.shapes
+        .filter((s) => s.kind === 'nif' && s.parent === p)
+        .forEach((pin, i) => {
+          const [side, channel, modport] = list[i] ?? list[0];
+          const cur = sc.shapes.find((x) => x.name === pin.name);
+          sc.replaceShape(cur, { ...cur, side, channel, modport }, 'pins');
+        });
+    },
+    [parent, spec],
+  );
+  await page.waitForTimeout(220);
+}
+
+const pinsOf = (parent) =>
+  page.evaluate(
+    (p) =>
+      window.__scene.shapes
+        .filter((s) => s.kind === 'nif' && s.parent === p)
+        .map((s) => ({ name: s.name, x: s.x + s.w / 2, y: s.y + s.h / 2 })),
+    parent,
+  );
+
+const wires = () =>
+  page.evaluate(() =>
+    window.__scene.shapes
+      .filter((s) => s.kind === 'conn')
+      .map((s) => ({ name: s.name, path: s.path, routing: s.routing, points: s.points.length })),
+  );
+
+/** Draw a link with the connection tool between two world points. */
+async function connect(a, b) {
+  await page.keyboard.press('Digit4');
+  await click(await toScreen(a.x, a.y));
+  await click(await toScreen(b.x, b.y));
+  await page.keyboard.press('Digit1');
+  await page.waitForTimeout(200);
+}
+
+// ----------------------------------------------------------- the spline, as maths ----
+
+{
+  const r = await page.evaluate(() => {
+    const C = window.__curve;
+    const P = (x, y) => ({ x, y });
+    const straight = [P(0, 0), P(100, 0)];
+    const bent = [P(0, 0), P(50, 40), P(100, 0)];
+    const four = [P(0, 0), P(40, 60), P(90, -20), P(140, 30)];
+    const unit = (x, y) => {
+      const l = Math.hypot(x, y);
+      return { x: x / l, y: y / l };
+    };
+    const near = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+
+    // Tangent reversals along the run: a cusp shows up as the direction flipping.
+    let reversals = 0;
+    let prev = null;
+    for (let i = 0; i <= 60; i++) {
+      const p0 = C.curveAt(four, i / 60);
+      const p1 = C.curveAt(four, Math.min(1, i / 60 + 0.004));
+      const d = { x: p1.x - p0.x, y: p1.y - p0.y };
+      if (prev !== null && d.x * prev.x + d.y * prev.y < 0) reversals++;
+      prev = d;
+    }
+
+    const flat = C.flattenCurve(bent);
+    const bbox = flat.reduce(
+      (acc, p) => ({ lo: Math.min(acc.lo, p.y), hi: Math.max(acc.hi, p.y) }),
+      { lo: Infinity, hi: -Infinity },
+    );
+
+    const auto = (an, bn, ax, ay, bx, by) =>
+      C.autoWaypoints(
+        { id: 'a', pos: P(ax, ay), normal: an },
+        { id: 'b', pos: P(bx, by), normal: bn },
+      ).length;
+
+    return {
+      straightFlat: C.flattenCurve(straight).every((p) => Math.abs(p.y) < 1e-9),
+      bends: bbox.hi > 20,
+      // Centripetal Catmull-Rom cannot cusp between knots; uniform can.
+      reversals,
+      // The duplicated phantom is what makes this true, and `route.ts`'s arrowhead assumes it.
+      endParallel: near(C.curveEndDirection(bent), unit(100 - 50, 0 - 40)),
+      endParallelFour: near(C.curveEndDirection(four), unit(140 - 90, 30 + 20)),
+      facing: auto(P(1, 0), P(-1, 0), 0, 0, 200, 0),
+      offset: auto(P(1, 0), P(-1, 0), 0, 0, 200, 120),
+      sameWay: auto(P(0, -1), P(0, -1), 0, 0, 200, 0),
+      barelyOff: auto(P(1, 0), P(-1, 0), 0, 0, 400, 16),
+      keepsCollinear: C.collapseCurve([P(0, 0), P(50, 0), P(100, 0)]).length,
+      keepsBend: C.collapseCurve([P(0, 0), P(50, 40), P(100, 0)]).length,
+      dedupes: C.collapseCurve([P(0, 0), P(50, 40), P(50, 40), P(100, 0)]).length,
+    };
+  });
+
+  t.ok('two control points is exactly a straight line', r.straightFlat);
+  t.ok('a waypoint actually bends it', r.bends);
+  t.ok(
+    'and the spline never cusps between its knots',
+    r.reversals === 0,
+    `${r.reversals} reversals`,
+  );
+  /*
+    The arrowhead's orientation rides on this. The phantom endpoints DUPLICATE their knot rather
+    than reflecting it, which makes the end tangent parallel to the last chord -- exactly what
+    `endDirection` assumes. The conversion is 0/0 there and has to be handled explicitly; an
+    epsilon floor only makes the garbage finite, and the tangent came out nowhere near the chord.
+  */
+  t.ok('the end tangent is parallel to the last chord, on a three-point curve', r.endParallel);
+  t.ok('and on a four-point one', r.endParallelFour);
+
+  t.ok(
+    'two interfaces facing each other get no waypoints at all',
+    r.facing === 0,
+    String(r.facing),
+  );
+  t.ok('and neither does a pair barely off the axis', r.barelyOff === 0, String(r.barelyOff));
+  // `> 0` is the tempting test for "a straight line will do" and it is too weak: a bus leaving
+  // its own port diagonally does not read as a bus.
+  t.ok('but an offset pair bows instead of running diagonally', r.offset === 2, String(r.offset));
+  t.ok('as does a pair facing the same way on one plane', r.sameWay === 2, String(r.sameWay));
+
+  /*
+    A waypoint is EXPLICIT: the user inserts it with the badge and removes it with Delete.
+    Dropping one merely because it sits on the chord looked tidy and broke the feature --
+    inserting into a straight curve puts the new point exactly on the chord by construction, so
+    `normalize` deleted it in the same gesture that made it and clicking the badge did nothing.
+  */
+  t.ok(
+    'a waypoint on the chord is kept, not tidied away',
+    r.keepsCollinear === 3,
+    String(r.keepsCollinear),
+  );
+  t.ok('a waypoint holding a bend is kept', r.keepsBend === 3, String(r.keepsBend));
+  // Deduping is still required: the centripetal parameterisation divides by the chord length.
+  t.ok('but two waypoints in the same place become one', r.dedupes === 3, String(r.dedupes));
+}
+
+// ------------------------------------------------- which family the tool chooses ----
+
+{
+  await seed([
+    fabric('A', 80, 60, 320, 56, 1),
+    fabric('B', 80, 360, 320, 56, 1),
+    block('C', 520, 360, 120, 90),
+  ]);
+  await setPins('A', [['s', 'aw', 'master']]);
+  await setPins('B', [['n', 'aw', 'slave']]);
+
+  const [a] = await pinsOf('A');
+  const [b] = await pinsOf('B');
+  await connect(a, b);
+  let w = await wires();
+  t.ok(
+    'a link between two interfaces is drawn as a curve',
+    w[0]?.path === 'curve',
+    JSON.stringify(w),
+  );
+  t.ok(
+    'and an aligned pair gets a straight one — two points, no waypoints',
+    w[0]?.points === 2,
+    JSON.stringify(w),
+  );
+
+  // An interface to a plain block: one end wants a curve, the other does not.
+  await connect(a, { x: 580, y: 360 });
+  w = await wires();
+  const toBlock = w.find((x) => x.name !== w[0].name);
+  t.ok(
+    'a plain arrow may still be drawn to an interface, and stays rectilinear',
+    toBlock !== undefined && toBlock.path === 'ortho',
+    JSON.stringify(w),
+  );
+}
+
+// ----------------------------------------------------------- waypoint editing ----
+
+{
+  await seed([fabric('A', 80, 60, 320, 56, 1), fabric('B', 80, 400, 320, 56, 1)]);
+  await setPins('A', [['s', 'aw', 'master']]);
+  await setPins('B', [['n', 'aw', 'slave']]);
+  const [a] = await pinsOf('A');
+  const [b] = await pinsOf('B');
+  await connect(a, b);
+  const name = (await wires())[0].name;
+  await page.evaluate((n) => window.__scene.selectOnly(n), name);
+  await page.waitForTimeout(200);
+
+  const handles = () =>
+    page.evaluate(
+      (n) =>
+        window.__handles(n).map((h) => ({
+          id: h.id,
+          role: h.role ?? 'reshape',
+          glyph: h.glyph ?? null,
+          pos: h.pos,
+        })),
+      name,
+    );
+  let hs = await handles();
+  t.ok(
+    'a straight curve offers its two ends and one insert badge',
+    hs.filter((h) => h.role === 'rebind').length === 2 &&
+      hs.filter((h) => h.role === 'action').length === 1,
+    hs.map((h) => h.id).join(' '),
+  );
+  /*
+    The badge is a HANDLE with an `action` role rather than a bespoke affordance, so it inherits
+    hit priority over the line, a screen-constant grab radius and a knob. It is drawn as a plus
+    rather than as the same square a waypoint uses, because two affordances that look identical
+    say nothing about which one you drag.
+  */
+  t.ok(
+    'the badge is drawn as a plus, not as another resize knob',
+    hs.find((h) => h.role === 'action')?.glyph === 'plus',
+  );
+  t.ok('and a curve offers no segment handles', !hs.some((h) => h.id.startsWith('seg:')));
+
+  const ins = hs.find((h) => h.role === 'action');
+  await click(await toScreen(ins.pos.x, ins.pos.y));
+  t.ok(
+    'clicking it inserts a waypoint',
+    (await wires())[0].points === 3,
+    JSON.stringify(await wires()),
+  );
+  t.ok('which pins the route to manual', (await wires())[0].routing === 'manual');
+  t.ok(
+    'under its own undo entry',
+    (await page.evaluate(() => window.__scene.history.undoLabel)) === 'insert point',
+  );
+  t.ok(
+    'and the new point is selected, ready to be moved',
+    JSON.stringify(await page.evaluate(() => window.__host.subPart)) ===
+      JSON.stringify({ shape: name, index: 1 }),
+    JSON.stringify(await page.evaluate(() => window.__host.subPart)),
+  );
+
+  hs = await handles();
+  const way = hs.find((h) => h.id.startsWith('way:'));
+  const from = await toScreen(way.pos.x, way.pos.y);
+  await drag(from, { x: from.x + 96, y: from.y });
+  const moved = await page.evaluate((n) => {
+    const w = window.__scene.shapes.find((s) => s.name === n);
+    return { x: w.points[1].x, y: w.points[1].y };
+  }, name);
+  t.ok(
+    'dragging the waypoint moves it',
+    Math.abs(moved.x - way.pos.x) > 64,
+    `${way.pos.x} -> ${moved.x}`,
+  );
+
+  const label = await page.locator('.text-\\[var\\(--color-accent\\)\\]').allTextContents();
+  t.ok(
+    'and the status bar names it, counts it and gives its position',
+    label.some((x) => /waypoint 1 \/ 1 · -?\d+, -?\d+/.test(x)),
+    JSON.stringify(label),
+  );
+
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(220);
+  t.ok(
+    'Delete removes the waypoint, not the connection',
+    (await wires())[0]?.points === 2,
+    JSON.stringify(await wires()),
+  );
+  t.ok(
+    'under its own undo entry too',
+    (await page.evaluate(() => window.__scene.history.undoLabel)) === 'delete point',
+  );
+  /*
+    Nothing in `ToolHost` changes for any of this: `host.onKeyDown` gives the active tool first
+    refusal before the global bindings see the key, so the whole feature is one branch in
+    `SelectTool.onKeyDown` that returns `false` when there is no sub-part to remove.
+  */
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(220);
+  t.ok(
+    'and with no waypoint selected, Delete falls through to the connection',
+    (await wires()).length === 0,
+  );
+
+  await page.keyboard.press('Meta+z');
+  await page.waitForTimeout(250);
+  t.ok('undo brings it back', (await wires()).length === 1, JSON.stringify(await wires()));
+  t.ok(
+    'and clears the sub-part cursor, which undo has no business restoring',
+    (await page.evaluate(() => window.__host.subPart)) === null,
+  );
+}
+
+// -------------------------------------------------------- violations and the badge ----
+
+{
+  await seed([fabric('A', 80, 60, 420, 56, 3), fabric('B', 80, 400, 420, 56, 3)]);
+  await setPins('A', [
+    ['s', 'aw', 'master'],
+    ['s', 'aw', 'master'],
+    ['s', 'r', 'master'],
+  ]);
+  await setPins('B', [
+    ['n', 'aw', 'slave'],
+    ['n', 'aw', 'master'],
+    ['n', 'w', 'slave'],
+  ]);
+  const A = await pinsOf('A');
+  const B = await pinsOf('B');
+  for (let i = 0; i < 3; i++) await connect(A[i], B[i]);
+
+  const diag = await page.evaluate(() =>
+    Object.fromEntries([...window.__scene.diagnostics].map(([k, v]) => [k, v])),
+  );
+  const all = await wires();
+  const clean = all.filter((w) => diag[w.name] === undefined);
+  t.ok('a matched pair reports nothing', clean.length === 1, JSON.stringify(Object.keys(diag)));
+  t.ok(
+    'two masters is a violation',
+    Object.values(diag).some((v) => v.some((m) => /Both ends are masters/.test(m))),
+    JSON.stringify(diag),
+  );
+  t.ok(
+    'so is a channel that does not match',
+    Object.values(diag).some((v) => v.some((m) => /channel connects only to itself/.test(m))),
+    JSON.stringify(diag),
+  );
+  t.ok(
+    'and the messages are prose, not codes',
+    Object.values(diag)
+      .flat()
+      .every((m) => m.length > 40 && /[a-z] [a-z]/.test(m)),
+  );
+
+  const allChannel = await page.evaluate(() => {
+    const ops = window.__ops('conn');
+    const nif = (n, ch, mp) => ({
+      kind: 'nif',
+      name: n,
+      parent: 'p',
+      side: 'n',
+      offset: 0,
+      length: 32,
+      depth: 8,
+      protocol: 'axi3',
+      channel: ch,
+      modport: mp,
+      label: '',
+      description: '',
+      pending: [0, 0],
+      x: 0,
+      y: 0,
+      w: 32,
+      h: 8,
+    });
+    const wire = {
+      kind: 'conn',
+      name: 'w',
+      label: '',
+      description: '',
+      labelOffset: [0, 0],
+      from: 'a',
+      to: 'b',
+      fromAnchor: 'n',
+      toAnchor: 'n',
+      routing: 'auto',
+      path: 'curve',
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+      ],
+    };
+    const run = (ca, cb) =>
+      ops.diagnose(
+        wire,
+        new Map([
+          ['a', nif('a', ca, 'master')],
+          ['b', nif('b', cb, 'slave')],
+        ]),
+      ).length;
+    return {
+      allToAw: run('all', 'aw'),
+      awToAll: run('aw', 'all'),
+      awToW: run('aw', 'w'),
+      ortho: ops.diagnose(
+        { ...wire, path: 'ortho' },
+        new Map([
+          ['a', nif('a', 'aw', 'master')],
+          ['b', nif('b', 'w', 'master')],
+        ]),
+      ).length,
+    };
+  });
+  t.ok(
+    'an “all” interface is compatible with any single channel',
+    allChannel.allToAw === 0 && allChannel.awToAll === 0,
+    JSON.stringify(allChannel),
+  );
+  t.ok('two different single channels are not', allChannel.awToW === 1, String(allChannel.awToW));
+  /*
+    A plain arrow between two interfaces is explicitly allowed -- it says "this talks to that"
+    without claiming the two are wired -- so checking it would report violations about a
+    relationship the user never asserted.
+  */
+  t.ok(
+    'and a plain arrow between interfaces is never checked',
+    allChannel.ortho === 0,
+    String(allChannel.ortho),
+  );
+
+  // The badge: drawn and clicked from one function, which is what stops the two drifting.
+  const bad = Object.keys(diag)[0];
+  const at = await page.evaluate(async (n) => {
+    const s = window.__scene.shapes.find((x) => x.name === n);
+    const m = await import('/src/lib/scene/shapes/conn.ts');
+    const p = m.badgeScreen(s, (q) => window.__view.toScreen(q));
+    return { x: p.x, y: p.y };
+  }, bad);
+  await click(at);
+  const dialog = page.locator('[role="dialog"][aria-label="Connection violations"]');
+  t.ok('clicking the badge opens the violations popup', (await dialog.count()) === 1);
+  t.ok(
+    'listing every violation on that link',
+    (await page.locator('[role="dialog"] li').count()) === diag[bad].length,
+    `${await page.locator('[role="dialog"] li').count()} vs ${diag[bad].length}`,
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  t.ok('and Escape closes it', (await dialog.count()) === 0);
+
+  // Fixing the diagram must clear the badge.
+  await page.evaluate((n) => {
+    const sc = window.__scene;
+    const w = sc.shapes.find((x) => x.name === n);
+    const pin = sc.shapes.find((x) => x.name === w.to);
+    sc.replaceShape(pin, { ...pin, modport: pin.modport === 'master' ? 'slave' : 'master' }, 'fix');
+  }, bad);
+  await page.waitForTimeout(250);
+  t.ok(
+    'and correcting the modport clears it',
+    !(await page.evaluate((n) => window.__scene.diagnostics.has(n), bad)),
+  );
+}
+
+// -------------------------------------------------------------- serialization ----
+
+{
+  const round = await page.evaluate(() => {
+    const before = window.__scene.shapes;
+    const back = window.__doc.deserializeScene(window.__doc.serializeScene(before));
+    const w = back.filter((s) => s.kind === 'conn');
+    return {
+      same: before.length === back.length,
+      paths: w.map((s) => `${s.path}/${s.points.length}`),
+    };
+  });
+  t.ok('a scene of curved links round-trips', round.same, JSON.stringify(round.paths));
+  t.ok(
+    'keeping the path family and every waypoint',
+    round.paths.every((p) => p.startsWith('curve/')),
+    JSON.stringify(round.paths),
+  );
+
+  const manual = await page.evaluate(() => {
+    const doc = {
+      version: 2,
+      shapes: [
+        {
+          kind: 'fabric',
+          name: 'A',
+          label: '',
+          subtitle: '',
+          labelMode: 'inset',
+          description: '',
+          position: [0, 0],
+          size: [200, 40],
+          interfaces: 1,
+        },
+        {
+          kind: 'fabric',
+          name: 'B',
+          label: '',
+          subtitle: '',
+          labelMode: 'inset',
+          description: '',
+          position: [0, 300],
+          size: [200, 40],
+          interfaces: 1,
+        },
+        {
+          kind: 'conn',
+          name: 'w',
+          label: '',
+          description: '',
+          labelOffset: [0, 0],
+          routing: 'manual',
+          path: 'curve',
+          source: ['A.if_1', 'n'],
+          target: ['B.if_1', 'n'],
+          points: [
+            [16, 0],
+            [180, 150],
+            [16, 300],
+          ],
+        },
+      ],
+    };
+    const back = window.__doc.deserializeScene(doc);
+    const w = back.find((s) => s.kind === 'conn');
+    return w === undefined ? null : { path: w.path, pts: w.points.length, routing: w.routing };
+  });
+  /*
+    A diagonal control polygon would be refused outright by the `ortho` guard in the `points`
+    writer, which is why that guard has to be gated on `path` -- and `path` sorts before
+    `points`, so the writer already sees the new family on a document that sets both.
+  */
+  t.ok(
+    'a hand-written curved route with waypoints loads',
+    manual !== null && manual.pts === 3,
+    JSON.stringify(manual),
+  );
+  t.ok('and keeps its manual flag', manual?.routing === 'manual', JSON.stringify(manual));
+}
+
+const failed = t.report(errors);
+await browser.close();
+process.exit(failed > 0 ? 1 : 0);

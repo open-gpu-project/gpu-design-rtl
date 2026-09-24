@@ -27,6 +27,23 @@
     switch would have had to grow, silently, every time a kind learned to be drawn. `bounds` is
     already the per-kind answer to "how big is this", and it is defined for every kind.
   */
+  /**
+   * What the selected sub-part is, when there is one.
+   *
+   * Asked of the shape rather than formatted here, so the status bar never learns that a
+   * connection's sub-parts are called waypoints -- the shape supplies the noun along with the
+   * count and the position.
+   */
+  const subPartLabel = $derived.by(() => {
+    const cur = host.subPart;
+    if (cur === null) return null;
+    const s = scene.shapes.find((x) => x.name === cur.shape);
+    if (s === undefined) return null;
+    const part = opsFor(s).subPart?.(s, cur.index) ?? null;
+    if (part === null) return null;
+    return `${part.noun} ${part.ordinal} / ${part.count} · ${round(part.pos.x)}, ${round(part.pos.y)}`;
+  });
+
   const draftLabel = $derived.by(() => {
     const d = scene.draft;
     if (d === null) return null;
@@ -43,6 +60,10 @@
 
   {#if draftLabel !== null}
     <span class="text-[var(--color-accent)] tabular-nums">{draftLabel}</span>
+  {/if}
+
+  {#if subPartLabel !== null}
+    <span class="text-[var(--color-accent)] tabular-nums">{subPartLabel}</span>
   {/if}
 
   <span class="ml-auto tabular-nums">

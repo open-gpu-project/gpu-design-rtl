@@ -62,6 +62,8 @@ export class EditorSession {
       shapes: this.scene.shapes,
       selection: this.scene.selection,
       draft: this.scene.draft,
+      problems: this.scene.diagnostics,
+      activePart: this.host.subPart,
       overlay: (dc) => this.host.drawOverlay(dc),
     }));
 

@@ -1,5 +1,6 @@
 import type { Rect } from '../geom/types';
 import { unionBounds } from './bounds';
+import { diagnose, type Diagnostics } from './diagnostics';
 import { expandChildren } from './expand';
 import { History } from './history.svelte';
 import { nextIndexedName } from './names';
@@ -27,6 +28,14 @@ export class SceneStore {
 
   /** Recomputed only when the array reference changes, which is once per commit. */
   contentBounds = $derived<Rect | null>(unionBounds(this.shapes));
+
+  /**
+   * Cross-shape violations, recomputed once per commit for the same reason as `contentBounds`.
+   *
+   * Here rather than in the renderer because it is a fact about the DOCUMENT, and the renderer
+   * asking for it every frame would repeat work that only changes when the document does.
+   */
+  diagnostics = $derived<Diagnostics>(diagnose(this.shapes));
 
   /**
    * Run synchronously at the end of every commit, after bounds are valid. The view uses it to

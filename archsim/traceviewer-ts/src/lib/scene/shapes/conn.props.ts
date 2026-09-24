@@ -8,6 +8,7 @@ import {
   type WriteResult,
 } from '../../props/spec';
 import { opsFor } from '../registry';
+import { collapseCurve } from '../curve';
 import { collapseRoute, isRectilinear } from '../route';
 import type { ConnectionShape, Shape } from '../shape';
 
@@ -197,9 +198,32 @@ const props: readonly PropDef<ConnectionShape>[] = [
     },
   },
   {
+    key: 'path',
+    title: 'Path',
+    doc: 'Which shape the link is drawn as. “ortho” is the rectilinear router: horizontal and vertical runs with rounded corners. “curve” is a spline through waypoints you place, used for links between network interfaces, where the wire stands for a bus rather than a signal. This is a separate question from “routing”, which says who maintains the geometry rather than what the geometry is. Changing it re-derives the path from scratch, so a hand-drawn route is lost.',
+    mode: 'edit',
+    type: { type: 'enum', values: ['ortho', 'curve'] },
+    read: (s) => s.path,
+    write: (s, v): Write => {
+      const path = asString(v);
+      if (path !== 'ortho' && path !== 'curve') return bad('Path must be “ortho” or “curve”.');
+      if (path === s.path) return { ok: true, shape: s };
+      /*
+        Back to `auto` in the same write, and this is the one place a writer deliberately sets a
+        sibling key. The two families do not share a vocabulary: an `ortho` route's interior
+        points are axis constraints and a `curve`'s are waypoints, so keeping a hand-drawn one
+        across the change would hand `reroute` a path that means something else entirely --
+        `normalize` would reject the rectilinear case outright and delete the connection.
+        `routing` sorts before `path`, so `applyDocument` applies this AFTER any `routing` edit
+        in the same document, and this wins. Said here because that ordering is load-bearing.
+      */
+      return { ok: true, shape: { ...s, path, routing: 'auto' } };
+    },
+  },
+  {
     key: 'points',
     title: 'Route',
-    doc: 'The path as a list of [x, y] points in world units. The first point sits on the source anchor and the last on the target anchor, and every point must share exactly one coordinate with the next, since the route only runs horizontally and vertically. Set on the canvas: drag a square knob to slide a segment sideways, or a round bead to move an end. A route drawn by hand is kept only while “routing” says “manual”.',
+    doc: 'The path as a list of [x, y] points in world units. The first sits on the source anchor and the last on the target anchor. What lies between depends on “path”: for “ortho” they are the corners of the route, and every point shares exactly one coordinate with the next, since it only runs horizontally and vertically; for “curve” they are the waypoints the spline is drawn through, and two points is a straight line. Set on the canvas — drag a square knob to slide a segment, a round waypoint to bend a curve, a “+” to insert one, or a bead to move an end. A path drawn by hand is kept only while “routing” says “manual”.',
     mode: 'fixed',
     type: {
       type: 'list',
@@ -215,11 +239,21 @@ const props: readonly PropDef<ConnectionShape>[] = [
       const pts = asPointList(v);
       if (pts === null)
         return bad('Route must be a list of at least two [x, y] whole-number pairs.');
+      /*
+        A curve's control polygon has no shape rule to enforce -- any polygon is a valid spline,
+        and `collapseCurve` only drops points that are doing nothing. Both guards below are
+        therefore `ortho`-only.
+
+        `path` sorts before `points` (`edit` before `fixed`, then alphabetical), so on a document
+        that changes both, this writer already sees the new family.
+      */
+      if (s.path === 'curve') return { ok: true, shape: { ...s, points: collapseCurve(pts) } };
+
       // A diagonal would break corner rounding, corridor extraction and the segment handles all
       // at once, so it is refused here rather than degrading three things quietly.
       if (!isRectilinear(pts)) {
         return bad(
-          'Each point must share exactly one coordinate with the next: the route runs only horizontally and vertically.',
+          'Each point must share exactly one coordinate with the next: an “ortho” route runs only horizontally and vertically.',
         );
       }
       // Does NOT touch `routing`, and that is the whole reason this pair is safe to write in

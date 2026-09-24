@@ -110,6 +110,9 @@ export const nifOps: ShapeOps<NifShape> = {
 
   childOf: (s) => (s.parent === '' ? null : s.parent),
 
+  /** A link between two interfaces is a bus, and a bus is drawn as a curve. */
+  preferredPath: () => 'curve',
+
   /** You change the count on the parent; you do not delete interfaces off it. */
   deletable: () => false,
 

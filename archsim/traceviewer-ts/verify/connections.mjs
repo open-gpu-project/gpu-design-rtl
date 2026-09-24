@@ -373,13 +373,14 @@ t.ok(
 );
 t.ok('and leaves every connection object identical, not merely equal', S.connStillSame);
 t.ok(
-  'the saved record carries the endpoints, the routing mode and the route',
+  'the saved record carries the endpoints, both geometry modes and the route',
   eq(S.keys, [
     'kind',
     'description',
     'label',
     'labelOffset',
     'name',
+    'path',
     'routing',
     'points',
     'source',
@@ -515,11 +516,12 @@ t.ok(
   (await greyed('points')) && (await greyed('source')) && (await greyed('target')),
 );
 t.ok(
-  'and the four a person decides — three names and the routing mode — are not',
+  'and the five a person decides — three names and the two geometry modes — are not',
   !(await greyed('name')) &&
     !(await greyed('label')) &&
     !(await greyed('description')) &&
-    !(await greyed('routing')),
+    !(await greyed('routing')) &&
+    !(await greyed('path')),
 );
 
 await page.evaluate((n) => window.__scene.selectOnly(n), blockName);

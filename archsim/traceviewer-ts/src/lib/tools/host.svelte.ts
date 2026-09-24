@@ -76,6 +76,14 @@ export class ToolHost {
    * exactly when the tooltip appears, moves to another shape, or goes away.
    */
   hover = $state.raw<HoverTip | null>(null);
+  /**
+   * The selected sub-part of a shape -- a curve's waypoint -- published by the active tool.
+   *
+   * Here rather than in `SceneStore` because it is a cursor, not document state: undo must not
+   * restore it, and `selection` is part of the undo record. `$state.raw` so the status bar can
+   * read it; the tool's own copy is a plain field.
+   */
+  subPart = $state.raw<{ readonly shape: ShapeName; readonly index: number } | null>(null);
 
   readonly wheel: WheelController;
 
@@ -133,6 +141,9 @@ export class ToolHost {
       },
       setTool: (id: ToolId) => this.setTool(id),
       startPan: (p: PointerInfo) => this.#startPan(p),
+      setSubPart: (part) => {
+        this.subPart = part;
+      },
       requestFrame: () => this.invalidate(),
     };
 
@@ -338,14 +349,25 @@ export class ToolHost {
 
   /* ------------------------------------------------------------------ commands ---- */
 
+  /*
+    Undo and redo are the one place the sub-part cursor has to be cleared explicitly.
+
+    Everywhere else it is DERIVED: the tool re-checks on every read that its shape is still the
+    sole selection and that the index still exists, which covers deselection, multi-select,
+    deletion and a collapse without a hook per cause. A document swap defeats that, because the
+    index can still be valid and mean something else entirely -- so the two funnels that swap
+    one drop it.
+  */
   undo(): void {
     if (this.isGesturing()) return;
+    this.subPart = null;
     this.scene.undo();
     this.invalidate();
   }
 
   redo(): void {
     if (this.isGesturing()) return;
+    this.subPart = null;
     this.scene.redo();
     this.invalidate();
   }

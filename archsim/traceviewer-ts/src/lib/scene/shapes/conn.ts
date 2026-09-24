@@ -1,6 +1,8 @@
 import { alignStroke } from '../../canvas/pixel';
 import {
   ANCHOR_DOT_R_PX,
+  BADGE_OFFSET_PX,
+  BADGE_R_PX,
   ARROW_HALF_W_PX,
   ARROW_LEN_PX,
   ARROW_TIP_TOL_PX,
@@ -13,6 +15,17 @@ import {
 } from '../../canvas/theme';
 import { expandRect, pointInRect, rectsIntersect, segmentIntersectsRect } from '../../geom/math';
 import type { Anchor, Rect, Vec2 } from '../../geom/types';
+import {
+  autoWaypoints,
+  collapseCurve,
+  curveAt,
+  curveEndDirection,
+  curveSpans,
+  flattenCurve,
+  insertWaypoint,
+  moveWaypoint,
+  removeWaypoint,
+} from '../curve';
 import { opsFor, registerShape } from '../registry';
 import {
   collapseRoute,
@@ -33,6 +46,7 @@ import type {
   CorridorQuery,
   DrawContext,
   Handle,
+  PathStyle,
   Shape,
   ShapeName,
   ShapeOps,
@@ -41,6 +55,25 @@ import { connProps } from './conn.props';
 
 const SEGMENT_HANDLE = /^seg:(\d+)$/;
 const END_HANDLE = /^end:(from|to)$/;
+const WAYPOINT_HANDLE = /^way:(\d+)$/;
+const INSERT_HANDLE = /^ins:(\d+)$/;
+
+/** True for the spline family. Every rectilinear assumption below is guarded on this. */
+function isCurve(s: ConnectionShape): boolean {
+  return s.path === 'curve';
+}
+
+/**
+ * The drawn polyline.
+ *
+ * For a curve this is a FLATTENING, not the control polygon -- centripetal Catmull-Rom bulges
+ * outside its control points, so `bounds`, `hitTest` and `intersects` all taking their answer
+ * from here is what stops the renderer culling the bulge and the hit test rejecting clicks
+ * inside it.
+ */
+function drawnPoints(s: ConnectionShape): readonly Vec2[] {
+  return isCurve(s) ? flattenCurve(s.points) : s.points;
+}
 
 /** Resolve one end against the block it is bound to. Null when the block cannot carry anchors. */
 function anchorOf(block: Shape | undefined, id: string): Anchor | null {
@@ -62,6 +95,7 @@ export function makeConnection(
   to: ShapeName,
   b: Anchor,
   corridors: CorridorQuery,
+  path: PathStyle = 'ortho',
 ): ConnectionShape {
   return {
     kind: 'conn',
@@ -74,19 +108,41 @@ export function makeConnection(
     to,
     toAnchor: b.id,
     routing: 'auto',
-    points: routeConnection(a, b, corridors),
+    path,
+    points:
+      path === 'curve' ? [a.pos, ...autoWaypoints(a, b), b.pos] : routeConnection(a, b, corridors),
   };
 }
 
-/** Device-space coordinates for the whole route, snapped so the stroke lands on whole pixels. */
+/**
+ * Device-space coordinates for the route, snapped so the stroke lands on whole pixels.
+ *
+ * **A curve's interior control points are NOT snapped**, and only its two ends are. Aligning
+ * every control point moves each of them by up to half a pixel in an arbitrary direction, and on
+ * a spline that is a visible kink rather than the crisper line it buys on a rectilinear run. The
+ * ends are worth aligning because that is where the line meets an anchor bead.
+ */
 function devicePoints(s: ConnectionShape, dc: DrawContext, widthDev: number): Vec2[] {
-  return s.points.map((p) => {
+  const curve = isCurve(s);
+  const last = s.points.length - 1;
+  return s.points.map((p, i) => {
     const q = dc.project(p);
+    if (curve && i !== 0 && i !== last) return { x: q.x * dc.dpr, y: q.y * dc.dpr };
     return {
       x: alignStroke(q.x * dc.dpr, widthDev),
       y: alignStroke(q.y * dc.dpr, widthDev),
     };
   });
+}
+
+/** Emit the spline through `dev` into the current path. */
+function appendCurvePath(ctx: CanvasRenderingContext2D, dev: readonly Vec2[]): void {
+  ctx.moveTo(dev[0]!.x, dev[0]!.y);
+  // Spans computed from the PROJECTED control points: projection is affine, so the spline of
+  // the projected polygon is the projection of the spline, and doing it here costs one pass.
+  for (const sp of curveSpans(dev)) {
+    ctx.bezierCurveTo(sp.c1.x, sp.c1.y, sp.c2.x, sp.c2.y, sp.p1.x, sp.p1.y);
+  }
 }
 
 /** Emit the rounded route into the current path. Separated so a future layer can batch routes. */
@@ -117,6 +173,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
       to: '',
       toAnchor: 'w',
       routing: 'auto',
+      path: 'ortho',
       points: [
         { x: 0, y: 0 },
         { x: 0, y: 0 },
@@ -129,7 +186,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
    * screen pixels and cannot be expressed here; they are covered by the renderer's own cull
    * margin, which is 16 CSS px of world at every zoom and so always exceeds them.
    */
-  bounds: (s) => routeBounds(s.points),
+  bounds: (s) => routeBounds(drawnPoints(s)),
 
   /**
    * Any run touching the band, not the bounding box of the whole route.
@@ -138,18 +195,20 @@ export const connOps: ShapeOps<ConnectionShape> = {
    * whose corner happened to span the band -- wires the band visibly never crossed.
    */
   intersects(s, r) {
-    if (!rectsIntersect(routeBounds(s.points), r)) return false;
-    for (let i = 1; i < s.points.length; i++) {
-      if (segmentIntersectsRect(s.points[i - 1]!, s.points[i]!, r)) return true;
+    const pts = drawnPoints(s);
+    if (!rectsIntersect(routeBounds(pts), r)) return false;
+    for (let i = 1; i < pts.length; i++) {
+      if (segmentIntersectsRect(pts[i - 1]!, pts[i]!, r)) return true;
     }
     // A degenerate one-point route still has a position worth catching.
-    return s.points.length === 1 && pointInRect(s.points[0]!, r);
+    return pts.length === 1 && pointInRect(pts[0]!, r);
   },
 
   hitTest(s, p, hc) {
+    const pts = drawnPoints(s);
     const tol = STROKE_HIT_PX * hc.worldPerPx;
-    if (!pointInRect(p, expandRect(routeBounds(s.points), tol))) return false;
-    return distToRoute(p, s.points) <= tol;
+    if (!pointInRect(p, expandRect(routeBounds(pts), tol))) return false;
+    return distToRoute(p, pts) <= tol;
   },
 
   /**
@@ -184,6 +243,40 @@ export const connOps: ShapeOps<ConnectionShape> = {
         role: 'rebind',
       });
     }
+    if (isCurve(s)) {
+      /*
+        Waypoints are VISIBLE handles, unlike a segment's.
+
+        A segment handle's knob belongs at the middle of the run you grab, not at `Handle.pos`,
+        which is a corner -- so `conn.draw` paints those itself and the handles stay invisible.
+        A waypoint's knob belongs exactly at `Handle.pos`, so the select tool's own overlay loop
+        draws it correctly for free.
+      */
+      for (let i = 1; i < s.points.length - 1; i++) {
+        out.push({
+          id: `way:${i}`,
+          geom: 'point',
+          pos: s.points[i]!,
+          cursor: 'move',
+          visible: true,
+        });
+      }
+      // The insert badge, one per span, offset so it does not sit under the waypoint knobs.
+      const spans = curveSpans(s.points);
+      for (let i = 0; i < spans.length; i++) {
+        out.push({
+          id: `ins:${i}`,
+          geom: 'point',
+          pos: curveAt(s.points, (i + 0.5) / spans.length),
+          cursor: 'copy',
+          visible: true,
+          role: 'action',
+          glyph: 'plus',
+        });
+      }
+      return out;
+    }
+
     for (let i = 1; i < s.points.length; i++) {
       const a = s.points[i - 1]!;
       const b = s.points[i]!;
@@ -200,11 +293,54 @@ export const connOps: ShapeOps<ConnectionShape> = {
     return out;
   },
 
+  /**
+   * Move a waypoint, insert one, or slide a rectilinear run -- whichever the handle names.
+   *
+   * All three pin the route to `manual`: see `reroute`, which then only patches its ends. The
+   * insert lives here rather than in the tool for the same reason the others do -- geometry is
+   * the shape's business, and a tool that built a new point list would be a second place the
+   * rules about what a route may look like are written down.
+   */
   resize(s, handle, p) {
-    const m = SEGMENT_HANDLE.exec(String(handle));
+    const h = String(handle);
+
+    if (isCurve(s)) {
+      const w = WAYPOINT_HANDLE.exec(h);
+      if (w !== null) {
+        const points = moveWaypoint(s.points, Number(w[1]), p);
+        return points === s.points ? s : { ...s, points, routing: 'manual' };
+      }
+      const i = INSERT_HANDLE.exec(h);
+      if (i !== null) {
+        return { ...s, points: insertWaypoint(s.points, Number(i[1]), p), routing: 'manual' };
+      }
+      return s;
+    }
+
+    const m = SEGMENT_HANDLE.exec(h);
     if (m === null) return s;
     const points = moveSegment(s.points, Number(m[1]), p);
-    // Hand-editing pins the route: see `reroute`, which then only patches its ends.
+    return points === s.points ? s : { ...s, points, routing: 'manual' };
+  },
+
+  subPartOf(s, handle) {
+    if (!isCurve(s)) return null;
+    const m = WAYPOINT_HANDLE.exec(String(handle));
+    if (m === null) return null;
+    const i = Number(m[1]);
+    return i > 0 && i < s.points.length - 1 ? i : null;
+  },
+
+  subPart(s, index) {
+    if (!isCurve(s)) return null;
+    const pos = s.points[index];
+    if (pos === undefined || index <= 0 || index >= s.points.length - 1) return null;
+    return { count: s.points.length - 2, ordinal: index, pos, noun: 'waypoint' };
+  },
+
+  removeSubPart(s, index) {
+    if (!isCurve(s)) return s;
+    const points = removeWaypoint(s.points, index);
     return points === s.points ? s : { ...s, points, routing: 'manual' };
   },
 
@@ -245,6 +381,14 @@ export const connOps: ShapeOps<ConnectionShape> = {
     // obstacle avoidance, so a same-block route would simply cut through the block.
     if (s.from === '' || s.to === '' || s.from === s.to) return null;
     if (s.points.length < 2) return null;
+
+    if (isCurve(s)) {
+      // A curve-specific collapse: `collapseRoute` also drops axis-COLLINEAR interior points,
+      // and a waypoint the user deliberately lined up is still holding the curve straight there.
+      const points = collapseCurve(s.points);
+      return points === s.points ? s : { ...s, points };
+    }
+
     const points = collapseRoute(s.points);
     if (!isRectilinear(points)) return null;
     return points === s.points ? s : { ...s, points };
@@ -272,10 +416,14 @@ export const connOps: ShapeOps<ConnectionShape> = {
     if (flags.ghost) ctx.setLineDash([4 * dpr, 4 * dpr]);
 
     ctx.beginPath();
-    appendRoutePath(ctx, dev, CONN_CORNER_R_PX * dpr);
+    if (isCurve(s)) appendCurvePath(ctx, dev);
+    else appendRoutePath(ctx, dev, CONN_CORNER_R_PX * dpr);
     ctx.stroke();
 
-    const dir = endDirection(s.points);
+    // In device space for a curve, because the tangent there is the tangent on screen -- the
+    // world-space one would be right only at a uniform zoom, which is all this app has today,
+    // but taking it from the same points that were drawn removes the assumption.
+    const dir = isCurve(s) ? curveEndDirection(dev) : endDirection(s.points);
     const tip = dev[dev.length - 1]!;
     if (dir !== null && headIsClear(s, dc, arrowBox(tip, dir, dpr))) {
       const len = ARROW_LEN_PX * dpr;
@@ -292,26 +440,37 @@ export const connOps: ShapeOps<ConnectionShape> = {
     }
 
     if (flags.selected && !flags.ghost) {
-      // One batched path of mid-segment knobs, so the whole affordance costs two primitives.
-      const size = Math.max(4, Math.round(CONN_KNOB_PX * dpr));
       const lw = Math.max(1, Math.round(dpr));
-      ctx.beginPath();
-      for (let i = 1; i < dev.length; i++) {
-        const a = dev[i - 1]!;
-        const b = dev[i]!;
-        if (a.x === b.x && a.y === b.y) continue;
-        const x = alignStroke((a.x + b.x) / 2 - size / 2, lw);
-        const y = alignStroke((a.y + b.y) / 2 - size / 2, lw);
-        ctx.rect(x, y, size, size);
-      }
-      ctx.fillStyle = theme.handleFill;
-      ctx.fill();
-      ctx.lineWidth = lw;
-      ctx.strokeStyle = theme.handleStroke;
-      ctx.stroke();
 
       /*
-        The two anchors, as round beads rather than square knobs.
+        Mid-segment knobs, for a rectilinear route only.
+
+        A curve has none: its waypoint handles are `visible`, so the select tool's own overlay
+        draws a knob at each `Handle.pos` -- which for a waypoint is exactly the right place.
+        A segment handle's `pos` is a corner rather than the middle of the run you grab, which
+        is why those are invisible and painted here instead.
+      */
+      if (!isCurve(s)) {
+        const size = Math.max(4, Math.round(CONN_KNOB_PX * dpr));
+        ctx.beginPath();
+        for (let i = 1; i < dev.length; i++) {
+          const a2 = dev[i - 1]!;
+          const b2 = dev[i]!;
+          if (a2.x === b2.x && a2.y === b2.y) continue;
+          const x = alignStroke((a2.x + b2.x) / 2 - size / 2, lw);
+          const y = alignStroke((a2.y + b2.y) / 2 - size / 2, lw);
+          ctx.rect(x, y, size, size);
+        }
+        ctx.fillStyle = theme.handleFill;
+        ctx.fill();
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = theme.handleStroke;
+        ctx.stroke();
+      }
+
+      /*
+        The two anchors, as round beads rather than square knobs. Both families get them: they
+        are the rebind affordance, and a curve's ends move exactly as a route's do.
 
         Round because they do a different job: a square moves a run of the line, a circle moves
         where the line attaches. And in the connect tool's colours, not the handle palette --
@@ -343,6 +502,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
       ctx.stroke();
     }
 
+    if (!flags.ghost && (flags.problems ?? 0) > 0) drawBadge(dc, badgeAt(s, dev, dpr));
     if (!flags.ghost && s.label !== '') drawLabel(s, dc, dev);
 
     // Restore everything touched. `lineJoin` in particular: `rect.ts` strokes with `strokeRect`,
@@ -374,6 +534,21 @@ export const connOps: ShapeOps<ConnectionShape> = {
     const b = anchorOf(deps.get(s.to), s.toAnchor);
     if (a === null || b === null) return s;
 
+    if (isCurve(s)) {
+      if (s.routing === 'manual') {
+        /*
+          Only the two ends move. A curve's interior points are the user's waypoints and mean the
+          same thing wherever the anchors go -- unlike a rectilinear route, whose interior is a
+          set of axis constraints that a moved end can invalidate, which is why `patchStart` and
+          `patchEnd` have to re-hang a point and can fail.
+        */
+        const patched = [a.pos, ...s.points.slice(1, -1), b.pos];
+        return samePoints(patched, s.points) ? s : { ...s, points: patched };
+      }
+      const auto = [a.pos, ...autoWaypoints(a, b), b.pos];
+      return samePoints(auto, s.points) ? s : { ...s, points: auto };
+    }
+
     if (s.routing === 'manual') {
       const patched = patchEnd(patchStart(s.points, a.pos), b.pos);
       if (patched.length >= 2 && isRectilinear(patched)) {
@@ -388,7 +563,60 @@ export const connOps: ShapeOps<ConnectionShape> = {
     return samePoints(points, s.points) ? s : { ...s, points };
   },
 
-  corridors: (s) => s.points,
+  /**
+   * Whether joining these two interfaces made sense.
+   *
+   * Only checked for a CURVE, which is to say only for a link the tool drew as a bus. A plain
+   * arrow to an interface is explicitly allowed -- it is how you say "this block talks to that
+   * port" without claiming the two are wired together -- so checking it would report violations
+   * about a relationship the user never asserted.
+   *
+   * `all` is compatible with any single channel: a diagram drawn at bundle level should not
+   * report five violations for one wire.
+   */
+  diagnose(s, deps) {
+    if (!isCurve(s)) return [];
+    const a = deps.get(s.from);
+    const b = deps.get(s.to);
+    if (a === undefined || b === undefined) return [];
+    if (a.kind !== 'nif' || b.kind !== 'nif') return [];
+
+    const out: string[] = [];
+    /*
+      Widened to `string` deliberately. `protocol` has exactly one value today, so the compiler
+      narrows the comparison to `never` and rejects it as unreachable -- which is true, and will
+      stop being true the moment a second bus standard is added. Deleting the check would mean
+      the first person to add one gets no error and no reminder that this rule exists.
+    */
+    const pa: string = a.protocol;
+    const pb: string = b.protocol;
+    if (pa !== pb) {
+      out.push(
+        `${a.name} speaks ${pa.toUpperCase()} and ${b.name} speaks ${pb.toUpperCase()}. A link joins one bus standard to itself.`,
+      );
+    }
+    if (a.channel !== b.channel && a.channel !== 'all' && b.channel !== 'all') {
+      out.push(
+        `${a.name} carries the ${a.channel.toUpperCase()} channel and ${b.name} carries ${b.channel.toUpperCase()}. A channel connects only to itself, or to an interface set to “all”.`,
+      );
+    }
+    if (a.modport === b.modport) {
+      out.push(
+        `Both ends are ${a.modport}s. A master drives the transaction and a slave answers it, so one of each is what a link needs.`,
+      );
+    }
+    return out;
+  },
+
+  /*
+    A curve contributes NO corridors.
+
+    Corridors are a rectilinear bundling concept -- `CorridorIndex` records runs where two points
+    share a coordinate, and a curve's control polygon would offer spurious ones wherever two
+    control points happened to line up. Orthogonal wires would then snap onto a run that is not
+    actually there.
+  */
+  corridors: (s) => (isCurve(s) ? null : s.points),
 
   /**
    * Heading is the name, not the label. A connection draws its `label` and never its `name`, so
@@ -396,6 +624,77 @@ export const connOps: ShapeOps<ConnectionShape> = {
    */
   tooltip: (s) => ({ title: s.name, lines: s.description !== '' ? [s.description] : [] }),
 };
+
+/**
+ * Where the violation badge sits, in DEVICE pixels.
+ *
+ * **The single source of that point.** `draw` paints it here and the select tool hit-tests
+ * against it, so the badge you can click is by construction the badge you can see -- the same
+ * rule `tabRect` follows, and the defect `visibleFlags` exists to prevent in the trace panel.
+ *
+ * At the midpoint and offset perpendicular to the line, so it does not sit under the label,
+ * which takes the midpoint itself.
+ */
+export function badgeAt(s: ConnectionShape, dev: readonly Vec2[], dpr: number): Vec2 {
+  if (dev.length < 2) return dev[0] ?? { x: 0, y: 0 };
+  const mid = isCurve(s) ? curveAt(dev, 0.5) : midOfLongestRun(dev);
+  const t = isCurve(s)
+    ? (curveEndDirection(dev.slice(0, Math.max(2, Math.ceil(dev.length / 2) + 1))) ?? {
+        x: 1,
+        y: 0,
+      })
+    : (endDirection(dev) ?? { x: 1, y: 0 });
+  // Perpendicular, turned the same way the label's `perp` axis turns.
+  return { x: mid.x - t.y * BADGE_OFFSET_PX * dpr, y: mid.y + t.x * BADGE_OFFSET_PX * dpr };
+}
+
+/**
+ * The badge in CSS pixels, for the tool's hit test.
+ *
+ * Same function, `dpr` of one and a CSS projector -- so the clickable point cannot drift from
+ * the drawn one by a scale factor, which is the failure this shape of helper exists to avoid.
+ */
+export function badgeScreen(s: ConnectionShape, project: (p: Vec2) => Vec2): Vec2 {
+  return badgeAt(s, s.points.map(project), 1);
+}
+
+function midOfLongestRun(dev: readonly Vec2[]): Vec2 {
+  let best = 1;
+  let bestLen = -1;
+  for (let i = 1; i < dev.length; i++) {
+    const l = Math.abs(dev[i]!.x - dev[i - 1]!.x) + Math.abs(dev[i]!.y - dev[i - 1]!.y);
+    if (l > bestLen) {
+      bestLen = l;
+      best = i;
+    }
+  }
+  return { x: (dev[best - 1]!.x + dev[best]!.x) / 2, y: (dev[best - 1]!.y + dev[best]!.y) / 2 };
+}
+
+/** A filled disc with an exclamation mark. Device space. */
+function drawBadge(dc: DrawContext, at: Vec2): void {
+  const { ctx, dpr, theme } = dc;
+  const r = BADGE_R_PX * dpr;
+  ctx.beginPath();
+  ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = theme.badgeFill;
+  ctx.fill();
+
+  /*
+    An exclamation mark drawn as two primitives rather than as text.
+
+    `fillText` at this size would be hinted differently at every dpr and would need a font
+    string, a baseline and a measurement to centre; a bar and a dot are exact at any zoom and
+    cost nothing. The glyph is dark on the badge rather than light, so the badge reads as a
+    warning sticker rather than as another handle.
+  */
+  ctx.fillStyle = theme.badgeInk;
+  const w = Math.max(1, Math.round(r / 3.5));
+  ctx.fillRect(at.x - w / 2, at.y - r * 0.55, w, r * 0.72);
+  ctx.beginPath();
+  ctx.arc(at.x, at.y + r * 0.42, Math.max(1, w * 0.62), 0, Math.PI * 2);
+  ctx.fill();
+}
 
 /**
  * Where the arrowhead sits, in device pixels, for the purpose of asking what it overlaps.
@@ -467,7 +766,32 @@ function headIsClear(s: ConnectionShape, dc: DrawContext, head: Rect): boolean {
  * connection can hand the label to a different run, and the offset then applies to that one.
  */
 function drawLabel(s: ConnectionShape, dc: DrawContext, dev: readonly Vec2[]): void {
-  const { ctx, dpr, theme } = dc;
+  const { dpr } = dc;
+  let dir: Vec2;
+
+  if (isCurve(s)) {
+    /*
+      A curve has no runs to ride, so the label sits at the middle of the arc and takes its axes
+      from the tangent there.
+
+      The tangent is normalised by hypot, unlike the rectilinear branch below, which can get away
+      with `Math.sign` only because its runs are axis-aligned. On a diagonal that shortcut yields
+      `(+/-1, +/-1)` -- not a unit vector -- so `par` would be scaled by root two and `perp`
+      would point somewhere between the two axes.
+    */
+    const t = curveEndDirection(dev.slice(0, Math.max(2, Math.ceil(dev.length / 2) + 1)));
+    const mid = curveAt(dev, 0.5);
+    dir = t ?? { x: 1, y: 0 };
+    const [par, perp] = s.labelOffset;
+    drawLabelPlate(
+      s,
+      dc,
+      mid.x + (dir.x * par - dir.y * perp) * dpr,
+      mid.y + (dir.y * par + dir.x * perp) * dpr,
+    );
+    return;
+  }
+
   let best = -1;
   let bestLen = 0;
   for (let i = 1; i < dev.length; i++) {
@@ -483,18 +807,25 @@ function drawLabel(s: ConnectionShape, dc: DrawContext, dev: readonly Vec2[]): v
   const p1 = dev[best]!;
   // Axis-aligned by construction, and `bestLen > 0` here, so this is exactly one of the four
   // unit vectors and needs no square root.
-  const dir = { x: Math.sign(p1.x - p0.x), y: Math.sign(p1.y - p0.y) };
+  dir = { x: Math.sign(p1.x - p0.x), y: Math.sign(p1.y - p0.y) };
   const [par, perp] = s.labelOffset;
   const cx = (p0.x + p1.x) / 2 + (dir.x * par - dir.y * perp) * dpr;
   const cy = (p0.y + p1.y) / 2 + (dir.y * par + dir.x * perp) * dpr;
 
+  drawLabelPlate(s, dc, cx, cy);
+}
+
+/** The label and the plate under it, at a device-space point. */
+function drawLabelPlate(s: ConnectionShape, dc: DrawContext, cx: number, cy: number): void {
+  const { ctx, dpr, theme } = dc;
   ctx.font = `${Math.round(11 * dpr)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const pad = 3 * dpr;
   const w = ctx.measureText(s.label).width + 2 * pad;
   const h = 14 * dpr;
-  // A plate, so the line does not strike through its own label.
+  // A plate, so the line does not strike through its own label. One fill is enough here: a
+  // connection sits on the canvas, not inside a filled box the way a FIFO's label does.
   ctx.fillStyle = theme.background;
   ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
   ctx.fillStyle = theme.connLabel;
