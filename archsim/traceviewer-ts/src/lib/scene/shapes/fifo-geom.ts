@@ -35,6 +35,17 @@ export const MIN_SPACING = GRID / 2;
 /** The smallest gap an unbounded queue keeps between its head cell and its tail run. */
 export const MIN_GAP = GRID;
 
+/**
+ * The most cells a bounded queue may declare.
+ *
+ * A drawing limit, not a claim about hardware. `dividers` allocates one record per cell and the
+ * renderer builds one path segment per divider, every frame -- so a value like 1e9, which the
+ * `minimum: -1` schema was perfectly happy with, freezes the tab before the commit that caused it
+ * can be undone. A queue deeper than this is drawn unbounded, which is what a designer means by
+ * a deep queue anyway.
+ */
+export const MAX_CELLS = 1024;
+
 /** Is the flow axis authored by the user, or derived from the cell count? */
 export function flowIsFree(s: FifoShape): boolean {
   return s.cells < 0;
@@ -43,6 +54,12 @@ export function flowIsFree(s: FifoShape): boolean {
 /** The flow axis for this orientation: `'w'` when the cells run left to right. */
 export function flowKey(s: FifoShape): 'w' | 'h' {
   return s.orientation === 'horizontal' ? 'w' : 'h';
+}
+
+/** The shortest an unbounded queue may be: its four drawn cells, plus a gap between them. */
+export function minFlow(s: FifoShape): number {
+  const spacing = Math.max(MIN_SPACING, s.spacing);
+  return (HEAD_CELLS + TAIL_CELLS) * spacing + MIN_GAP;
 }
 
 /**
@@ -54,12 +71,20 @@ export function flowKey(s: FifoShape): 'w' | 'h' {
  * that a writer touching another property becomes order-dependent, since `applyDocument` writes
  * in canonical key order and the alphabetically later key wins; deriving sidesteps that rather
  * than having to reason about it.
+ *
+ * **The sign is preserved, and that is load-bearing.** `resizeBox` encodes a flip past the far
+ * edge as a negative extent, which the kind's `normalize` is supposed to fold back on commit --
+ * and `fifoBox` folds it by handing this value to `normalizeRect`. Taking the magnitude here made
+ * that fold unreachable: `normalizeRect` never saw a negative, so the box stayed anchored at the
+ * DRAGGED edge instead of the pinned one, and an unbounded queue whose west handle was pulled
+ * past its east edge jumped bodily to the far side of it.
  */
 export function flowExtent(s: FifoShape): number {
   const spacing = Math.max(MIN_SPACING, s.spacing);
-  if (!flowIsFree(s)) return Math.max(1, s.cells) * spacing;
-  const stored = Math.abs(s[flowKey(s)]);
-  return Math.max(stored, (HEAD_CELLS + TAIL_CELLS) * spacing + MIN_GAP);
+  if (!flowIsFree(s)) return Math.max(1, Math.min(s.cells, MAX_CELLS)) * spacing;
+  const stored = s[flowKey(s)];
+  const mag = Math.max(Math.abs(stored), minFlow(s));
+  return stored < 0 ? -mag : mag;
 }
 
 /**
@@ -88,11 +113,14 @@ export function dividers(s: FifoShape): readonly { at: number; gap: boolean }[] 
   const out: { at: number; gap: boolean }[] = [];
 
   if (!flowIsFree(s)) {
-    for (let i = 1; i < Math.max(1, s.cells); i++) out.push({ at: i * spacing, gap: false });
+    const cells = Math.max(1, Math.min(s.cells, MAX_CELLS));
+    for (let i = 1; i < cells; i++) out.push({ at: i * spacing, gap: false });
     return out;
   }
 
-  const flow = flowExtent(s);
+  // Magnitude: the caller wants offsets along the face, and `fifoBox` has already folded any
+  // flip by the time anything is drawn.
+  const flow = Math.abs(flowExtent(s));
   out.push({ at: HEAD_CELLS * spacing, gap: true });
   for (let i = TAIL_CELLS; i >= 1; i--) {
     out.push({ at: flow - i * spacing, gap: i === TAIL_CELLS });

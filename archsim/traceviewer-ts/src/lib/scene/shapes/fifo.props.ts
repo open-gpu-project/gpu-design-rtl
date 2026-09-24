@@ -11,7 +11,7 @@ import {
 import { propSchema, type PropDef, type PropSchema, type WriteResult } from '../../props/spec';
 import { GRID } from '../../grid';
 import type { FifoShape } from '../shape';
-import { fifoBox, flowIsFree, MIN_SPACING } from './fifo-geom';
+import { fifoBox, flowIsFree, MAX_CELLS, MIN_SPACING } from './fifo-geom';
 
 type Write = WriteResult<FifoShape>;
 
@@ -62,18 +62,34 @@ const props: readonly PropDef<FifoShape>[] = [
       const r = fifoBox(s);
       return [r.w, r.h];
     },
+    /*
+      **Returns `s` by reference when the axis this writer owns is already right**, and that is
+      not a micro-optimisation.
+
+      `read` goes through `fifoBox`, so for a bounded queue it can never return the width the
+      user typed. `applyDocument` skips a key only when the document value equals `read(s)`, so
+      this writer is then called on EVERY subsequent commit -- and an unconditional `{ ...s }`
+      hands back a content-identical shape with a fresh identity. `PropertiesView` guards on
+      `result.shape === prev`, `replaceShape` maps unconditionally, and `commit` compares the
+      array by identity: the result was one dead undo entry per edit, each of which appeared to
+      do nothing when undone. Observed as three `edit size` entries restoring a byte-identical
+      scene.
+    */
     write: (s, v): Write => {
       const p = asIntPair(v);
       if (p === null) return bad('Size must be two whole numbers, [width, height].');
       if (p[0] < 1 || p[1] < 1) return bad('Width and height must both be at least 1.');
       const [w, h] = p;
-      // The derived axis is written through untouched; `fifoBox` overrides it on read anyway,
-      // and refusing the edit outright would make a perfectly good cross-axis change fail with
-      // it. An unbounded queue owns both axes, so both are kept.
-      if (flowIsFree(s)) return { ok: true, shape: { ...s, w, h } };
-      return s.orientation === 'horizontal'
-        ? { ok: true, shape: { ...s, h } }
-        : { ok: true, shape: { ...s, w } };
+      // The derived axis is dropped rather than refused: refusing would make a perfectly good
+      // cross-axis change fail alongside it. An unbounded queue owns both axes, so both are kept.
+      if (flowIsFree(s)) {
+        if (w === s.w && h === s.h) return { ok: true, shape: s };
+        return { ok: true, shape: { ...s, w, h } };
+      }
+      if (s.orientation === 'horizontal') {
+        return h === s.h ? { ok: true, shape: s } : { ok: true, shape: { ...s, h } };
+      }
+      return w === s.w ? { ok: true, shape: s } : { ok: true, shape: { ...s, w } };
     },
   },
   {
@@ -87,22 +103,33 @@ const props: readonly PropDef<FifoShape>[] = [
       if (v !== 'horizontal' && v !== 'vertical') {
         return bad('Orientation must be “horizontal” or “vertical”.');
       }
-      return { ok: true, shape: { ...s, orientation: v } };
+      return v === s.orientation
+        ? { ok: true, shape: s }
+        : { ok: true, shape: { ...s, orientation: v } };
     },
   },
   {
     key: 'cells',
     title: 'Cells',
-    doc: 'How many entries the queue holds, drawn as that many dividers along its length. Set it to -1 for an unbounded queue, which is drawn as one cell, a gap you can stretch, and three more — the length then becomes yours to resize. Zero is not a queue and is refused.',
+    doc: `How many entries the queue holds, drawn as that many dividers along its length. Set it to -1 for an unbounded queue, which is drawn as one cell, a gap you can stretch, and three more — the length then becomes yours to resize. Zero is not a queue and is refused. At most ${MAX_CELLS}: every cell is a divider drawn on every frame, and a queue deeper than that is what “unbounded” is for.`,
     mode: 'edit',
-    type: { type: 'integer', minimum: -1 },
+    /*
+      The maximum is in the SCHEMA and not only in the writer, because ajv is what draws the live
+      red annotation in the panel. Without it the editor accepted 1e9 without complaint, the
+      writer took it, and the next frame tried to build a billion-segment path -- the tab froze
+      before the commit that caused it could be undone.
+    */
+    type: { type: 'integer', minimum: -1, maximum: MAX_CELLS },
     read: (s) => s.cells,
     write: (s, v): Write => {
       const cells = asInt(v);
       if (cells === null) return bad('Cells must be a whole number.');
       if (cells === 0) return bad('A queue with no cells is not a queue. Use -1 for unbounded.');
       if (cells < -1) return bad('Cells must be -1 (unbounded) or a positive count.');
-      return { ok: true, shape: { ...s, cells } };
+      if (cells > MAX_CELLS) {
+        return bad(`At most ${MAX_CELLS} cells. Use -1 for a queue deeper than that.`);
+      }
+      return cells === s.cells ? { ok: true, shape: s } : { ok: true, shape: { ...s, cells } };
     },
   },
   {
@@ -116,7 +143,9 @@ const props: readonly PropDef<FifoShape>[] = [
       const spacing = asInt(v);
       if (spacing === null) return bad('Spacing must be a whole number.');
       if (spacing < MIN_SPACING) return bad(`Spacing must be at least ${MIN_SPACING}.`);
-      return { ok: true, shape: { ...s, spacing } };
+      return spacing === s.spacing
+        ? { ok: true, shape: s }
+        : { ok: true, shape: { ...s, spacing } };
     },
   },
   subtitleProp('queue'),

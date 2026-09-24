@@ -20,6 +20,15 @@ export interface Modifiers {
 }
 
 /**
+ * A face of an axis-aligned box, named by compass point.
+ *
+ * Here rather than in `shapes/box.ts` because `ShapeOps` has a seam that returns a set of them
+ * (`interfaceSides`), and a type in the shape contract should not have to reach into one kind's
+ * implementation file to be named.
+ */
+export type Side = 'n' | 'e' | 's' | 'w';
+
+/**
  * An attachment point a connection can terminate on. Unused this revision; the type exists so
  * `ShapeOps.anchors` has something to return when connections land.
  */

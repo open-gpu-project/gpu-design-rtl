@@ -14,7 +14,7 @@
   import { keys } from './lib/keys';
   import { clearWorkspace } from './lib/dock/layout';
   import type { Vec2 } from './lib/geom/types';
-  import { opsFor } from './lib/scene/registry';
+  import { opsFor, opsForKind } from './lib/scene/registry';
   import {
     collapseRoute,
     CorridorIndex,
@@ -31,7 +31,7 @@
   import { fitInsetLine, insetType } from './lib/scene/shapes/heading';
   import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
   import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
-  import { serializeScene } from './lib/scene/serialize';
+  import { deserializeScene, serializeScene } from './lib/scene/serialize';
   import type { Shape } from './lib/scene/shape';
   import { EditorSession, provideSession } from './lib/session.svelte';
   import { tickTiers } from './lib/timeline/ticks';
@@ -185,6 +185,21 @@
         sorts to the same string rather than rendering ⌘⇧Z.
       */
       __keys: keys,
+      /*
+        One kind's operations, out of the LIVE registry.
+
+        Exposed because a check that wants to ask "what handles would this shape have" about a
+        shape it has not committed -- a FIFO with a different cell count, a queue mid-flip -- has
+        no other honest way in. The tempting alternative, `await import('/src/lib/scene/registry.ts')`
+        from inside `page.evaluate`, is the trap iteration 4.1 wrote down: after any HMR update
+        the app's own copy is behind a versioned URL, so a bare specifier resolves to a SECOND
+        module instance whose registry is empty, and every `opsFor` throws `no ShapeOps
+        registered`. That kills the suite with an uncaught error rather than a failed assertion,
+        and takes every suite after it in the chain down too.
+      */
+      __ops: (kind: string) => opsForKind(kind),
+      /** The file format, through the app's own registry, for the same reason as `__ops`. */
+      __doc: { serializeScene, deserializeScene },
       __dump: () => serializeScene(session.scene.shapes),
       __resetLayout: () => {
         clearWorkspace();

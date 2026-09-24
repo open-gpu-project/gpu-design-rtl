@@ -1,7 +1,7 @@
 import { alignStroke } from '../../canvas/pixel';
 import { ANCHOR_BAND_PX, ANCHOR_HIT_PX } from '../../canvas/theme';
 import { clampNum, expandRect, pointInRect } from '../../geom/math';
-import type { Anchor, Modifiers, Rect, Vec2 } from '../../geom/types';
+import type { Anchor, Modifiers, Rect, Side, Vec2 } from '../../geom/types';
 import { snap } from '../../grid';
 import type { DrawContext, Handle, HandleId, HitContext, RenderFlags } from '../shape';
 import type { Headed } from '../shape';
@@ -17,9 +17,10 @@ import { drawHeading, type DeviceBox } from './heading';
  * them read `s.w` directly the shared code would be wrong for the others.
  */
 
-export type Side = 'n' | 'e' | 's' | 'w';
-
 export const SIDES: readonly Side[] = ['n', 'e', 's', 'w'];
+
+/** The face directly across the box from `side`. */
+export const OPPOSITE: Readonly<Record<Side, Side>> = { n: 's', e: 'w', s: 'n', w: 'e' };
 
 export const NORMALS: Readonly<Record<Side, Vec2>> = {
   n: { x: 0, y: -1 },
@@ -268,6 +269,7 @@ export function drawBoxBody(
     y1: alignStroke(b.y * dc.dpr, wDev),
     boxW: (b.x - a.x) * dc.dpr,
     boxH: (b.y - a.y) * dc.dpr,
+    stroke: wDev,
   };
 
   ctx.lineWidth = wDev;

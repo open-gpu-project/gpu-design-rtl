@@ -230,6 +230,49 @@ export interface DeviceBox {
   readonly y1: number;
   readonly boxW: number;
   readonly boxH: number;
+  /** Device-pixel width of the outline, so a label plate can stay inside it. */
+  readonly stroke: number;
+}
+
+/**
+ * An opaque plate the exact colour of the box body, so a line of text can blot out whatever the
+ * kind painted inside it -- a FIFO's cell dividers, specifically.
+ *
+ * **Two fills, not one, and this is the trap.** `theme.shapeFill` is translucent
+ * (`rgba(96, 165, 250, 0.14)`), so filling with it alone composites over the dividers instead of
+ * hiding them: the result looks almost right and fails only where a divider passes under a
+ * glyph. Painting `background` first and the body fill over it reproduces the body colour
+ * exactly and is opaque. `conn.ts`'s label plate has the simpler job -- it sits on the canvas,
+ * so one `background` fill is enough there.
+ */
+function drawPlate(
+  dc: DrawContext,
+  d: DeviceBox,
+  cx: number,
+  w: number,
+  top: number,
+  bottom: number,
+): void {
+  const { ctx, theme } = dc;
+  /*
+    Clamped INSIDE the outline, which is the other half of getting this right.
+
+    A label wider than its box -- easy on a FIFO, whose length is fixed by its cell count -- gave
+    a plate wider than the box, and two opaque fills then punched a hole straight through both
+    vertical outlines at the label's height. Measured: a 16-character label on a 128x64 queue
+    erased 22 device pixels of stroke on each side. The outline is stroked CENTRED on the aligned
+    coordinate, so the first pixel the plate may touch is half a stroke width inside it.
+  */
+  const inset = Math.ceil(d.stroke / 2);
+  const lo = Math.min(d.x0, d.x1) + inset;
+  const hi = Math.max(d.x0, d.x1) - inset;
+  const x = Math.max(lo, cx - w / 2);
+  const right = Math.min(hi, cx + w / 2);
+  if (right <= x) return;
+  ctx.fillStyle = theme.background;
+  ctx.fillRect(x, top, right - x, bottom - top);
+  ctx.fillStyle = theme.shapeFill;
+  ctx.fillRect(x, top, right - x, bottom - top);
 }
 
 /**
@@ -250,27 +293,6 @@ export interface DeviceBox {
  * comes out LARGER than the label and the hierarchy inverts; without the second it disappears
  * from a box with room for it, only because the line above it had to shrink.
  */
-/**
- * An opaque plate the exact colour of the box body, so a line of text can blot out whatever the
- * kind painted inside it -- a FIFO's cell dividers, specifically.
- *
- * **Two fills, not one, and this is the trap.** `theme.shapeFill` is translucent
- * (`rgba(96, 165, 250, 0.14)`), so filling with it alone composites over the dividers instead of
- * hiding them: the result looks almost right and fails only where a divider passes under a
- * glyph. Painting `background` first and the body fill over it reproduces the body colour
- * exactly and is opaque. `conn.ts`'s label plate has the simpler job -- it sits on the canvas,
- * so one `background` fill is enough there.
- */
-function drawPlate(dc: DrawContext, cx: number, cy: number, w: number, h: number): void {
-  const { ctx, theme } = dc;
-  const x = cx - w / 2;
-  const y = cy - h / 2;
-  ctx.fillStyle = theme.background;
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = theme.shapeFill;
-  ctx.fillRect(x, y, w, h);
-}
-
 function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean): void {
   const { ctx, theme, dpr } = dc;
   const ty = insetType(d.boxH / dpr, s.subtitle !== '');
@@ -327,12 +349,35 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
   */
   const padX = 4 * dpr;
   const labelY = twoLine ? cy - half : cy;
+  const subY = cy + half;
 
   ctx.font = `${label.px}px ${INSET_FAMILY}`;
-  // Measured at the font just selected, which is the one it will be drawn at -- the same
-  // guarantee `fitInsetLine` exists to provide.
+  /*
+    Measured at the font just selected, which is the one it will be drawn at -- the same
+    guarantee `fitInsetLine` exists to provide.
+
+    The two plates MEET at `cy` rather than each being centred on its own line, because two
+    plates sized to their own ink leave a sliver of whatever is underneath showing between them --
+    on a FIFO, a stub of divider floating between the label and the subtitle.
+  */
   if (plate) {
-    drawPlate(dc, cx, labelY, ctx.measureText(label.text).width + 2 * padX, label.px * INSET_INK_H);
+    /*
+      The INK box, not a box centred on the line.
+
+      `textBaseline` is `middle`, and the ink around that middle is asymmetric --
+      `INSET_INK_ABOVE` 0.43 against `INSET_INK_BELOW` 0.52 -- so a plate of height
+      `px * INSET_INK_H` centred on the line falls short at the descenders by 0.045 of the font
+      size, and a `y` or a `g` sitting over a divider keeps a line through its tail. One device
+      pixel of pad on each side covers the rounding.
+    */
+    drawPlate(
+      dc,
+      d,
+      cx,
+      ctx.measureText(label.text).width + 2 * padX,
+      labelY - INSET_INK_ABOVE * label.px - dpr,
+      twoLine ? cy : labelY + INSET_INK_BELOW * label.px + dpr,
+    );
   }
   ctx.fillStyle = theme.shapeLabel;
   // The label is what the diagram is *about*; the name is the identifier behind it.
@@ -341,10 +386,17 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
   if (!twoLine) return;
   ctx.font = `${sub.px}px ${INSET_FAMILY}`;
   if (plate) {
-    drawPlate(dc, cx, cy + half, ctx.measureText(sub.text).width + 2 * padX, sub.px * INSET_INK_H);
+    drawPlate(
+      dc,
+      d,
+      cx,
+      ctx.measureText(sub.text).width + 2 * padX,
+      cy,
+      subY + INSET_INK_BELOW * sub.px + dpr,
+    );
   }
   ctx.fillStyle = theme.shapeSubtitle;
-  ctx.fillText(sub.text, cx, cy + half);
+  ctx.fillText(sub.text, cx, subY);
 }
 
 /**

@@ -54,7 +54,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 406 assertions across nine suites. Anything touching
+iteration document. `npm run verify` is 423 assertions across nine suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -136,6 +136,16 @@ when it is maximized, floated or popped out, and the document must not be able t
 Write `src/lib/scene/shapes/<kind>.ts` implementing `ShapeOps` and `<kind>.props.ts` declaring its
 properties, call `registerShape` at the bottom, widen the `Shape` union in `shape.ts`, and add the
 import to `src/lib/register.ts`. Nothing else switches on `kind`.
+
+**If the props file needs anything from the kind file, put it in a third module.** The kind file
+is what `register.ts` imports, so `<kind>.props.ts` importing back from `<kind>.ts` closes a
+cycle — and because the props module consumes those values while it is still evaluating its
+top-level array, they land in the temporal dead zone and the app dies at load with
+`Cannot access '…' before initialization`. `fifo-geom.ts` is that third module; `rect` and
+`conn` never needed one because their props files ask for nothing back.
+
+A kind that draws an axis-aligned box should delegate to `shapes/box.ts` for its handles, resize
+arithmetic, perimeter anchors and body, and to `shapes/heading.ts` for its label.
 
 ### Adding a property
 

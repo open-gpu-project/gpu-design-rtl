@@ -1,5 +1,5 @@
 import { alignStroke } from '../../canvas/pixel';
-import { pointInRect, rectFromPoints, rectsIntersect } from '../../geom/math';
+import { normalizeRect, pointInRect, rectFromPoints, rectsIntersect } from '../../geom/math';
 import type { Rect, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
@@ -12,7 +12,7 @@ import {
   resizeBox,
   resolveBoxAnchor,
 } from './box';
-import { dividers, fifoBox, flowIsFree } from './fifo-geom';
+import { dividers, fifoBox, flowIsFree, minFlow } from './fifo-geom';
 import { fifoProps } from './fifo.props';
 import { headingHit, headingTooltip, type DeviceBox } from './heading';
 
@@ -113,7 +113,41 @@ export const fifoOps: ShapeOps<FifoShape> = {
       ? boxHandles(fifoBox(s))
       : boxHandles(fifoBox(s), s.orientation === 'horizontal' ? 'y' : 'x'),
 
-  resize: (s, handle, p, mods) => ({ ...s, ...resizeBox(fifoBox(s), handle, p, mods) }),
+  /**
+   * Resize, with the unbounded queue's minimum length enforced about the edge the drag PINNED.
+   *
+   * The floor cannot live in `fifoBox`, which sees only an origin and an extent and so can only
+   * grow the box in one direction. Dragging the west handle of a 200-long queue rightward past
+   * the floor then moved the east edge out with it -- the gesture was shrinking the box and the
+   * pinned edge grew away from the cursor. Only `resize` knows which handle moved, so only
+   * `resize` can hold the other edge still.
+   */
+  resize(s, handle, p, mods) {
+    const raw = resizeBox(fifoBox(s), handle, p, mods);
+    if (!flowIsFree(s)) return { ...s, ...raw };
+
+    const horizontal = s.orientation === 'horizontal';
+    const r = normalizeRect(raw);
+    const min = minFlow(s);
+    const len = horizontal ? r.w : r.h;
+    if (len >= min) return { ...s, ...r };
+
+    /*
+      Which edge is pinned. The handle names the edge that MOVED -- but a drag that flipped past
+      the far edge swaps the two round, because `normalizeRect` has already re-labelled the
+      cursor's side as the low edge. Hence the XOR against the flip.
+    */
+    const h = String(handle);
+    const flipped = horizontal ? raw.w < 0 : raw.h < 0;
+    const movedLow = (horizontal ? h.includes('w') : h.includes('n')) !== flipped;
+
+    if (horizontal) {
+      const x = movedLow ? r.x + r.w - min : r.x;
+      return { ...s, x, y: r.y, w: min, h: r.h };
+    }
+    const y = movedLow ? r.y + r.h - min : r.y;
+    return { ...s, x: r.x, y, w: r.w, h: min };
+  },
 
   translate: (s, d) => ({ ...s, x: s.x + d.x, y: s.y + d.y }),
 

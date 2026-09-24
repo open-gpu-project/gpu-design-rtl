@@ -21,10 +21,15 @@ import type { Shape, ShapeName } from './shape';
 /**
  * Stable order in which every shape follows everything in the fragment it depends on.
  *
- * Needed because `deserializeScene` is single-pass: its `PropContext` holds only the records
- * already loaded, and a connection whose endpoint has not been built yet fails `checkEndpoint`,
- * loses its `source`/`target` write, and is then dropped as degenerate. Blocks normally sit
- * below their wires so the z-order already satisfies this -- but `bringToFront` on a block, or
+ * This was written because `deserializeScene` used to be single-pass, which made the ORDER of a
+ * fragment load-bearing: a connection whose endpoint had not been built yet failed
+ * `checkEndpoint`, lost its `source`/`target` write, and was dropped as degenerate. Iteration 6
+ * made that loader two-pass, so the file path no longer needs this.
+ *
+ * It is still needed for the CLIPBOARD, which does not go through that loader:
+ * `readFragment` builds shapes one at a time so it can mint names as it goes, and a pasted
+ * connection ahead of its blocks would hit exactly the old failure. Blocks normally sit below
+ * their wires so the z-order already satisfies this -- but `bringToFront` on a block, or
  * `sendToBack` on a wire, inverts it, and nothing in `zorder.ts` maintains the invariant.
  *
  * Kahn's algorithm with the original index as the tie-break, so the fragment's z-order survives
