@@ -612,7 +612,10 @@ await leaveToolbar();
 // one would read `Pan` and not `Pan ()`.
 t.ok(
   'a tool with no shortcut gets its label alone, not empty parentheses',
-  (await page.evaluate(() => window.__toolTipText({ id: 'x', label: 'Pan', icon: '' }))) === 'Pan',
+  // `icon` is a component now and `toolTipText` ignores it; `null` keeps this from being the
+  // one place in the repo where an icon is still written down as a string.
+  (await page.evaluate(() => window.__toolTipText({ id: 'x', label: 'Pan', icon: null }))) ===
+    'Pan',
 );
 
 /*

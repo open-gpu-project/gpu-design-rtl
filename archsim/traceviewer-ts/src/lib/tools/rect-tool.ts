@@ -1,3 +1,4 @@
+import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import { makeRect } from '../scene/shapes/rect';
@@ -96,6 +97,6 @@ registerTool({
   label: 'Rectangle',
   group: 'shape',
   order: 0,
-  icon: 'M4 5h16v14H4z',
+  icon: RectangleHorizontal,
   make: () => new RectTool(),
 });

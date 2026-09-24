@@ -1,4 +1,13 @@
 <script lang="ts">
+  // One module per icon, and never a `title` prop -- see `Toolbar.svelte`, which follows the
+  // same two rules for the same reasons.
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import Maximize from '@lucide/svelte/icons/maximize';
+  import SkipBack from '@lucide/svelte/icons/skip-back';
+  import SkipForward from '@lucide/svelte/icons/skip-forward';
+  import ZoomIn from '@lucide/svelte/icons/zoom-in';
+  import ZoomOut from '@lucide/svelte/icons/zoom-out';
   import TimelineSurface from '../components/TimelineSurface.svelte';
   import { hint } from '../lib/keys';
   import { useSession } from '../lib/session.svelte';
@@ -93,9 +102,7 @@
         aria-label="First event"
         onclick={() => jump('first')}
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M18 5 9 12l9 7z" /><path d="M6 5v14" />
-        </svg>
+        <SkipBack class="h-4 w-4" />
       </button>
       <button
         class={btn}
@@ -103,9 +110,7 @@
         aria-label="Previous event"
         onclick={() => step(-1)}
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M15 5 8 12l7 7" />
-        </svg>
+        <ChevronLeft class="h-4 w-4" />
       </button>
       <button
         class={btn}
@@ -113,9 +118,7 @@
         aria-label="Next event"
         onclick={() => step(1)}
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronRight class="h-4 w-4" />
       </button>
       <button
         class={btn}
@@ -123,9 +126,7 @@
         aria-label="Last event"
         onclick={() => jump('last')}
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M6 5l9 7-9 7z" /><path d="M18 5v14" />
-        </svg>
+        <SkipForward class="h-4 w-4" />
       </button>
     </div>
 
@@ -154,14 +155,10 @@
 
     <div class={group}>
       <button class={btn} {@attach tip('Zoom out')} aria-label="Zoom out" onclick={() => zoom(-2)}>
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="7" /><path d="M8 11h6M20 20l-4.5-4.5" />
-        </svg>
+        <ZoomOut class="h-4 w-4" />
       </button>
       <button class={btn} {@attach tip('Zoom in')} aria-label="Zoom in" onclick={() => zoom(2)}>
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="7" /><path d="M8 11h6M11 8v6M20 20l-4.5-4.5" />
-        </svg>
+        <ZoomIn class="h-4 w-4" />
       </button>
       <button
         class={btn}
@@ -169,9 +166,7 @@
         aria-label="Fit trace"
         onclick={fit}
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-        </svg>
+        <Maximize class="h-4 w-4" />
       </button>
     </div>
 

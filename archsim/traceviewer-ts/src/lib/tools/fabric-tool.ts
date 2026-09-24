@@ -1,3 +1,4 @@
+import Network from '@lucide/svelte/icons/network';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import { makeFabric } from '../scene/shapes/fabric';
@@ -94,6 +95,6 @@ registerTool({
   label: 'Fabric',
   group: 'shape',
   order: 3,
-  icon: 'M3 9h18v6H3zm4 -4v4m5-4v4m5-4v4M7 15v4m5-4v4m5-4v4',
+  icon: Network,
   make: () => new FabricTool(),
 });

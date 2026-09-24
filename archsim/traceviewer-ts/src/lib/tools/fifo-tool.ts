@@ -1,3 +1,4 @@
+import Columns3 from '@lucide/svelte/icons/columns-3';
 import type { Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import { makeFifo } from '../scene/shapes/fifo';
@@ -104,6 +105,6 @@ registerTool({
   label: 'Queue (FIFO)',
   group: 'shape',
   order: 2,
-  icon: 'M3 7h18v10H3zm4.5 0v10M12 7v10m4.5-10v10',
+  icon: Columns3,
   make: () => new FifoTool(),
 });

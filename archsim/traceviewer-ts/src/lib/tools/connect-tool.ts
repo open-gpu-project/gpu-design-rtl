@@ -1,3 +1,4 @@
+import Spline from '@lucide/svelte/icons/spline';
 import { anchorHitTest, type AnchorHit } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
 import { ANCHOR_DOT_R_PX } from '../canvas/theme';
@@ -319,8 +320,6 @@ registerTool({
   label: 'Connection',
   group: 'shape',
   order: 1,
-  // Filled, not stroked: the toolbar renders `fill="currentColor"` with no stroke. An elbow
-  // bar and an arrowhead, as two subpaths under the default nonzero fill rule.
-  icon: 'M4 4h2v11h7v2H4V4z M12 12l7 4-7 4z',
+  icon: Spline,
   make: () => new ConnectTool(),
 });

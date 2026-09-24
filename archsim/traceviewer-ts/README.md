@@ -213,6 +213,13 @@ already there, `shape` for something that adds) and where it sits inside that cl
 Its digit is not declared: the registry hands out `1`…`9` by toolbar position, so the keys always
 count left to right and inserting a tool renumbers its neighbours for you.
 
+`icon` is a [Lucide](https://lucide.dev) component, deep-imported one module per icon
+(`import Spline from '@lucide/svelte/icons/spline'`) so the 1600-icon package contributes only
+what is used. Never hand-write SVG path data for a toolbar button, and never pass a `title` prop:
+tooltips come from the `tip()` attachment, and the checks assert that no control in either pane
+carries a native one. `aria-label` is the checks' selector for every button here, so changing
+one is changing a test fixture.
+
 ## Iteration history
 
 `history/` records each revision: what was decided and why, what scaffolding was left for the next

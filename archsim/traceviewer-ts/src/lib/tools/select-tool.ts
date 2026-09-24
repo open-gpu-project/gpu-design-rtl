@@ -1,3 +1,4 @@
+import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2';
 import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
 import {
@@ -543,6 +544,6 @@ registerTool({
   label: 'Pointer',
   group: 'tool',
   order: 0,
-  icon: 'M5 3l14 8-6 1.5L10.5 19z',
+  icon: MousePointer2,
   make: () => new SelectTool(),
 });

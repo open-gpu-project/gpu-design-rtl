@@ -1,4 +1,19 @@
 <script lang="ts">
+  /*
+    Deep-imported one module per icon, which is what keeps a 7 MB, 1600-icon package down to
+    what is used. Never a `title` prop: iteration 5.3 removed every native tooltip in favour of
+    the `tip()` attachment, and the checks assert no control in this pane carries one.
+  */
+  import LayerArrowDown from '@lucide/svelte/icons/layer-arrow-down';
+  import LayerArrowUp from '@lucide/svelte/icons/layer-arrow-up';
+  import LayersArrowDown from '@lucide/svelte/icons/layers-arrow-down';
+  import LayersArrowUp from '@lucide/svelte/icons/layers-arrow-up';
+  import Maximize from '@lucide/svelte/icons/maximize';
+  import Redo from '@lucide/svelte/icons/redo';
+  import Trash from '@lucide/svelte/icons/trash';
+  import Undo from '@lucide/svelte/icons/undo';
+  import ZoomIn from '@lucide/svelte/icons/zoom-in';
+  import ZoomOut from '@lucide/svelte/icons/zoom-out';
   import type { SceneStore } from '../lib/scene/scene.svelte';
   import type { ToolHost } from '../lib/tools/host.svelte';
   import { hint, keys } from '../lib/keys';
@@ -47,7 +62,7 @@
           onclick={() => host.setTool(tool.id)}
           {@attach tip(toolTipText(tool))}
         >
-          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor"><path d={tool.icon} /></svg>
+          <tool.icon class="h-4 w-4" />
         </button>
       {/each}
     </div>
@@ -66,9 +81,7 @@
       disabled={!scene.history.canUndo}
       onclick={() => host.undo()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M9 7L4 12l5 5M4 12h11a5 5 0 010 10h-1" />
-      </svg>
+      <Undo class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -80,9 +93,7 @@
       disabled={!scene.history.canRedo}
       onclick={() => host.redo()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M15 7l5 5-5 5M20 12H9a5 5 0 000 10h1" />
-      </svg>
+      <Redo class="h-4 w-4" />
     </button>
   </div>
 
@@ -96,15 +107,7 @@
       disabled={!hasSelection}
       onclick={() => host.bringToFront()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="12" height="12" /><rect
-          x="9"
-          y="9"
-          width="12"
-          height="12"
-          fill="currentColor"
-        />
-      </svg>
+      <LayerArrowUp class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -113,9 +116,7 @@
       disabled={!hasSelection}
       onclick={() => host.bringForward()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 4v12M7 9l5-5 5 5M5 20h14" />
-      </svg>
+      <LayersArrowUp class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -124,9 +125,7 @@
       disabled={!hasSelection}
       onclick={() => host.sendBackward()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 20V8M7 15l5 5 5-5M5 4h14" />
-      </svg>
+      <LayersArrowDown class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -135,14 +134,7 @@
       disabled={!hasSelection}
       onclick={() => host.sendToBack()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="12" height="12" fill="currentColor" /><rect
-          x="9"
-          y="9"
-          width="12"
-          height="12"
-        />
-      </svg>
+      <LayerArrowDown class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -151,9 +143,7 @@
       disabled={!hasSelection}
       onclick={() => host.deleteSelection()}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
-      </svg>
+      <Trash class="h-4 w-4" />
     </button>
   </div>
 
@@ -164,9 +154,7 @@
       onclick={() => host.zoomByStep(-1)}
       {@attach tip('Zoom out')}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="7" /><path d="M8 11h6M16 16l4 4" />
-      </svg>
+      <ZoomOut class="h-4 w-4" />
     </button>
     <button
       class="min-w-14 rounded px-2 py-1 text-xs text-[var(--color-ink-dim)] tabular-nums hover:bg-white/5"
@@ -181,9 +169,7 @@
       onclick={() => host.zoomByStep(1)}
       {@attach tip('Zoom in')}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="7" /><path d="M8 11h6M11 8v6M16 16l4 4" />
-      </svg>
+      <ZoomIn class="h-4 w-4" />
     </button>
     <button
       class={btn}
@@ -191,9 +177,7 @@
       onclick={() => host.zoomToFit()}
       {@attach tip(hint('Zoom to fit', 'cmd', '1'))}
     >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-      </svg>
+      <Maximize class="h-4 w-4" />
     </button>
   </div>
 </div>

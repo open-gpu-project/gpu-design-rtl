@@ -1,3 +1,4 @@
+import type { LucideIcon } from '@lucide/svelte';
 import { hint } from '../keys';
 import type { Tool, ToolId } from './tool';
 
@@ -18,8 +19,16 @@ const GROUP_ORDER: readonly ToolGroup[] = ['tool', 'shape'];
 export interface ToolDeclaration {
   readonly id: ToolId;
   readonly label: string;
-  /** Inline SVG path data, drawn in a 24x24 viewBox by the toolbar. */
-  readonly icon: string;
+  /**
+   * The glyph, as a Lucide component -- deep-imported per icon, so the 1600-icon package
+   * contributes only what is actually used.
+   *
+   * A component rather than path data because path data has no style. The toolbar drew registry
+   * icons filled and every hand-written button stroked, and `fifo` and `fabric` were authored as
+   * stroke data under the fill rule, so they rendered as thin filled slivers. One component type
+   * makes that class of mismatch unrepresentable.
+   */
+  readonly icon: LucideIcon;
   readonly group: ToolGroup;
   /** Position within `group`, low to high. Gaps are fine; only the order matters. */
   readonly order: number;

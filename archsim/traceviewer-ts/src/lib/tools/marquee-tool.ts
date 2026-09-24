@@ -1,3 +1,4 @@
+import SquareDashedMousePointer from '@lucide/svelte/icons/square-dashed-mouse-pointer';
 import { keys } from '../keys';
 import { alignStroke } from '../canvas/pixel';
 import { DRAG_SLOP_PX } from '../canvas/theme';
@@ -184,8 +185,6 @@ registerTool({
   label: 'Select',
   group: 'tool',
   order: 1,
-  icon:
-    'M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 0h2v6h-6v-2h4v-4z' +
-    'M11 3h2v2h-2V3zm0 16h2v2h-2v-2zM3 11h2v2H3v-2zm16 0h2v2h-2v-2z',
+  icon: SquareDashedMousePointer,
   make: () => new MarqueeTool(),
 });
