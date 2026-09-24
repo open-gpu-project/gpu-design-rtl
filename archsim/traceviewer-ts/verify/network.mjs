@@ -811,6 +811,137 @@ async function connect(a, b) {
   );
 }
 
+// ------------------------------------------------- the fold settles, in one call ----
+
+/*
+  Iteration 6.2. `rerouteAll` used to build its dependency map ONCE, from the array it was
+  handed, so a call resolved exactly one level of the graph. The real chain is two deep --
+  `conn -> nif -> fabric` -- which is why a wire glued to a port lagged the fabric that port
+  sits on: live during the drag for a block-to-block wire, one commit late for this one.
+
+  None of it shows in a screenshot taken after the gesture ends, which is how it survived two
+  iterations. All three checks here are about a moment DURING a gesture, or about the array
+  identity a second sweep hands back.
+*/
+{
+  await seed([fabric('A', 120, 120, 320, 56, 1), block('C', 640, 400, 120, 90)]);
+  await setPins('A', [['s', 'aw', 'master']]);
+  const [pin] = await pinsOf('A');
+  await connect(pin, { x: 640, y: 445 });
+
+  const shot = () =>
+    page.evaluate(() => {
+      const sc = window.__scene;
+      const w = sc.shapes.find((s) => s.kind === 'conn');
+      const p = sc.shapes.find((s) => s.kind === 'nif');
+      const a = window.__ops('nif').resolveAnchor(p, 'out');
+      return {
+        p0: [w.points[0].x, w.points[0].y],
+        anchor: [a.pos.x, a.pos.y],
+        pin: [p.x, p.y],
+      };
+    });
+
+  /*
+    The fixed point, which is three properties in one assertion: that the fold settles, that a
+    settled array comes back BY REFERENCE (so a commit touching nothing cannot push an undo
+    entry), and -- because `sweepCap` walks the graph -- that there is no dependency cycle.
+  */
+  const fixed = await page.evaluate(() => {
+    const shapes = window.__scene.shapes;
+    return window.__resolve.rerouteAll(shapes) === shapes;
+  });
+  t.ok('a committed scene is already a fixed point of the fold', fixed);
+
+  const before = await shot();
+  const grab = await toScreen(280, 144);
+  await page.mouse.move(box.x + grab.x, box.y + grab.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + grab.x, box.y + grab.y - 96, { steps: 10 });
+  await page.waitForTimeout(140);
+  const during = await shot();
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+
+  /*
+    The depth-two sibling of `connections.mjs`'s "a connection follows its block during the
+    drag". That one passes on a depth-one chain and so passed before this change too; this one
+    drags the FABRIC and watches the wire on its port, which is the case that lagged.
+  */
+  t.ok(
+    'the port moves with the fabric mid-drag',
+    JSON.stringify(during.pin) !== JSON.stringify(before.pin),
+    JSON.stringify(during.pin),
+  );
+  t.ok(
+    'and the wire on it keeps up in the same frame, not on release',
+    JSON.stringify(during.p0) === JSON.stringify(during.anchor),
+    `${JSON.stringify(during.p0)} vs anchor ${JSON.stringify(during.anchor)}`,
+  );
+
+  /*
+    The load case, which is the same cut-off with no gesture in it at all. An interface has no
+    saved position -- deliberately, it has a side and an offset -- so a port read from a file
+    carries `blank()`'s origin until its own `reroute` runs. A wire bound to that port used to
+    resolve against the origin copy and draw itself to the top-left of the world.
+  */
+  await seed([
+    fabric('F', 160, 160, 320, 56, 1),
+    {
+      kind: 'nif',
+      name: 'p',
+      label: '',
+      description: '',
+      parent: 'F',
+      side: 'n',
+      offset: 96,
+      size: [48, 16],
+      protocol: 'axi3',
+      channel: 'all',
+      modport: 'master',
+    },
+    block('D', 640, 300, 120, 90),
+    {
+      kind: 'conn',
+      name: 'w',
+      label: '',
+      description: '',
+      labelOffset: [0, 0],
+      routing: 'auto',
+      path: 'curve',
+      source: ['p', 'out'],
+      target: ['D', 'w'],
+      points: [
+        [0, 0],
+        [10, 10],
+      ],
+    },
+  ]);
+
+  const loaded = await page.evaluate(() => {
+    const sc = window.__scene;
+    const w = sc.shapes.find((s) => s.kind === 'conn');
+    const p = sc.shapes.find((s) => s.kind === 'nif');
+    if (w === undefined || p === undefined) return null;
+    const a = window.__ops('nif').resolveAnchor(p, 'out');
+    return {
+      p0: [w.points[0].x, w.points[0].y],
+      anchor: [a.pos.x, a.pos.y],
+      pin: [p.x, p.y],
+    };
+  });
+  t.ok(
+    'a port read from a file is placed on its parent’s border',
+    loaded !== null && JSON.stringify(loaded.pin) !== JSON.stringify([0, 0]),
+    JSON.stringify(loaded),
+  );
+  t.ok(
+    'and a wire bound to it lands on the real anchor, not the world origin',
+    loaded !== null && JSON.stringify(loaded.p0) === JSON.stringify(loaded.anchor),
+    JSON.stringify(loaded),
+  );
+}
+
 const failed = t.report(errors);
 await browser.close();
 process.exit(failed > 0 ? 1 : 0);

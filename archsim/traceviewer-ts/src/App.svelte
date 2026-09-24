@@ -28,6 +28,7 @@
     routeConnection,
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
+  import { pruneOrphans, rerouteAll, resolveDependencies } from './lib/scene/resolve';
   import {
     autoWaypoints,
     collapseCurve,
@@ -125,6 +126,16 @@
         NO_CORRIDORS,
         ROUTE_MAX_SEGMENTS,
       },
+      /*
+        The dependency fold itself, which no other handle can stand in for.
+
+        `resolve.ts` imports the registry, so a check cannot import it by URL without getting a
+        second, empty copy of that registry (see `__ops`). And without a handle on it the one
+        property iteration 6.2 exists for -- that the array comes back SETTLED, in one call,
+        rather than one level per commit -- is indistinguishable from the old behaviour except
+        by driving two commits and watching the geometry catch up on the second.
+      */
+      __resolve: { rerouteAll, pruneOrphans, resolveDependencies },
       __anchor: {
         anchorAt: (s: Shape, p: Vec2, worldPerPx: number) =>
           opsFor(s).anchorAt?.(s, p, { worldPerPx }) ?? null,

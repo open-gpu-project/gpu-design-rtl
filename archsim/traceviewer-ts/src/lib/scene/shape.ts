@@ -283,6 +283,10 @@ export type Handle = PointHandle | SegmentHandle;
  * Deliberately narrow: the implementation behind it is mutated by the reroute fold *after* each
  * `reroute` call returns, so a shape that retained the instance would observe geometry that did
  * not exist when it was built. Query-only makes that impossible to do by accident.
+ *
+ * Narrower still since iteration 6.2: the index is built and thrown away within a single sweep
+ * of `rerouteAll`, which may sweep more than once. A retained instance would therefore also
+ * offer runs drawn by a version of the scene that no longer exists.
  */
 export interface CorridorQuery {
   /** Ascending vertical-run x coordinates within `[lo, hi]`. */
@@ -461,6 +465,13 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * MUST return `s` itself by reference when nothing changed. `SceneStore.commit` decides
    * whether to push an undo entry by comparing `shapes` identity, so a `reroute` that always
    * allocates turns every commit -- including ones that touched nothing -- into a history entry.
+   *
+   * MUST also be idempotent: `reroute(reroute(s)) === reroute(s)`, by reference. `rerouteAll`
+   * settles by sweeping until nothing moves, so an implementation that keeps producing a new
+   * value from its own output would not merely cost a history entry -- it would not terminate,
+   * and the sweep cap would turn that into a silent one-commit lag instead. Both current
+   * implementations satisfy it for the same reason: `nif.reroute` consumes its `pending` nudge
+   * and the second call finds nothing pending, and a connection re-derives from its endpoints.
    */
   reroute?(s: S, deps: ReadonlyMap<ShapeName, Shape>, rc: RouteContext): S;
 
