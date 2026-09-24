@@ -135,7 +135,7 @@ const props: readonly PropDef<FifoShape>[] = [
   {
     key: 'spacing',
     title: 'Spacing',
-    doc: `The divider pitch in world units — one cell's extent along the flow direction, not the blank between two of them. A bounded queue's length is this times the cell count, so changing it here lengthens the box rather than squeezing the cells into it. At least ${MIN_SPACING}, below which the dividers are hairline mush at any useful zoom.`,
+    doc: `The divider pitch in world units — one cell's extent along the flow direction, not the blank between two of them. A bounded queue's length is this times the cell count, so changing it here lengthens the box rather than squeezing the cells into it. Defaults to ${GRID}, one grid step, so the dividers line up with the dots behind them. At least ${MIN_SPACING}, below which the dividers are hairline mush at any useful zoom.`,
     mode: 'edit',
     type: { type: 'integer', minimum: MIN_SPACING },
     read: (s) => s.spacing,

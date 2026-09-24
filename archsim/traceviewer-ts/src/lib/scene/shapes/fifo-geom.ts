@@ -25,15 +25,35 @@ import type { FifoShape } from '../shape';
  * Asymmetric on purpose: three cells is the smallest run that reads as a *sequence* rather than
  * as a pair, and one is the smallest that reads as a cell at all. Putting the run at the tail
  * matches how a queue is drawn on a whiteboard, with the head it drains from on the left.
+ *
+ * The shape only survives while the gap is visibly not a cell, which is why `minGap` is a
+ * fraction of the pitch rather than a constant -- see it for what went wrong when it was one.
  */
 export const HEAD_CELLS = 1;
 export const TAIL_CELLS = 3;
 
-/** The smallest divider pitch worth drawing. Below this the cells are hairline mush. */
+/**
+ * The smallest divider pitch worth drawing. Below this the cells are hairline mush.
+ *
+ * Half the default pitch since iteration 6.2, where that default became one grid step. It was a
+ * quarter of it before, which is the only thing about this constant that changed.
+ */
 export const MIN_SPACING = GRID / 2;
 
-/** The smallest gap an unbounded queue keeps between its head cell and its tail run. */
-export const MIN_GAP = GRID;
+/**
+ * The smallest gap an unbounded queue keeps between its head cell and its tail run.
+ *
+ * **Relative to the pitch, not a constant, and that is the point.** The rule is "the gap is half
+ * a cell": wide enough to read as a break in the run, narrow enough that it does not read as a
+ * fifth cell. It was `GRID`, which WAS half a cell while the default pitch was two grid steps --
+ * and became exactly one cell when iteration 6.2 halved that default, turning a minimum-size
+ * unbounded queue into a uniform run of five and losing the 1-gap-3 shape entirely.
+ *
+ * At the old default it returns 16, so nothing drawn before this change moves.
+ */
+export function minGap(spacing: number): number {
+  return Math.max(MIN_SPACING, Math.round(spacing / 2));
+}
 
 /**
  * The most cells a bounded queue may declare.
@@ -59,7 +79,7 @@ export function flowKey(s: FifoShape): 'w' | 'h' {
 /** The shortest an unbounded queue may be: its four drawn cells, plus a gap between them. */
 export function minFlow(s: FifoShape): number {
   const spacing = Math.max(MIN_SPACING, s.spacing);
-  return (HEAD_CELLS + TAIL_CELLS) * spacing + MIN_GAP;
+  return (HEAD_CELLS + TAIL_CELLS) * spacing + minGap(spacing);
 }
 
 /**

@@ -38,6 +38,7 @@
     flattenCurve,
   } from './lib/scene/curve';
   import { arrowBox } from './lib/scene/shapes/conn';
+  import { makeFifo } from './lib/scene/shapes/fifo';
   import { fitInsetLine, insetType } from './lib/scene/shapes/heading';
   import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
   import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
@@ -189,6 +190,15 @@
         overlap can be pinned exactly, rather than inferred from which pixels went missing.
       */
       __arrowBox: arrowBox,
+      /*
+        A queue from two corners, as the creation drag builds it.
+
+        Exposed for the one case a gesture can no longer reach: the pointer is grid-snapped and
+        the pitch is now one grid step, so every dragged extent is a whole number of cells and
+        `makeFifo`'s rounding is unreachable from the canvas. It is still the rule for any other
+        caller, so it still needs a check.
+      */
+      __makeFifo: makeFifo,
       /*
         The toolbar's tooltip text, as a pure function.
 

@@ -350,8 +350,7 @@ const clear = async () => {
   await page.mouse.move(box.x + at.x, box.y + at.y);
   await page.mouse.down();
 
-  // Multiples of GRID, so the pointer's snap does not turn up as a discrepancy of its own. 272
-  // is 8.5 cells at the seeded spacing, which is what puts the rounding under test.
+  // Multiples of GRID, so the pointer's snap does not turn up as a discrepancy of its own.
   const short = await holdAt({ w: 128, h: 80 });
   const long = await holdAt({ w: 272, h: 80 });
 
@@ -362,12 +361,18 @@ const clear = async () => {
     `${short?.cells} -> ${long?.cells}`,
   );
   /*
-    Within half a cell of the cursor on the flow axis -- the rounding, and nothing more -- and
-    exactly on it across, where nothing is derived.
+    EXACTLY on the cursor, on both axes.
+
+    It used to be asserted within half a cell on the flow axis, to leave room for `makeFifo`'s
+    rounding. Since iteration 6.2 the pitch is one grid step and a creation drag is grid-snapped
+    at both corners, so a dragged extent is always a whole number of cells and the rounding
+    cannot fire through any gesture -- which makes the ghost's promise exact, and worth
+    asserting as exact. The rounding itself is covered below, by calling `makeFifo` directly
+    with corners a gesture could not produce.
   */
   t.ok(
     'and whose box tracks the cursor on the flow axis',
-    long !== null && Math.abs(long.b.w - 272) <= long.spacing / 2,
+    long !== null && long.b.w === 272,
     `${long?.b.w} vs 272`,
   );
   t.ok('and matches it exactly across', long !== null && long.b.h === 80, String(long?.b.h));
@@ -413,6 +418,57 @@ const clear = async () => {
     'and what is committed is the shape that was previewed',
     made !== null && made.cells === long.cells && made.b.w === long.b.w && made.b.h === long.b.h,
     `${JSON.stringify(made)} vs ${JSON.stringify(long)}`,
+  );
+
+  /*
+    The two defaults themselves, which nothing pinned before iteration 6.2 -- which is precisely
+    why nothing in the suite noticed when they changed. `blank()` is the file-load default as
+    well as the toolbar's, so the two are asserted separately rather than assumed equal.
+  */
+  const pitch = await page.evaluate(() => {
+    const drawn = [...window.__scene.shapes].reverse().find((x) => x.kind === 'fifo');
+    const ops = window.__ops('fifo');
+    const loaded = window.__doc.deserializeScene({
+      version: 2,
+      shapes: [
+        {
+          kind: 'fifo',
+          name: 'q',
+          label: '',
+          subtitle: '',
+          labelMode: 'inset',
+          description: '',
+          position: [0, 0],
+          size: [64, 32],
+          orientation: 'horizontal',
+          cells: 4,
+        },
+      ],
+    })[0];
+    // Off-grid corners, which a snapped gesture cannot produce: the rounding, still there.
+    const odd = window.__makeFifo({ x: 0, y: 0 }, { x: 105, y: 40 }, 'odd');
+    return {
+      drawn: drawn?.spacing ?? null,
+      blank: ops.blank('z').spacing,
+      loaded: loaded?.spacing ?? null,
+      odd: { cells: odd.cells, spacing: odd.spacing },
+    };
+  });
+  t.ok(
+    'a queue drawn on the canvas has one-grid-step cells',
+    pitch.drawn === 16,
+    String(pitch.drawn),
+  );
+  t.ok('so does a fresh one', pitch.blank === 16, String(pitch.blank));
+  t.ok(
+    'and so does one loaded from a record that omits the pitch',
+    pitch.loaded === 16,
+    String(pitch.loaded),
+  );
+  t.ok(
+    'and an off-grid extent still rounds to the nearest whole queue',
+    pitch.odd.cells === 7 && pitch.odd.spacing === 16,
+    JSON.stringify(pitch.odd),
   );
 }
 

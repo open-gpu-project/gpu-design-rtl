@@ -38,11 +38,18 @@ import { headingHit, headingTooltip, type DeviceBox } from './heading';
  *
  * `round`, so the nearest whole queue wins rather than the drag always growing one; floored at
  * one, because `cells: 0` is refused by the schema.
+ *
+ * **The pitch is one grid step, and that makes the rounding unreachable from a gesture.** A
+ * creation drag is grid-snapped at both corners, so the dragged extent is always a whole number
+ * of cells and the committed box is EXACTLY the dragged box on both axes -- which is what the
+ * ghost promised all along. The `round` stays for the callers that are not gestures. It also
+ * means a drag yields twice the cells it did before iteration 6.2, over the same length.
  */
 export function makeFifo(a: Vec2, b: Vec2, name: ShapeName): FifoShape {
   const r = rectFromPoints(a, b);
   const horizontal = r.w >= r.h;
-  const spacing = GRID * 2;
+  // One grid step, so a divider lands on a dot of the grid behind it rather than between two.
+  const spacing = GRID;
   const cells = clampNum(Math.round((horizontal ? r.w : r.h) / spacing), 1, MAX_CELLS);
   return {
     kind: 'fifo',
@@ -120,7 +127,14 @@ export const fifoOps: ShapeOps<FifoShape> = {
       h: GRID,
       orientation: 'horizontal',
       cells: 4,
-      spacing: GRID * 2,
+      /*
+        Also the file-load default: a record that omits `spacing` is hydrated from this, so a
+        hand-written queue now draws half as long as it did before iteration 6.2. Deliberate --
+        leniency about missing keys exists for hand-authored input, and what it hands back has
+        to be the current default rather than a frozen one -- but worth knowing before wondering
+        why an old sketch came back shorter.
+      */
+      spacing: GRID,
     };
   },
 
