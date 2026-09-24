@@ -4,6 +4,7 @@ include(Catch)
 # Unit tests for the framework-cpp partition
 add_executable(
    framework-cpp-tests
+   ${CMAKE_CURRENT_LIST_DIR}/test_axi3.cc
    ${CMAKE_CURRENT_LIST_DIR}/test_file_trace_sink.cc
    ${CMAKE_CURRENT_LIST_DIR}/test_reg.cc
    ${CMAKE_CURRENT_LIST_DIR}/test_simulation.cc

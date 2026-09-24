@@ -22,7 +22,6 @@ namespace {
    using namespace framework;
    using namespace framework::axi3;
    using partitions::Fabric;
-   namespace fab = partitions::fabric;
 
    /// @brief The TCM decode window used by every test. Half-open: [base, limit).
    constexpr uint32_t kTcmBase = 0x8000'0000;
@@ -73,33 +72,41 @@ namespace {
       Maybe<RChannelData> tcm_master_r{};
    };
 
+   /// The single view `T` of `port`, unwrapped from the tuple `get()` returns.
+   template <typename T>
+   T view(AxiInterfaceHolder& port) {
+      return std::get<T>(port.get<T>());
+   }
+
    /**
-    * DUT wrapper: owns every channel the fabric is wired to, plus the fabric
-    * itself. The channels are registered first so they can be `split()` and
-    * their endpoint views handed to the fabric's constructor. The tests keep
-    * the `Channel&` and drive or probe the far end of each one directly, which
-    * is the end the fabric does not own.
+    * DUT wrapper: owns one `AxiInterfaceHolder` per fabric port, plus the
+    * fabric itself. A holder owns that port's four channels and hands out the
+    * two complementary sets of views -- the fabric takes one side, the test
+    * plays whatever is on the other. Which side each end is falls out of the
+    * view's type: a `*ChannelSink` here is something the test drives, a
+    * `*ChannelSource` something it probes.
+    *
+    * The backpressure tests also ask a holder for the fabric's *own* view of a
+    * channel, to assert that end is full. Nothing stops them: a holder hands
+    * out views on request and never tracks who already has one.
     */
    class FabricDut : public Entity {
    public:
       FabricDut(EntityConfig config, std::pair<uint32_t, uint32_t> tcm_range)
             : Entity{config},
-              axi_hp_ar{add<ArChannel>("axi_hp_ar")},
-              axi_hp_r{add<RChannel>("axi_hp_r")},
-              axi_hp_aw{add<AwChannel>("axi_hp_aw")},
-              axi_hp_w{add<WChannel>("axi_hp_w")},
-              tdsu_ar{add<ArChannel>("tdsu_ar")},
-              tdsu_r{add<RChannel>("tdsu_r")},
-              upq_r{add<RChannel>("upq_r")},
-              tcm_master_r{add<RChannel>("tcm_master_r")},
-              tcm_slave_ar{add<ArChannel>("tcm_slave_ar")},
-              tcm_slave_r{add<RChannel>("tcm_slave_r")},
-              tcm_slave_aw{add<AwChannel>("tcm_slave_aw")},
-              tcm_slave_w{add<WChannel>("tcm_slave_w")},
-              dpq_arb_ar{add<ArChannel>("dpq_arb_ar")},
-              dpq_arb_aw{add<AwChannel>("dpq_arb_aw")},
-              dpq_arb_w{add<WChannel>("dpq_arb_w")},
-              fabric{add_fabric(tcm_range)} {}
+              axi_hp{add_port("axi_hp")},
+              tdsu{add_port("tdsu")},
+              upq{add_port("upq")},
+              tcm_master{add_port("tcm_master")},
+              tcm_slave{add_port("tcm_slave")},
+              dpq_arb{add_port("dpq_arb")},
+              fabric{add_fabric(tcm_range)},
+              axi_hp_r{view<RChannelSink>(axi_hp)},
+              tdsu_ar{view<ArChannelSink>(tdsu)},
+              tcm_slave_r{view<RChannelSink>(tcm_slave)},
+              dpq_arb_ar{view<ArChannelSink>(dpq_arb)},
+              dpq_arb_aw{view<AwChannelSink>(dpq_arb)},
+              dpq_arb_w{view<WChannelSink>(dpq_arb)} {}
 
       /**
        * Advances one cycle, then drains every fabric-driven output channel and
@@ -109,15 +116,15 @@ namespace {
       Observed step() {
          config().simulation.run(1, true);
          return Observed{
-               .axi_hp_ar = take(axi_hp_ar),
-               .axi_hp_aw = take(axi_hp_aw),
-               .axi_hp_w = take(axi_hp_w),
-               .tcm_slave_ar = take(tcm_slave_ar),
-               .tcm_slave_aw = take(tcm_slave_aw),
-               .tcm_slave_w = take(tcm_slave_w),
-               .upq_r = take(upq_r),
-               .tdsu_r = take(tdsu_r),
-               .tcm_master_r = take(tcm_master_r),
+               .axi_hp_ar = take<ArChannelData>(axi_hp),
+               .axi_hp_aw = take<AwChannelData>(axi_hp),
+               .axi_hp_w = take<WChannelData>(axi_hp),
+               .tcm_slave_ar = take<ArChannelData>(tcm_slave),
+               .tcm_slave_aw = take<AwChannelData>(tcm_slave),
+               .tcm_slave_w = take<WChannelData>(tcm_slave),
+               .upq_r = take<RChannelData>(upq),
+               .tdsu_r = take<RChannelData>(tdsu),
+               .tcm_master_r = take<RChannelData>(tcm_master),
          };
       }
 
@@ -134,60 +141,53 @@ namespace {
       /// @brief Advances one cycle without draining, so outputs backpressure.
       void step_no_drain() { config().simulation.run(1, true); }
 
-      // Channels the test drives (the fabric reads these)
-      ArChannel& axi_hp_ar;
-      RChannel& axi_hp_r;
-      AwChannel& axi_hp_aw;
-      WChannel& axi_hp_w;
-      ArChannel& tdsu_ar;
-      RChannel& tdsu_r;
-      RChannel& upq_r;
-      RChannel& tcm_master_r;
-      ArChannel& tcm_slave_ar;
-      RChannel& tcm_slave_r;
-      AwChannel& tcm_slave_aw;
-      WChannel& tcm_slave_w;
-      ArChannel& dpq_arb_ar;
-      AwChannel& dpq_arb_aw;
-      WChannel& dpq_arb_w;
+      // One port per fabric interface. Public so a backpressure test can reach
+      // for the fabric's own end of a channel and assert that it is full.
+      AxiInterfaceHolder& axi_hp;
+      AxiInterfaceHolder& tdsu;
+      AxiInterfaceHolder& upq;
+      AxiInterfaceHolder& tcm_master;
+      AxiInterfaceHolder& tcm_slave;
+      AxiInterfaceHolder& dpq_arb;
       Fabric& fabric;
 
+      // The ends the test drives. Everything it only ever probes is drained by
+      // `step()` instead, so it needs no member of its own.
+      RChannelSink axi_hp_r;
+      ArChannelSink tdsu_ar;
+      RChannelSink tcm_slave_r;
+      ArChannelSink dpq_arb_ar;
+      AwChannelSink dpq_arb_aw;
+      WChannelSink dpq_arb_w;
+
    private:
-      template <typename ChT>
-      ChT& add(std::string_view name) {
-         return config().simulation.add_entity<ChT>(name, config().clock_id, config().id).second;
+      AxiInterfaceHolder& add_port(std::string_view name) {
+         return config()
+               .simulation.add_entity<AxiInterfaceHolder>(name, config().clock_id, config().id)
+               .second;
       }
 
       template <ChannelData T>
-      static Maybe<T> take(Channel<T>& channel) {
-         if (!channel.can_read()) return std::nullopt;
-         auto [data, tag] = channel.read();
+      Maybe<T> take(AxiInterfaceHolder& port) {
+         auto source = view<ChannelSource<T>>(port);
+         if (!source.valid()) return std::nullopt;
+         auto [data, tag] = source.read();
          return Beat<T>{data, tag};
       }
 
       Fabric& add_fabric(std::pair<uint32_t, uint32_t> tcm_range) {
          return config()
                .simulation
-               .add_entity<Fabric>(
-                     "fabric",
-                     config().clock_id,
-                     config().id,
-                     fab::AxiHpIfType{std::get<ArChannelSink>(axi_hp_ar.split()),
-                                      std::get<RChannelSource>(axi_hp_r.split()),
-                                      std::get<AwChannelSink>(axi_hp_aw.split()),
-                                      std::get<WChannelSink>(axi_hp_w.split())},
-                     fab::TdsuIfType{std::get<ArChannelSource>(tdsu_ar.split()),
-                                     std::get<RChannelSink>(tdsu_r.split())},
-                     fab::UpqIfType{std::get<RChannelSink>(upq_r.split())},
-                     fab::TcmMasterIfType{std::get<RChannelSink>(tcm_master_r.split())},
-                     fab::TcmSlaveIfType{std::get<ArChannelSink>(tcm_slave_ar.split()),
-                                         std::get<RChannelSource>(tcm_slave_r.split()),
-                                         std::get<AwChannelSink>(tcm_slave_aw.split()),
-                                         std::get<WChannelSink>(tcm_slave_w.split())},
-                     fab::DpqArbIfType{std::get<ArChannelSource>(dpq_arb_ar.split()),
-                                       std::get<AwChannelSource>(dpq_arb_aw.split()),
-                                       std::get<WChannelSource>(dpq_arb_w.split())},
-                     tcm_range)
+               .add_entity<Fabric>("fabric",
+                                   config().clock_id,
+                                   config().id,
+                                   axi_hp,
+                                   tdsu,
+                                   upq,
+                                   tcm_master,
+                                   tcm_slave,
+                                   dpq_arb,
+                                   tcm_range)
                .second;
       }
    };
@@ -207,7 +207,7 @@ TEST_CASE("fabric: AR routes by address") {
    auto& dut = h.dut;
 
    SECTION("an address inside the TCM window reaches TCM_Slave") {
-      dut.dpq_arb_ar.assign_write(ar(kRidUse0, kTcmAddr), 11);
+      dut.dpq_arb_ar.write(ar(kRidUse0, kTcmAddr), 11);
 
       auto obs = dut.settle();
 
@@ -219,7 +219,7 @@ TEST_CASE("fabric: AR routes by address") {
    }
 
    SECTION("an address outside the TCM window reaches AXI_HP") {
-      dut.dpq_arb_ar.assign_write(ar(kRidUse1, kHpAddr), 12);
+      dut.dpq_arb_ar.write(ar(kRidUse1, kHpAddr), 12);
 
       auto obs = dut.settle();
 
@@ -231,7 +231,7 @@ TEST_CASE("fabric: AR routes by address") {
    }
 
    SECTION("the window is half-open, so its base decodes to TCM_Slave") {
-      dut.dpq_arb_ar.assign_write(ar(kRidUse0, kTcmBase), 13);
+      dut.dpq_arb_ar.write(ar(kRidUse0, kTcmBase), 13);
 
       auto obs = dut.settle();
 
@@ -240,7 +240,7 @@ TEST_CASE("fabric: AR routes by address") {
    }
 
    SECTION("...and its limit decodes to AXI_HP") {
-      dut.dpq_arb_ar.assign_write(ar(kRidUse0, kTcmLimit), 14);
+      dut.dpq_arb_ar.write(ar(kRidUse0, kTcmLimit), 14);
 
       auto obs = dut.settle();
 
@@ -256,8 +256,8 @@ TEST_CASE("fabric: AW and W route together by address") {
    // SPLIT[2] decodes W using AW's address and requires both to be valid in
    // the same cycle, so the two are always driven together.
    SECTION("an address inside the TCM window reaches TCM_Slave") {
-      dut.dpq_arb_aw.assign_write(aw(kRidUse0, kTcmAddr), 21);
-      dut.dpq_arb_w.assign_write(wr(kRidUse0, 0xC0FF'EE00), 22);
+      dut.dpq_arb_aw.write(aw(kRidUse0, kTcmAddr), 21);
+      dut.dpq_arb_w.write(wr(kRidUse0, 0xC0FF'EE00), 22);
 
       auto obs = dut.settle();
 
@@ -273,8 +273,8 @@ TEST_CASE("fabric: AW and W route together by address") {
    }
 
    SECTION("an address outside the TCM window reaches AXI_HP") {
-      dut.dpq_arb_aw.assign_write(aw(kRidUse1, kHpAddr), 23);
-      dut.dpq_arb_w.assign_write(wr(kRidUse1, 0x1234'5678), 24);
+      dut.dpq_arb_aw.write(aw(kRidUse1, kHpAddr), 23);
+      dut.dpq_arb_w.write(wr(kRidUse1, 0x1234'5678), 24);
 
       auto obs = dut.settle();
 
@@ -295,7 +295,7 @@ TEST_CASE("fabric: R responses route by rid") {
    auto& dut = h.dut;
 
    SECTION("a TDSU ifetch id reaches TDSU") {
-      dut.axi_hp_r.assign_write(rd(kRidTdsuIfetch, 0xAAAA'0000), 31);
+      dut.axi_hp_r.write(rd(kRidTdsuIfetch, 0xAAAA'0000), 31);
 
       auto obs = dut.settle();
 
@@ -308,7 +308,7 @@ TEST_CASE("fabric: R responses route by rid") {
    }
 
    SECTION("a TCM fill id reaches TCM_Master") {
-      dut.axi_hp_r.assign_write(rd(kRidTcmFill, 0xBBBB'0000), 32);
+      dut.axi_hp_r.write(rd(kRidTcmFill, 0xBBBB'0000), 32);
 
       auto obs = dut.settle();
 
@@ -324,7 +324,7 @@ TEST_CASE("fabric: R responses route by rid") {
       tag_t tag = 33;
       for (uint8_t rid : {kRidUse0, kRidUse1, kRidUse2}) {
          INFO("rid = " << static_cast<unsigned>(rid));
-         dut.axi_hp_r.assign_write(rd(rid, 0xCCCC'0000), tag);
+         dut.axi_hp_r.write(rd(rid, 0xCCCC'0000), tag);
 
          auto obs = dut.settle();
 
@@ -340,7 +340,7 @@ TEST_CASE("fabric: R responses route by rid") {
    SECTION("a reserved id falls through to UPQ") {
       // SPLIT[3] sends anything that is not a TCM fill or an ifetch to ARB[1],
       // so a reserved encoding is delivered rather than dropped.
-      dut.axi_hp_r.assign_write(rd(kRidReserved, 0xDDDD'0000), 34);
+      dut.axi_hp_r.write(rd(kRidReserved, 0xDDDD'0000), 34);
 
       auto obs = dut.settle();
 
@@ -355,7 +355,7 @@ TEST_CASE("fabric: rid survives a round trip through AXI_HP") {
    Harness h{};
    auto& dut = h.dut;
 
-   dut.dpq_arb_ar.assign_write(ar(kRidUse1, kHpAddr), 41);
+   dut.dpq_arb_ar.write(ar(kRidUse1, kHpAddr), 41);
    auto req = dut.settle();
 
    REQUIRE(req.axi_hp_ar.has_value());
@@ -363,7 +363,7 @@ TEST_CASE("fabric: rid survives a round trip through AXI_HP") {
 
    // The test plays the AXI_HP slave: return a beat under the id it saw.
    const auto rid = static_cast<uint8_t>(req.axi_hp_ar->data.arid.to_ulong());
-   dut.axi_hp_r.assign_write(rd(rid, 0xDEAD'BEEF), 42);
+   dut.axi_hp_r.write(rd(rid, 0xDEAD'BEEF), 42);
    auto rsp = dut.settle();
 
    REQUIRE(rsp.upq_r.has_value());
@@ -376,7 +376,7 @@ TEST_CASE("fabric: rid survives a round trip through TCM_Slave") {
    Harness h{};
    auto& dut = h.dut;
 
-   dut.dpq_arb_ar.assign_write(ar(kRidUse2, kTcmAddr), 43);
+   dut.dpq_arb_ar.write(ar(kRidUse2, kTcmAddr), 43);
    auto req = dut.settle();
 
    REQUIRE(req.tcm_slave_ar.has_value());
@@ -384,7 +384,7 @@ TEST_CASE("fabric: rid survives a round trip through TCM_Slave") {
 
    // The test plays the TCM slave this time; the response still lands at UPQ.
    const auto rid = static_cast<uint8_t>(req.tcm_slave_ar->data.arid.to_ulong());
-   dut.tcm_slave_r.assign_write(rd(rid, 0xFEED'FACE), 44);
+   dut.tcm_slave_r.write(rd(rid, 0xFEED'FACE), 44);
    auto rsp = dut.settle();
 
    REQUIRE(rsp.upq_r.has_value());
@@ -398,7 +398,7 @@ TEST_CASE("fabric: a TDSU ifetch round trip returns to TDSU") {
    auto& dut = h.dut;
 
    // TDSU's own AR reaches AXI_HP through ARB[0]...
-   dut.tdsu_ar.assign_write(ar(kRidTdsuIfetch, kHpAddr), 45);
+   dut.tdsu_ar.write(ar(kRidTdsuIfetch, kHpAddr), 45);
    auto req = dut.settle();
 
    REQUIRE(req.axi_hp_ar.has_value());
@@ -406,7 +406,7 @@ TEST_CASE("fabric: a TDSU ifetch round trip returns to TDSU") {
 
    // ...and the response comes back down SPLIT[3] and SPLIT[4] to TDSU.
    const auto rid = static_cast<uint8_t>(req.axi_hp_ar->data.arid.to_ulong());
-   dut.axi_hp_r.assign_write(rd(rid, 0x0BAD'C0DE), 46);
+   dut.axi_hp_r.write(rd(rid, 0x0BAD'C0DE), 46);
    auto rsp = dut.settle();
 
    REQUIRE(rsp.tdsu_r.has_value());
@@ -422,8 +422,8 @@ TEST_CASE("fabric: ARB[0] serializes TDSU.AR and DPQ_ARB.AR without loss") {
 
    // Both masters present a request in the same cycle. DPQ's address is
    // outside the TCM window, so SPLIT[0] offers it to ARB[0] as a contender.
-   dut.tdsu_ar.assign_write(ar(kRidTdsuIfetch, kHpAddr), 51);
-   dut.dpq_arb_ar.assign_write(ar(kRidUse2, kHpAddr), 52);
+   dut.tdsu_ar.write(ar(kRidTdsuIfetch, kHpAddr), 51);
+   dut.dpq_arb_ar.write(ar(kRidUse2, kHpAddr), 52);
 
    auto first = dut.settle();
 
@@ -451,8 +451,8 @@ TEST_CASE("fabric: ARB[1] serializes TCM_Slave.R and AXI_HP.R without loss") {
 
    // Both response sources are valid in the same cycle. The AXI_HP beat
    // carries an XU id, so SPLIT[3] offers it to ARB[1] as a contender.
-   dut.tcm_slave_r.assign_write(rd(kRidUse0, 0xAAAA'AAAA), 61);
-   dut.axi_hp_r.assign_write(rd(kRidUse1, 0xBBBB'BBBB), 62);
+   dut.tcm_slave_r.write(rd(kRidUse0, 0xAAAA'AAAA), 61);
+   dut.axi_hp_r.write(rd(kRidUse1, 0xBBBB'BBBB), 62);
 
    auto first = dut.settle();
 
@@ -474,21 +474,21 @@ TEST_CASE("fabric: a full AXI_HP.AR holds a request instead of dropping it") {
    auto& dut = h.dut;
 
    // Fill AXI_HP.AR to its depth of two and leave it undrained.
-   dut.tdsu_ar.assign_write(ar(kRidTdsuIfetch, kHpAddr), 71);
+   dut.tdsu_ar.write(ar(kRidTdsuIfetch, kHpAddr), 71);
    dut.step_no_drain();
-   dut.tdsu_ar.assign_write(ar(kRidTdsuIfetch, kHpAddr), 72);
+   dut.tdsu_ar.write(ar(kRidTdsuIfetch, kHpAddr), 72);
    dut.step_no_drain();
    dut.step_no_drain();
-   REQUIRE_FALSE(dut.axi_hp_ar.can_write());
+   REQUIRE_FALSE(view<ArChannelSink>(dut.axi_hp).ready());
 
    // A DPQ request that decodes to AXI_HP now has nowhere to go.
-   dut.dpq_arb_ar.assign_write(ar(kRidUse2, kHpAddr), 73);
+   dut.dpq_arb_ar.write(ar(kRidUse2, kHpAddr), 73);
    dut.step_no_drain();
    dut.step_no_drain();
 
    // It must still be sitting in its own channel, untouched.
-   REQUIRE(dut.dpq_arb_ar.can_read());
-   REQUIRE(dut.dpq_arb_ar.peek()->arid.to_ulong() == kRidUse2);
+   REQUIRE(view<ArChannelSource>(dut.dpq_arb).valid());
+   REQUIRE(view<ArChannelSource>(dut.dpq_arb).peek()->arid.to_ulong() == kRidUse2);
 
    // Draining AXI_HP.AR lets the backlog through, in order and with tags intact.
    auto a = dut.step();
@@ -509,22 +509,22 @@ TEST_CASE("fabric: a TDSU ifetch return is not blocked by a full TCM_Master.R") 
    auto& dut = h.dut;
 
    // Fill TCM_Master.R to its depth of two and leave it undrained.
-   dut.axi_hp_r.assign_write(rd(kRidTcmFill, 0x1111'1111), 81);
+   dut.axi_hp_r.write(rd(kRidTcmFill, 0x1111'1111), 81);
    dut.step_no_drain();
-   dut.axi_hp_r.assign_write(rd(kRidTcmFill, 0x2222'2222), 82);
+   dut.axi_hp_r.write(rd(kRidTcmFill, 0x2222'2222), 82);
    dut.step_no_drain();
    dut.step_no_drain();
-   REQUIRE_FALSE(dut.tcm_master_r.can_write());
+   REQUIRE_FALSE(view<RChannelSink>(dut.tcm_master).ready());
 
    // SPLIT[4]'s two destinations are independent, so an ifetch return takes
    // its own path rather than queueing behind a TCM fill it has nothing to
    // do with.
-   dut.axi_hp_r.assign_write(rd(kRidTdsuIfetch, 0x3333'3333), 83);
+   dut.axi_hp_r.write(rd(kRidTdsuIfetch, 0x3333'3333), 83);
    dut.step_no_drain();
    dut.step_no_drain();
 
-   REQUIRE(dut.tdsu_r.can_read());
-   REQUIRE(dut.tdsu_r.peek()->rdata.to_ulong() == 0x3333'3333u);
+   REQUIRE(view<RChannelSource>(dut.tdsu).valid());
+   REQUIRE(view<RChannelSource>(dut.tdsu).peek()->rdata.to_ulong() == 0x3333'3333u);
 }
 
 TEST_CASE("fabric: a TDSU ifetch return is held when TDSU.R is full") {
@@ -532,20 +532,20 @@ TEST_CASE("fabric: a TDSU ifetch return is held when TDSU.R is full") {
    auto& dut = h.dut;
 
    // Fill TDSU.R to its depth of two and leave it undrained.
-   dut.axi_hp_r.assign_write(rd(kRidTdsuIfetch, 0x4444'4444), 91);
+   dut.axi_hp_r.write(rd(kRidTdsuIfetch, 0x4444'4444), 91);
    dut.step_no_drain();
-   dut.axi_hp_r.assign_write(rd(kRidTdsuIfetch, 0x5555'5555), 92);
+   dut.axi_hp_r.write(rd(kRidTdsuIfetch, 0x5555'5555), 92);
    dut.step_no_drain();
    dut.step_no_drain();
-   REQUIRE_FALSE(dut.tdsu_r.can_write());
+   REQUIRE_FALSE(view<RChannelSink>(dut.tdsu).ready());
 
    // TCM_Master.R is wide open, but that must not license a write into a full
    // TDSU.R: the beat is held in AXI_HP.R instead.
-   dut.axi_hp_r.assign_write(rd(kRidTdsuIfetch, 0x6666'6666), 93);
+   dut.axi_hp_r.write(rd(kRidTdsuIfetch, 0x6666'6666), 93);
    dut.step_no_drain();
    REQUIRE_NOTHROW(dut.step_no_drain());
 
-   REQUIRE(dut.axi_hp_r.can_read());
-   REQUIRE(dut.axi_hp_r.peek()->rdata.to_ulong() == 0x6666'6666u);
-   REQUIRE_FALSE(dut.tcm_master_r.can_read());
+   REQUIRE(view<RChannelSource>(dut.axi_hp).valid());
+   REQUIRE(view<RChannelSource>(dut.axi_hp).peek()->rdata.to_ulong() == 0x6666'6666u);
+   REQUIRE_FALSE(view<RChannelSource>(dut.tcm_master).valid());
 }

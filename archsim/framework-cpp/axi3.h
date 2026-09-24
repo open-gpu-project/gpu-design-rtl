@@ -1,8 +1,11 @@
 #pragma once
 
 #include <bitset>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
+#include "concepts.h"
 #include "fifo.h"
 #include "simulation.h"
 
@@ -111,16 +114,11 @@ namespace framework::axi3 {
    template <ChannelData T>
    struct Channel : Fifo<T, 2> {
    public:
-      using Fifo<T, 2>::Fifo;
-
+      Channel(EntityConfig config) : Fifo<T, 2>{config} {}
       std::tuple<ChannelSource<T>, ChannelSink<T>> split() {
          return {ChannelSource<T>(*this), ChannelSink<T>(*this)};
       }
    };
-
-   /**
-    * Type aliases for the channel source and sink structs.
-    */
 
    using ArChannel = Channel<ArChannelData>;
    using ArChannelSource = ChannelSource<ArChannelData>;
@@ -134,5 +132,115 @@ namespace framework::axi3 {
    using WChannel = Channel<WChannelData>;
    using WChannelSource = ChannelSource<WChannelData>;
    using WChannelSink = ChannelSink<WChannelData>;
+
+   // Master AXI3 port named in SystemVerilog modport convention
+   using MasterInterface = std::tuple< //
+         ArChannelSource,              //
+         AwChannelSource,
+         WChannelSource,
+         RChannelSink>;
+
+   // Slave AXI3 port named in SystemVerilog modport convention
+   using SlaveInterface = std::tuple< //
+         ArChannelSink,               //
+         AwChannelSink,
+         WChannelSink,
+         RChannelSource>;
+
+   // Satisfied when `Ts...` are distinct element types of `MasterInterface`.
+   template <typename... Ts>
+   concept MasterSubset = detail::is_tuple_subset_v<MasterInterface, Ts...>;
+
+   // Satisfied when `Ts...` are distinct element types of `SlaveInterface`.
+   template <typename... Ts>
+   concept SlaveSubset = detail::is_tuple_subset_v<SlaveInterface, Ts...>;
+
+   // Satisfied when `Ts...` names views from exactly one side of the interface.
+   template <typename... Ts>
+   concept InterfaceSubset = MasterSubset<Ts...> != SlaveSubset<Ts...>;
+
+   // Tuple-typed forms of the three above: satisfied when `T` is a `std::tuple`
+   // whose elements satisfy the matching pack concept. These let a caller name a
+   // declared interface alias rather than respelling its element types.
+   template <typename T>
+   concept MasterSubsetTuple = detail::is_tuple_subset_of_v<MasterInterface, T>;
+
+   template <typename T>
+   concept SlaveSubsetTuple = detail::is_tuple_subset_of_v<SlaveInterface, T>;
+
+   template <typename T>
+   concept InterfaceSubsetTuple = MasterSubsetTuple<T> != SlaveSubsetTuple<T>;
+
+   // Holds the AXI channels and provides a way to get the master/slave interfaces.
+   struct AxiInterfaceHolder : Entity {
+   public:
+      AxiInterfaceHolder(EntityConfig config)
+            : Entity{config},
+              channels{make_channels(config)},
+              interfaces{get_interfaces(channels)} {}
+
+      /**
+       * Returns the requested channel views as a tuple, in the order requested.
+       * `Ts...` must be mut-ex-subsets of `MasterInterface` or SlaveInterface`.
+       */
+      template <typename... Ts>
+         requires InterfaceSubset<Ts...>
+      std::tuple<Ts...> get() {
+         if constexpr (MasterSubset<Ts...>) {
+            auto& side = std::get<MasterInterface>(interfaces);
+            return {std::get<Ts>(side)...};
+         } else {
+            auto& side = std::get<SlaveInterface>(interfaces);
+            return {std::get<Ts>(side)...};
+         }
+      }
+
+      /**
+       * Overload naming the result tuple type instead of its elements, so a
+       * declared alias can be requested as-is: `get<fabric::AxiHpIfType>()`.
+       * `T`'s elements are unpacked back into the variadic form above.
+       */
+      template <typename T>
+         requires InterfaceSubsetTuple<T>
+      T get() {
+         return get_elements<T>(std::make_index_sequence<std::tuple_size_v<T>>{});
+      }
+
+   private:
+      // Unpacks `T`'s element types back into the variadic `get()`. The two
+      // overloads never compete: a channel view is not a tuple, so exactly one
+      // of `InterfaceSubset` and `InterfaceSubsetTuple` can hold for any request.
+      template <typename T, std::size_t... Is>
+      T get_elements(std::index_sequence<Is...>) {
+         return get<std::tuple_element_t<Is, T>...>();
+      }
+
+      using ChannelTupleTy = std::tuple<ArChannel&, AwChannel&, WChannel&, RChannel&>;
+      using InterfaceTupleTy = std::tuple<MasterInterface, SlaveInterface>;
+
+      ChannelTupleTy channels;
+      InterfaceTupleTy interfaces;
+
+      // Helper called by constructor to create the tuple of channel references.
+      static ChannelTupleTy make_channels(EntityConfig& config) {
+         const auto clock = config.clock_id;
+         const auto id = config.id;
+         auto& sim = config.simulation;
+         auto [_1, ar] = sim.add_entity<ArChannel>("ar", clock, id);
+         auto [_2, aw] = sim.add_entity<AwChannel>("aw", clock, id);
+         auto [_3, w] = sim.add_entity<WChannel>("w", clock, id);
+         auto [_4, r] = sim.add_entity<RChannel>("r", clock, id);
+         return std::tie(ar, aw, w, r);
+      }
+
+      // Returns the master and slave interfaces for the AXI channels.
+      static InterfaceTupleTy get_interfaces(ChannelTupleTy& channels) {
+         auto [aw_source, aw_sink] = std::get<AwChannel&>(channels).split();
+         auto [w_source, w_sink] = std::get<WChannel&>(channels).split();
+         auto [ar_source, ar_sink] = std::get<ArChannel&>(channels).split();
+         auto [r_source, r_sink] = std::get<RChannel&>(channels).split();
+         return {{ar_source, aw_source, w_source, r_sink}, {ar_sink, aw_sink, w_sink, r_source}};
+      }
+   };
 
 } // namespace framework::axi3
