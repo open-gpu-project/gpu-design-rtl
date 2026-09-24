@@ -193,6 +193,85 @@ function sweepCap(shapes: readonly Shape[]): number {
   }
 }
 
+/**
+ * Which shapes a gesture should translate BODILY, given what the user selected.
+ *
+ * The select tool used to translate exactly the selection, and that is wrong at both ends.
+ *
+ * A shape that will be re-glued by `reroute` must not also be moved by hand, or it moves twice:
+ * select a fabric together with one of its own ports and drag, and the port slides along the
+ * border by the drag delta on top of arriving there with its parent. `Cmd+A` then a drag did it
+ * to every port in the document.
+ *
+ * And a shape whose dependencies are ALL moving must be moved, not patched. A connection
+ * between two ports of one fabric is the case: `reroute`'s manual branch splices the user's
+ * interior points through verbatim and only slides the two ends, so a hand-drawn route between
+ * two ends that both moved 200 units deforms instead of travelling. Translating it rigidly puts
+ * its ends exactly where its ports arrive, so `patchStart`/`patchEnd` then find them already
+ * correct and return by reference.
+ *
+ *   follows   = children, transitively, of anything in the selection  -- moved by reroute
+ *   carried   = has dependencies, has no parent, and every dependency
+ *               is in the selection or in `follows`                   -- moved bodily
+ *   result    = (selection \ follows) ∪ carried
+ *
+ * **Why this is here and not inside `conn.reroute`.** The tempting version compares each end's
+ * new anchor against the point it replaced and translates when the two deltas agree. It cannot
+ * work: dragging a manual connection by its own BODY gives both ends a delta of exactly the
+ * drag, so the rule reads the user's own gesture as a rigid move and undoes it. Geometry alone
+ * cannot tell "my endpoints moved" from "I was moved" -- only the tool knows which it is.
+ *
+ * **Two things this deliberately does not cover.** Moving a fabric by typing into the property
+ * panel is not a gesture, so a hand-drawn route between its ports still deforms there. And a
+ * rigid translation can split a bundle that patching would have held together -- which is the
+ * better trade, since patching a route whose ends both moved a thousand units is far worse.
+ */
+export function movesWith(
+  shapes: readonly Shape[],
+  selection: ReadonlySet<ShapeName>,
+): ReadonlySet<ShapeName> {
+  if (selection.size === 0) return selection;
+
+  const moving = new Set(selection);
+  const follows = new Set<ShapeName>();
+  /*
+    Children by parent, which is a walk rather than a lookup: a port's port would follow its
+    grandparent too. In practice the depth is one, and building the index costs the same walk
+    `expandChildren` already does on every commit.
+  */
+  const childrenOf = new Map<ShapeName, ShapeName[]>();
+  for (const s of shapes) {
+    const parent = opsFor(s).childOf?.(s) ?? null;
+    if (parent === null || parent === '') continue;
+    const list = childrenOf.get(parent);
+    if (list === undefined) childrenOf.set(parent, [s.name]);
+    else list.push(s.name);
+  }
+
+  const queue = [...selection];
+  while (queue.length > 0) {
+    for (const child of childrenOf.get(queue.pop()!) ?? []) {
+      if (follows.has(child)) continue;
+      follows.add(child);
+      moving.add(child);
+      queue.push(child);
+    }
+  }
+
+  const out = new Set<ShapeName>();
+  for (const name of selection) if (!follows.has(name)) out.add(name);
+  for (const s of shapes) {
+    const ops = opsFor(s);
+    const parent = ops.childOf?.(s) ?? null;
+    // A child is placed by its parent, never carried: that is what `follows` already covers.
+    if (parent !== null && parent !== '') continue;
+    const deps = ops.dependsOn?.(s);
+    if (deps === undefined || deps.length === 0) continue;
+    if (deps.every((id) => moving.has(id))) out.add(s.name);
+  }
+  return out;
+}
+
 export function resolveDependencies(shapes: readonly Shape[]): readonly Shape[] {
   return rerouteAll(pruneOrphans(shapes));
 }

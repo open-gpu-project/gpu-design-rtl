@@ -942,6 +942,219 @@ async function connect(a, b) {
   );
 }
 
+// ----------------------------------------- dragging a connection by its own body ----
+
+/*
+  The gesture the move set must NOT break, and which nothing covered before iteration 6.2.
+
+  The first design for "a connection whose ends both moved travels rigidly" lived inside
+  `conn.reroute` and compared each end's new anchor against the point it replaced. Dragging a
+  connection by its body gives both ends a delta of exactly the drag, so that rule would have
+  read the user's own gesture as a rigid move and silently undone it -- with no undo entry to
+  notice, because nothing changed. Hence a check for the gesture itself.
+*/
+{
+  await seed([
+    block('P', 160, 160, 120, 90),
+    block('Q', 560, 160, 120, 90),
+    {
+      kind: 'conn',
+      name: 'hand',
+      label: '',
+      description: '',
+      labelOffset: [0, 0],
+      routing: 'manual',
+      path: 'curve',
+      source: ['P', 'e'],
+      target: ['Q', 'w'],
+      points: [
+        [280, 205],
+        [380, 112],
+        [460, 112],
+        [560, 205],
+      ],
+    },
+  ]);
+
+  const shot = () =>
+    page.evaluate(() => {
+      const w = window.__scene.shapes.find((s) => s.kind === 'conn');
+      return w === undefined ? null : w.points.map((q) => [q.x, q.y]);
+    });
+
+  const before = await shot();
+  // A point ON the wire, read from the curve rather than guessed at -- and with the wire
+  // unselected, so the press cannot land on a waypoint knob or an insert badge instead of on
+  // the body. `verify/README.md`'s rule about hard-coded coordinates applies to curves twice.
+  const mid = await page.evaluate(() => {
+    const w = window.__scene.shapes.find((s) => s.kind === 'conn');
+    const at = window.__curve.curveAt(w.points, 0.5);
+    return [at.x, at.y];
+  });
+  const grab = await toScreen(mid[0], mid[1]);
+  await page.mouse.move(box.x + grab.x, box.y + grab.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + grab.x + 64, box.y + grab.y + 48, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const after = await shot();
+
+  const d = [after[1][0] - before[1][0], after[1][1] - before[1][1]];
+  t.ok(
+    'dragging a hand-drawn route by its body moves its waypoints',
+    (d[0] !== 0 || d[1] !== 0) &&
+      after[2][0] - before[2][0] === d[0] &&
+      after[2][1] - before[2][1] === d[1],
+    `${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
+  );
+  t.ok(
+    'and both ends stay on the anchors it is bound to',
+    JSON.stringify(after[0]) === JSON.stringify(before[0]) &&
+      JSON.stringify(after[3]) === JSON.stringify(before[3]),
+    `${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
+  );
+}
+
+// ------------------------------------------------- what a gesture actually moves ----
+
+/*
+  Iteration 6.2, the second half. The select tool used to translate exactly the selection,
+  which is wrong at both ends: a shape `reroute` will re-glue must not ALSO be moved by hand,
+  and a connection whose two endpoints are both moving must be moved rather than patched.
+
+  Both cases need a fabric with two ports and a hand-drawn bus between them -- the geometry
+  that iteration 6 made ordinary and nothing covered.
+*/
+{
+  await seed([fabric('G', 160, 200, 384, 120, 2), block('E', 800, 240, 120, 90)]);
+  await setPins('G', [
+    ['n', 'aw', 'master'],
+    ['n', 'aw', 'slave'],
+  ]);
+  const pins = await pinsOf('G');
+  await connect(pins[0], pins[1]);
+
+  // Bend it by hand: a waypoint in the middle, dragged, which is what flips it to `manual`.
+  const bent = await page.evaluate(() => {
+    const sc = window.__scene;
+    const w = sc.shapes.find((s) => s.kind === 'conn');
+    const a = w.points[0];
+    const b = w.points[w.points.length - 1];
+    const mid = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) - 96 };
+    sc.replaceShape(w, { ...w, routing: 'manual', points: [a, mid, b] }, 'bend');
+    return { interior: [mid.x, mid.y] };
+  });
+  await page.waitForTimeout(200);
+
+  const read = () =>
+    page.evaluate(() => {
+      const sc = window.__scene;
+      const w = sc.shapes.find((s) => s.kind === 'conn');
+      const g = sc.shapes.find((s) => s.name === 'G');
+      const ports = sc.shapes.filter((s) => s.kind === 'nif');
+      return {
+        pts: w.points.map((q) => [q.x, q.y]),
+        routing: w.routing,
+        origin: [g.x, g.y],
+        offsets: ports.map((s) => s.offset),
+      };
+    });
+
+  const before = await read();
+  t.ok(
+    'a bus between two ports of one fabric can be bent by hand',
+    before.routing === 'manual' && before.pts.length === 3,
+    JSON.stringify(before.pts),
+  );
+
+  const grab = await toScreen(352, 300);
+  await page.mouse.move(box.x + grab.x, box.y + grab.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + grab.x + 128, box.y + grab.y + 64, { steps: 10 });
+  await page.waitForTimeout(140);
+  const during = await read();
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+
+  const delta = [during.origin[0] - before.origin[0], during.origin[1] - before.origin[1]];
+  const moved = (i) =>
+    during.pts[i][0] - before.pts[i][0] === delta[0] &&
+    during.pts[i][1] - before.pts[i][1] === delta[1];
+  t.ok('dragging the fabric moves it', delta[0] !== 0 || delta[1] !== 0, JSON.stringify(delta));
+  /*
+    The interior point is the whole test. Patching only slides the two ends, so before this
+    change the waypoint stayed in world space and the bus deformed as the fabric travelled --
+    and it did so mid-drag AND on release, because `reroute` splices the interior through
+    verbatim on every sweep.
+  */
+  t.ok(
+    'and a hand-drawn bus between two of its ports travels rigidly with it',
+    moved(0) && moved(1) && moved(2),
+    `${JSON.stringify(before.pts)} -> ${JSON.stringify(during.pts)} for ${JSON.stringify(delta)}`,
+  );
+
+  // Select the fabric TOGETHER with one of its own ports. The port is moved by `reroute`
+  // because its parent moved; translating it as well slid it along the border by the delta.
+  await page.evaluate(
+    (pin) => {
+      const sc = window.__scene;
+      sc.setSelection(new Set(['G', pin]));
+    },
+    (await pinsOf('G'))[0].name,
+  );
+  await page.waitForTimeout(150);
+
+  const beforeBoth = await read();
+  const grab2 = await toScreen(352, 300 + 64);
+  await page.mouse.move(box.x + grab2.x, box.y + grab2.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + grab2.x + 96, box.y + grab2.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const afterBoth = await read();
+
+  t.ok(
+    'selecting a fabric with one of its own ports still moves the fabric',
+    afterBoth.origin[0] !== beforeBoth.origin[0],
+    `${JSON.stringify(beforeBoth.origin)} -> ${JSON.stringify(afterBoth.origin)}`,
+  );
+  t.ok(
+    'and the port rides along rather than sliding down its border',
+    JSON.stringify(afterBoth.offsets) === JSON.stringify(beforeBoth.offsets),
+    `${JSON.stringify(beforeBoth.offsets)} -> ${JSON.stringify(afterBoth.offsets)}`,
+  );
+
+  // The move set as a function, where the three cases are readable side by side.
+  const sets = await page.evaluate(() => {
+    const sc = window.__scene;
+    const w = sc.shapes.find((s) => s.kind === 'conn');
+    const pin = sc.shapes.find((s) => s.kind === 'nif');
+    const sort = (set) => [...set].sort();
+    return {
+      fabric: sort(window.__resolve.movesWith(sc.shapes, new Set(['G']))),
+      withPort: sort(window.__resolve.movesWith(sc.shapes, new Set(['G', pin.name]))),
+      portAlone: sort(window.__resolve.movesWith(sc.shapes, new Set([pin.name]))),
+      wire: w.name,
+      pin: pin.name,
+    };
+  });
+  t.ok(
+    'the move set carries a connection whose every end is moving',
+    JSON.stringify(sets.fabric) === JSON.stringify(['G', sets.wire].sort()),
+    JSON.stringify(sets.fabric),
+  );
+  t.ok(
+    'drops a child that its parent will place anyway',
+    !sets.withPort.includes(sets.pin),
+    JSON.stringify(sets.withPort),
+  );
+  t.ok(
+    'and leaves a port dragged on its own exactly where it was',
+    JSON.stringify(sets.portAlone) === JSON.stringify([sets.pin]),
+    JSON.stringify(sets.portAlone),
+  );
+}
+
 const failed = t.report(errors);
 await browser.close();
 process.exit(failed > 0 ? 1 : 0);

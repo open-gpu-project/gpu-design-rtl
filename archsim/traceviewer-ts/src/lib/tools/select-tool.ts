@@ -13,7 +13,7 @@ import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
 import { badgeScreen } from '../scene/shapes/conn';
 import { toggleViolations } from '../ui/violations.svelte';
-import { rerouteAll } from '../scene/resolve';
+import { movesWith, rerouteAll } from '../scene/resolve';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
@@ -22,6 +22,11 @@ type Drag =
   | {
       readonly kind: 'move';
       readonly snapshot: readonly Shape[];
+      /**
+       * What this gesture translates, which is NOT the selection -- see `movesWith`. Resolved
+       * once at pointer-down, against the snapshot, so every frame of the drag and the commit
+       * at the end of it move the same set.
+       */
       readonly ids: ReadonlySet<ShapeName>;
       readonly start: Vec2;
       readonly downScreen: Vec2;
@@ -218,7 +223,7 @@ export class SelectTool implements Tool {
     this.#drag = {
       kind: 'move',
       snapshot: c.scene.shapes,
-      ids: c.scene.selection,
+      ids: movesWith(c.scene.shapes, c.scene.selection),
       start: p.snapped,
       downScreen: p.screen,
     };
@@ -321,6 +326,8 @@ export class SelectTool implements Tool {
     if (drag === null) return;
     this.#drag = null;
 
+    // `drag.ids` is the move set, not the selection, so a carried connection is normalized
+    // here and counted in the change test below rather than slipping through both.
     const affected = drag.kind === 'move' ? drag.ids : new Set<ShapeName>([drag.name]);
     const before = new Map(drag.snapshot.map((s) => [s.name, s]));
 

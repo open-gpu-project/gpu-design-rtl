@@ -28,7 +28,7 @@
     routeConnection,
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
-  import { pruneOrphans, rerouteAll, resolveDependencies } from './lib/scene/resolve';
+  import { movesWith, pruneOrphans, rerouteAll, resolveDependencies } from './lib/scene/resolve';
   import {
     autoWaypoints,
     collapseCurve,
@@ -135,7 +135,7 @@
         rather than one level per commit -- is indistinguishable from the old behaviour except
         by driving two commits and watching the geometry catch up on the second.
       */
-      __resolve: { rerouteAll, pruneOrphans, resolveDependencies },
+      __resolve: { rerouteAll, pruneOrphans, resolveDependencies, movesWith },
       __anchor: {
         anchorAt: (s: Shape, p: Vec2, worldPerPx: number) =>
           opsFor(s).anchorAt?.(s, p, { worldPerPx }) ?? null,
