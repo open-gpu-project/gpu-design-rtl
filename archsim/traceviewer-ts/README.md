@@ -63,7 +63,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 495 assertions across ten suites. Anything touching
+iteration document. `npm run verify` is 503 assertions across ten suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 

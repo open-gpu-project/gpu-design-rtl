@@ -1,9 +1,22 @@
 import { alignStroke } from '../../canvas/pixel';
-import { normalizeRect, pointInRect, rectFromPoints, rectsIntersect } from '../../geom/math';
+import {
+  clampNum,
+  normalizeRect,
+  pointInRect,
+  rectFromPoints,
+  rectsIntersect,
+} from '../../geom/math';
 import type { Rect, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
-import type { DrawContext, FifoShape, ShapeName, ShapeOps, ShapeTooltip } from '../shape';
+import type {
+  DrawContext,
+  FifoShape,
+  RenderFlags,
+  ShapeName,
+  ShapeOps,
+  ShapeTooltip,
+} from '../shape';
 import {
   boxAnchorAt,
   boxAnchors,
@@ -12,12 +25,25 @@ import {
   resizeBox,
   resolveBoxAnchor,
 } from './box';
-import { dividers, fifoBox, flowIsFree, minFlow } from './fifo-geom';
+import { dividers, fifoBox, flowIsFree, MAX_CELLS, minFlow } from './fifo-geom';
 import { fifoProps } from './fifo.props';
 import { headingHit, headingTooltip, type DeviceBox } from './heading';
 
+/**
+ * A queue from a creation drag, with the cell count taken FROM the drag.
+ *
+ * A bounded queue's flow extent is `cells * spacing`, so a fixed count would ignore the dragged
+ * length on that axis entirely -- the preview would be one shape and the commit another. Deriving
+ * the count keeps both axes live and makes the ghost's dividers an honest picture of what lands.
+ *
+ * `round`, so the nearest whole queue wins rather than the drag always growing one; floored at
+ * one, because `cells: 0` is refused by the schema.
+ */
 export function makeFifo(a: Vec2, b: Vec2, name: ShapeName): FifoShape {
   const r = rectFromPoints(a, b);
+  const horizontal = r.w >= r.h;
+  const spacing = GRID * 2;
+  const cells = clampNum(Math.round((horizontal ? r.w : r.h) / spacing), 1, MAX_CELLS);
   return {
     kind: 'fifo',
     name,
@@ -29,20 +55,26 @@ export function makeFifo(a: Vec2, b: Vec2, name: ShapeName): FifoShape {
     y: r.y,
     w: r.w,
     h: r.h,
-    orientation: r.w >= r.h ? 'horizontal' : 'vertical',
-    cells: 4,
-    spacing: GRID * 2,
+    orientation: horizontal ? 'horizontal' : 'vertical',
+    cells,
+    spacing,
   };
 }
 
 /** Paint the dividers, in device space, between the outline and the heading. */
-function drawDividers(s: FifoShape, body: Rect, dc: DrawContext, d: DeviceBox): void {
+function drawDividers(
+  s: FifoShape,
+  body: Rect,
+  dc: DrawContext,
+  d: DeviceBox,
+  flags: RenderFlags,
+): void {
   const { ctx, dpr, theme } = dc;
   const horizontal = s.orientation === 'horizontal';
   const wDev = Math.max(1, Math.round(dpr));
 
   ctx.lineWidth = wDev;
-  ctx.strokeStyle = theme.fifoDivider;
+  ctx.strokeStyle = flags.ghost ? theme.ghostStroke : theme.fifoDivider;
 
   // Two passes so the dashed borders and the solid interior each cost one path, and so the dash
   // pattern is set twice per FIFO rather than once per divider.
@@ -167,7 +199,7 @@ export const fifoOps: ShapeOps<FifoShape> = {
 
   draw(s, dc, flags) {
     const body = fifoBox(s);
-    drawBoxBody(s, body, dc, flags, (d) => drawDividers(s, body, dc, d), true);
+    drawBoxBody(s, body, dc, flags, (d) => drawDividers(s, body, dc, d, flags), true);
   },
 
   anchorAt: (s, p, hc) => boxAnchorAt(fifoBox(s), p, hc),

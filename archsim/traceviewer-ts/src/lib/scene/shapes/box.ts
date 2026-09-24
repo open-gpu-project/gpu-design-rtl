@@ -244,6 +244,11 @@ export function resizeBox(r: Rect, handle: HandleId, p: Vec2, mods: Modifiers): 
  *
  * The outline goes in device space because a world-space hairline lands on fractional pixels at
  * most zooms and reads as a grey smudge next to the crisp grid.
+ *
+ * A ghost draws its body but not its text: `inner` runs, the heading does not. A preview has no
+ * label to show yet, while the body is the whole point of previewing -- and it is the rule the
+ * other kinds already follow, `nif` ghosting its fill but not its label and `conn` its line but
+ * not its badge.
  */
 export function drawBoxBody(
   s: Headed,
@@ -282,9 +287,7 @@ export function drawBoxBody(
   ctx.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
   ctx.setLineDash([]);
 
-  if (!flags.ghost) {
-    inner?.(d);
-    drawHeading(s, body, dc, d, flags.selected, plate);
-  }
+  inner?.(d);
+  if (!flags.ghost) drawHeading(s, body, dc, d, flags.selected, plate);
   restore();
 }

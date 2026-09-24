@@ -122,9 +122,25 @@ const clear = async () => {
     wide?.orientation === 'horizontal',
     wide?.orientation,
   );
+  /*
+    And the cell count comes FROM the drag. A fixed count ignores the dragged length on the flow
+    axis, because a bounded queue's extent is `cells * spacing` -- so the shape committed was a
+    different length from the one the cursor described. Nearest whole cell, hence the half-
+    spacing tolerance rather than an equality.
+  */
+  t.ok(
+    'and the cell count follows the dragged length',
+    wide?.cells === Math.round(240 / wide?.spacing),
+    `${wide?.cells} cells x ${wide?.spacing}`,
+  );
 
   const tall = await shape(await draw('Digit5', 'fifo', slot(1, 0), { w: 50, h: 160 }));
   t.ok('a tall drag runs them vertically', tall?.orientation === 'vertical', tall?.orientation);
+  t.ok(
+    'a tall drag counts cells down its own axis',
+    tall?.cells === Math.round(160 / tall?.spacing),
+    `${tall?.cells} cells x ${tall?.spacing}`,
+  );
 
   const fab = await shape(await draw('Digit6', 'fabric', slot(0, 1), { w: 300, h: 70 }));
   t.ok('dragging creates a fabric', fab !== null && fab.kind === 'fabric', JSON.stringify(fab));
@@ -300,6 +316,103 @@ const clear = async () => {
     'and they are in ascending order, never doubled',
     d.free.every((v, i) => i === 0 || v[0] > d.free[i - 1][0]),
     JSON.stringify(d.free),
+  );
+}
+
+// -------------------------------------------------------- the creation ghost ----
+
+/*
+  What the preview PROMISES.
+
+  Two ways a ghost lies. It can be blank -- `drawBoxBody` gated `inner` behind `!ghost`, so the
+  dividers that are the entire visual identity of a queue only appeared on release. And it can be
+  the wrong size: with a fixed `cells`, the derived flow extent ignored the drag, so the dashed
+  outline sat at a fixed length however far the cursor went. Neither is reachable from the type
+  checker, and neither shows up in any assertion about the committed shape.
+*/
+{
+  await clear();
+  const at = slot(0, 0);
+
+  /** Hold the drag open at `size` and read the live draft. */
+  const holdAt = async (size) => {
+    await page.mouse.move(box.x + at.x + size.w, box.y + at.y + size.h, { steps: 6 });
+    await page.waitForTimeout(140);
+    return page.evaluate(() => {
+      const d = window.__scene.draft;
+      if (d === null) return null;
+      const b = window.__ops(d.kind).bounds(d);
+      return { kind: d.kind, cells: d.cells, spacing: d.spacing, orientation: d.orientation, b };
+    });
+  };
+
+  await page.keyboard.press('Digit5');
+  await page.mouse.move(box.x + at.x, box.y + at.y);
+  await page.mouse.down();
+
+  // Multiples of GRID, so the pointer's snap does not turn up as a discrepancy of its own. 272
+  // is 8.5 cells at the seeded spacing, which is what puts the rounding under test.
+  const short = await holdAt({ w: 128, h: 80 });
+  const long = await holdAt({ w: 272, h: 80 });
+
+  t.ok('a queue drag puts a ghost on the draft channel', short?.kind === 'fifo', String(short));
+  t.ok(
+    'whose cell count grows with the drag',
+    short !== null && long !== null && long.cells > short.cells,
+    `${short?.cells} -> ${long?.cells}`,
+  );
+  /*
+    Within half a cell of the cursor on the flow axis -- the rounding, and nothing more -- and
+    exactly on it across, where nothing is derived.
+  */
+  t.ok(
+    'and whose box tracks the cursor on the flow axis',
+    long !== null && Math.abs(long.b.w - 272) <= long.spacing / 2,
+    `${long?.b.w} vs 272`,
+  );
+  t.ok('and matches it exactly across', long !== null && long.b.h === 80, String(long?.b.h));
+
+  /*
+    Divider ink, sampled across the ghost's flow axis at its vertical centre, in the manner of
+    the label-plate probe below. Classified by colour: a lit ghost divider is `theme.ghostStroke`
+    (#7dd3fc), far bluer than the empty body it is drawn on.
+  */
+  const lit = await page.evaluate(() => {
+    const d = window.__scene.draft;
+    const v = window.__view;
+    const g = document.querySelector('[data-panel-id="diagram"] canvas').getContext('2d');
+    const b = window.__ops(d.kind).bounds(d);
+    let hits = 0;
+    for (let i = 1; i < d.cells; i++) {
+      const p = v.toScreen({ x: b.x + i * d.spacing, y: b.y + b.h / 2 });
+      for (const dx of [0, -1, 1]) {
+        const px = g.getImageData(Math.round(p.x * v.dpr) + dx, Math.round(p.y * v.dpr), 1, 1).data;
+        if (px[2] > 150 && px[0] < 180) {
+          hits++;
+          break;
+        }
+      }
+    }
+    return { hits, want: d.cells - 1 };
+  });
+  t.ok(
+    'the ghost draws its dividers, not just an empty dashed box',
+    lit.want > 0 && lit.hits === lit.want,
+    `${lit.hits}/${lit.want}`,
+  );
+
+  await page.mouse.up();
+  await page.waitForTimeout(160);
+  await page.keyboard.press('Digit1');
+
+  const made = await page.evaluate(() => {
+    const s = [...window.__scene.shapes].reverse().find((x) => x.kind === 'fifo');
+    return s === undefined ? null : { cells: s.cells, b: window.__ops('fifo').bounds(s) };
+  });
+  t.ok(
+    'and what is committed is the shape that was previewed',
+    made !== null && made.cells === long.cells && made.b.w === long.b.w && made.b.h === long.b.h,
+    `${JSON.stringify(made)} vs ${JSON.stringify(long)}`,
   );
 }
 
