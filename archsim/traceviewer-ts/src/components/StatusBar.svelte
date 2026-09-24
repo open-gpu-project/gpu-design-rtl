@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ViewController } from '../lib/canvas/view.svelte';
   import { GRID } from '../lib/grid';
+  import { opsFor } from '../lib/scene/registry';
   import type { SceneStore } from '../lib/scene/scene.svelte';
   import type { ToolHost } from '../lib/tools/host.svelte';
   import { tip } from '../lib/ui/tooltip.svelte';
@@ -20,10 +21,17 @@
     `${round(view.world.x)},${round(view.world.y)} ${round(view.world.w)}x${round(view.world.h)}`,
   );
 
+  /*
+    Through `bounds`, not through a `kind` check. This was the one place left in the app that
+    switched on a shape's kind, and iteration 6 added two more draft-producing tools -- so the
+    switch would have had to grow, silently, every time a kind learned to be drawn. `bounds` is
+    already the per-kind answer to "how big is this", and it is defined for every kind.
+  */
   const draftLabel = $derived.by(() => {
     const d = scene.draft;
-    if (d === null || d.kind !== 'rect') return null;
-    return `${Math.round(Math.abs(d.w) / GRID)} x ${Math.round(Math.abs(d.h) / GRID)} cells`;
+    if (d === null) return null;
+    const b = opsFor(d).bounds(d);
+    return `${Math.round(Math.abs(b.w) / GRID)} x ${Math.round(Math.abs(b.h) / GRID)} cells`;
   });
 </script>
 
@@ -44,7 +52,7 @@
       &mdash;
     {/if}
   </span>
-  <span class="tabular-nums">{scene.shapes.length} blocks</span>
+  <span class="tabular-nums">{scene.shapes.length} objects</span>
   <span class="tabular-nums">{scene.selection.size} selected</span>
   <span class="tabular-nums" {@attach tip('World bounds (x,y w x h)')}>world {worldLabel}</span>
   <span class="tabular-nums" {@attach tip('Device pixel ratio')}>dpr {view.dpr}</span>

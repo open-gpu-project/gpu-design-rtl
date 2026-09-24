@@ -272,7 +272,8 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
 
   /**
    * A default instance under the given name, for an import to be applied onto. Keeping this
-   * per-kind is what lets `deserializeShape` stay generic.
+   * per-kind is what lets `deserializeScene`'s first pass stay generic: it can create every
+   * shape under its final name before it knows how to fill any of them in.
    */
   blank(name: ShapeName): S;
 

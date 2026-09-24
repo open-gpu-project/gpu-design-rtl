@@ -1,7 +1,7 @@
 import type { PropContext, PropertyBag } from '../props/spec';
-import { serializeShape } from '../props/project';
+import { hydrateShape, serializeShape } from '../props/project';
 import { uniqueName } from './names';
-import { deserializeShape, opsFor } from './registry';
+import { opsFor, tryOpsForKind } from './registry';
 import type { Shape, ShapeName } from './shape';
 
 export interface SceneDoc {
@@ -25,30 +25,57 @@ export function serializeScene(shapes: readonly Shape[]): SceneDoc {
   };
 }
 
+/**
+ * Rebuild a document, leniently and in two passes.
+ *
+ * **Two passes, because one is order-sensitive and the order is not ours to choose.** A record's
+ * writers see the shapes loaded so far -- `checkEndpoint` in `conn.props.ts` validates an
+ * endpoint against them -- while the array order in the file is the *z-order*, which says
+ * nothing about what depends on what. A connection stored below its blocks (one `Cmd+[` does
+ * that) would have had its endpoints refused, kept `blank`'s empty `from`, and been dropped by
+ * `normalize` without a word. Iteration 5.2 flagged it as latent; iteration 6 makes the
+ * dependency chain three deep -- fabric to interface to connection -- which would have made it
+ * ordinary rather than obscure.
+ *
+ * So pass one creates every shape under its final name, and pass two fills them in. By then
+ * every name a writer might look up already exists, and the fix costs no reordering: sorting
+ * the file topologically instead would have silently restacked the diagram, since array order
+ * IS the z-order.
+ *
+ * Pass two mutates `out` in place as it goes, which is deliberate -- `ctx.shapes` is that same
+ * array, so a writer sees final names throughout and real geometry for everything before it.
+ */
 export function deserializeScene(doc: unknown): Shape[] {
   if (typeof doc !== 'object' || doc === null) return [];
   const raw = (doc as { shapes?: unknown }).shapes;
   if (!Array.isArray(raw)) return [];
 
+  const bags: PropertyBag[] = [];
   const out: Shape[] = [];
   const taken = new Set<ShapeName>();
 
   for (const item of raw) {
     if (typeof item !== 'object' || item === null) continue;
     const bag = item as PropertyBag;
+    // A missing registration means an unknown kind: a document from a newer build. Skip rather
+    // than fail the load.
+    const ops = tryOpsForKind(bag['kind']);
+    if (ops === null) continue;
 
     // Identity is the name, so a document with two `alu` blocks has to be repaired rather than
     // loaded as-is. Suffixing keeps both, which is what someone merging two diagrams wants.
     const desired = typeof bag['name'] === 'string' ? bag['name'] : '';
     const name = uniqueName(desired, taken);
+    taken.add(name);
 
-    const ctx: PropContext = { shapes: out, index: out.length };
-    const shape = deserializeShape(bag, name, ctx);
-    // A null means an unknown kind: a document from a newer build. Skip rather than fail the load.
-    if (shape === null) continue;
+    bags.push(bag);
+    out.push(ops.blank(name));
+  }
 
-    taken.add(shape.name);
-    out.push(shape);
+  for (let i = 0; i < out.length; i++) {
+    const s = out[i]!;
+    const ctx: PropContext = { shapes: out, index: i };
+    out[i] = hydrateShape(opsFor(s).props, s, bags[i]!, ctx);
   }
   return out;
 }
