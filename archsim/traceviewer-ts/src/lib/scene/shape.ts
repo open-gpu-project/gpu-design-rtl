@@ -58,6 +58,28 @@ export interface RectShape extends Headed {
 }
 
 /**
+ * A queue, drawn as a run of cells: one outline with dividers across it.
+ *
+ * The extent along the flow axis is DERIVED, not stored -- `cells * spacing` -- so `w` (or `h`
+ * when vertical) is ignored while the queue is bounded, and everything reads the box through
+ * one function rather than off these fields. `cells: -1` means unbounded, which is drawn as one
+ * cell, a resizable gap, and three more; that is the only case where the flow axis is authored.
+ */
+export interface FifoShape extends Headed {
+  readonly kind: 'fifo';
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  /** Which way the queue runs. The cross axis is the one the user may resize. */
+  readonly orientation: 'horizontal' | 'vertical';
+  /** Number of cells, or -1 for unbounded. Never 0. */
+  readonly cells: number;
+  /** Divider pitch along the flow axis, in world units. */
+  readonly spacing: number;
+}
+
+/**
  * A directed rectilinear link between two block perimeters.
  *
  * The route is stored, not re-derived on read: `points` is the truth the renderer, the hit test
@@ -92,7 +114,7 @@ export interface ConnectionShape extends ShapeBase {
 }
 
 /** Widen as kinds are added: `| PortShape | LabelShape`. */
-export type Shape = RectShape | ConnectionShape;
+export type Shape = RectShape | FifoShape | ConnectionShape;
 
 /** The eight box handles, plus kind-specific ids like a connection's `seg:0` or `end:from`. */
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | (string & {});

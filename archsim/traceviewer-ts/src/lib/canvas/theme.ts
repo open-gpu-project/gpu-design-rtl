@@ -9,6 +9,8 @@ export interface Theme {
   readonly shapeLabel: string;
   /** The second line of an inset label. Quieter than `shapeLabel`: the label is the subject. */
   readonly shapeSubtitle: string;
+  /** The cell dividers inside a FIFO. Quieter than the outline: they are internal structure. */
+  readonly fifoDivider: string;
   readonly ghostFill: string;
   readonly ghostStroke: string;
   readonly handleFill: string;
@@ -41,6 +43,7 @@ export const darkTheme: Theme = {
   shapeStrokeSelected: '#fbbf24',
   shapeLabel: '#dbe3ef',
   shapeSubtitle: '#93a1b8',
+  fifoDivider: 'rgba(96, 165, 250, 0.55)',
   ghostFill: 'rgba(96, 165, 250, 0.08)',
   ghostStroke: '#7dd3fc',
   handleFill: '#0f1115',

@@ -556,10 +556,22 @@ await leaveToolbar();
     same,
     JSON.stringify(got),
   );
+  /*
+    The digits are the point of this one, not the count. They are assigned by toolbar POSITION,
+    so a kind registered ahead of an existing tool silently renumbers it -- and the shortcut the
+    user learned, and the literal `Digit4` other suites press, both move. `Queue (FIFO) (5)`
+    appearing at the end is the evidence that iteration 6 appended rather than inserted.
+  */
   t.ok(
-    'and the four of them are the four tools, with their keys',
+    'and each of them carries the digit its position assigns, existing tools unmoved',
     JSON.stringify(expected.map((e) => e[1])) ===
-      JSON.stringify(['Pointer (1)', 'Select (2)', 'Rectangle (3)', 'Connection (4)']),
+      JSON.stringify([
+        'Pointer (1)',
+        'Select (2)',
+        'Rectangle (3)',
+        'Connection (4)',
+        'Queue (FIFO) (5)',
+      ]),
     JSON.stringify(expected.map((e) => e[1])),
   );
 }
@@ -583,14 +595,14 @@ await leaveToolbar();
     });
   });
   t.ok(
-    'the two selection tools and the two shapes are separate clusters, with a rule between',
+    'the selection tools and the shape tools are separate clusters, with a rule between',
     JSON.stringify(bar?.slice(0, 3)) ===
-      JSON.stringify([['Pointer', 'Select'], 'rule', ['Rectangle', 'Connection']]),
+      JSON.stringify([['Pointer', 'Select'], 'rule', ['Rectangle', 'Connection', 'Queue (FIFO)']]),
     JSON.stringify(bar),
   );
 }
 
-// The conditional in `toolTipText`, which the toolbar cannot exercise: all four tools are
+// The conditional in `toolTipText`, which the toolbar cannot exercise: every registered tool is
 // inside the nine the registry hands a digit to, so only a pure call can prove that a tenth
 // one would read `Pan` and not `Pan ()`.
 t.ok(
