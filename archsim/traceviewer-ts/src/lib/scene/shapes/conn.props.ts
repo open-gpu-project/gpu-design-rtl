@@ -186,7 +186,7 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'routing',
     title: 'Routing',
-    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends. Dragging a segment on the canvas switches this to “manual”; setting it back to “auto” here is how a hand-drawn route is handed back to the router, and it re-routes immediately.',
+    doc: 'Whether the route is maintained automatically. “auto” re-derives the whole path whenever either block moves, and prefers to run alongside existing connections so parallel lines bundle together. “manual” keeps the path you drew and only slides its two ends — unless a single drag moves BOTH of them, as dragging a fabric moves both ends of a link between two of its own ports, in which case the whole route travels with them. Dragging a segment on the canvas switches this to “manual”; setting it back to “auto” here is how a hand-drawn route is handed back to the router, and it re-routes immediately.',
     mode: 'edit',
     type: { type: 'enum', values: ['auto', 'manual'] },
     read: (s) => s.routing,
@@ -200,7 +200,7 @@ const props: readonly PropDef<ConnectionShape>[] = [
   {
     key: 'path',
     title: 'Path',
-    doc: 'Which shape the link is drawn as. “ortho” is the rectilinear router: horizontal and vertical runs with rounded corners. “curve” is a spline through waypoints you place, used for links between network interfaces, where the wire stands for a bus rather than a signal. This is a separate question from “routing”, which says who maintains the geometry rather than what the geometry is. Changing it re-derives the path from scratch, so a hand-drawn route is lost.',
+    doc: 'Which shape the link is drawn as. “ortho” is the rectilinear router: horizontal and vertical runs with rounded corners. “curve” is a spline through waypoints you place, used for links between network interfaces, where the wire stands for a bus rather than a signal — with no waypoints it is a straight line, which is what an automatic bus link is unless a straight line would leave one port backwards or reach the other from behind. This is a separate question from “routing”, which says who maintains the geometry rather than what the geometry is. Changing it re-derives the path from scratch, so a hand-drawn route is lost.',
     mode: 'edit',
     type: { type: 'enum', values: ['ortho', 'curve'] },
     read: (s) => s.path,
@@ -319,6 +319,6 @@ const props: readonly PropDef<ConnectionShape>[] = [
 export const connProps: PropSchema<ConnectionShape> = propSchema({
   kind: 'conn',
   title: 'Connection',
-  doc: 'A directed link between two blocks, drawn as a rectilinear arrow.',
+  doc: 'A directed link between two blocks: a rectilinear arrow, or — between two network interfaces — a curved bus link. See “path”.',
   props,
 });

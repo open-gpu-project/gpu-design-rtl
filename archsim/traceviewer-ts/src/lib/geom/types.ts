@@ -29,13 +29,23 @@ export interface Modifiers {
 export type Side = 'n' | 'e' | 's' | 'w';
 
 /**
- * An attachment point a connection can terminate on. Unused this revision; the type exists so
- * `ShapeOps.anchors` has something to return when connections land.
+ * An attachment point a connection can terminate on: where the line stops, and which way it
+ * leaves.
+ *
+ * `normal` is a unit vector out of the shape, and both routers read it rather than deriving a
+ * direction from the geometry -- `route.ts` prices a run that leaves or arrives against one,
+ * and `autoWaypoints` decides from the two of them whether a curved link can be a straight
+ * line at all.
  */
 export interface Anchor {
   readonly id: string;
   /** World coordinates. */
   readonly pos: Vec2;
-  /** Unit vector pointing away from the shape, for connection stub direction. */
+  /**
+   * Unit vector pointing away from the shape.
+   *
+   * Shared references out of one table (`NORMALS`), never fresh objects: identity on a normal
+   * is a legitimate thing for a caller to test.
+   */
   readonly normal: Vec2;
 }

@@ -192,18 +192,6 @@ export const TAB_EST_CHAR_PX = 5.6;
 /* ------------------------------------------------------------------- connections ---- */
 
 /**
- * The furthest, in CSS pixels, that anything may be drawn outside its shape's `bounds`.
- *
- * `bounds` is world-space geometry; strokes, arrowheads, knobs, label plates and a block's tab
- * are all sized in screen pixels and cannot be expressed there. The renderer expands the
- * viewport by this much before culling, so every one of them must fit inside it -- a decoration
- * that does not simply vanishes when its shape's own box leaves the screen.
- *
- * Big enough for the tab (`TAB_H_PX` above the block) and for a connection label pushed the
- * maximum `CONN_LABEL_OFFSET_MAX` off its run, with room left over. Overdrawing a few shapes
- * just outside the viewport costs far less than one invisible label.
- */
-/**
  * A network interface's label, drawn INSIDE its box, and the padding it keeps from the two ends.
  *
  * `NIF_LABEL_MIN_PX` is a floor on the box's depth on screen, below which the label is dropped
@@ -227,6 +215,18 @@ export const BADGE_OFFSET_PX = 14;
 /** Grab radius for the badge, which is clicked rather than dragged. */
 export const BADGE_HIT_PX = 11;
 
+/**
+ * The furthest, in CSS pixels, that anything may be drawn outside its shape's `bounds`.
+ *
+ * `bounds` is world-space geometry; strokes, arrowheads, knobs, label plates and a block's tab
+ * are all sized in screen pixels and cannot be expressed there. The renderer expands the
+ * viewport by this much before culling, so every one of them must fit inside it -- a decoration
+ * that does not simply vanishes when its shape's own box leaves the screen.
+ *
+ * Big enough for the tab (`TAB_H_PX` above the block) and for a connection label pushed the
+ * maximum `CONN_LABEL_OFFSET_MAX` off its run, with room left over. Overdrawing a few shapes
+ * just outside the viewport costs far less than one invisible label.
+ */
 export const CULL_MARGIN_PX = 96;
 
 /** Connection line width, in CSS pixels. */

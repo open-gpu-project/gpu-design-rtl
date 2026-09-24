@@ -64,7 +64,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 557 assertions across ten suites. Anything touching
+iteration document. `npm run verify` is 559 assertions across ten suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -238,7 +238,9 @@ type-check cleanly and only fail at runtime.
   selection. Why the selected flag is derived rather than stored.
 - [iter-4-connections.md](history/iter-4-connections.md) — directed rectilinear connections: the
   scoring router and why it bundles, sliding perimeter anchors, the reroute fold, and the
-  identity guard that stops a dependency pass from making every commit undoable.
+  identity guard that stops a dependency pass from making every commit undoable. Its §4.5
+  argues for a single-sweep fold; iteration 6.2 §3.1 reverses that, and says why the argument
+  it was missing now exists.
 - [iter-4-1-panel-and-endpoints.md](history/iter-4-1-panel-and-endpoints.md) — three follow-ups:
   one canonical property key order, a documentation footer that sizes itself to its text, and
   draggable connection endpoints. Why the handle record grew a `role`, and the round-trip bug
@@ -292,3 +294,9 @@ type-check cleanly and only fail at runtime.
   and two incompatible styles of hand-written icon. Why a derived extent has to be derived by
   every writer including the one running mid-gesture, why an anchor id must not name anything that
   can change under it, and why a semantic colour cannot share a hue with the selection.
+- [iter-6-2-fold-and-defaults.md](history/iter-6-2-fold-and-defaults.md) — four more: a wire that
+  lagged the fabric its port was on, links that bowed when a straight line would have done, and
+  two defaults that did not line up with the grid. Why the dependency fold now reads back its own
+  output and settles, why a gesture has to decide what it moves rather than moving the selection,
+  why a constant that is secretly a ratio breaks when the thing it was a ratio of changes, and
+  the arrowhead that an axis-aligned box quietly deleted from every bus link.

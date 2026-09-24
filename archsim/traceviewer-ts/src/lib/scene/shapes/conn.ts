@@ -428,7 +428,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
     // but taking it from the same points that were drawn removes the assumption.
     const dir = isCurve(s) ? curveEndDirection(dev) : endDirection(s.points);
     const tip = dev[dev.length - 1]!;
-    if (dir !== null && headIsClear(s, dc, arrowBox(tip, dir, dpr))) {
+    if (dir !== null && headIsClear(s, dc, arrowBase(tip, dir, dpr))) {
       const len = ARROW_LEN_PX * dpr;
       const half = ARROW_HALF_W_PX * dpr;
       const bx = tip.x - dir.x * len;
@@ -720,22 +720,20 @@ function drawBadge(dc: DrawContext, at: Vec2): void {
 }
 
 /**
- * Where the arrowhead sits, in device pixels, for the purpose of asking what it overlaps.
+ * Where the arrowhead sits, in device pixels: the box around the triangle, with the tip
+ * discounted by ARROW_TIP_TOL_PX along the arrow's own axis.
  *
- * The box around the triangle, with the tip discounted by ARROW_TIP_TOL_PX along the arrow's
- * own axis -- see that constant for why the discount is axial and not a deflated block. The
- * box rather than the triangle slightly over-reports in the two corners behind the barbs,
- * which is the safe direction.
+ * **No longer what decides whether the head is drawn** -- see `headIsClear`. An axis-aligned
+ * box is exact only for an axis-aligned triangle: rotate the head and the corner behind a barb
+ * swings out past the tip's own plane, so the box reports an overlap with the very face the
+ * arrow is pointing at. Harmless while every route was rectilinear, and not since iteration
+ * 6.2, where a straight diagonal is the ordinary shape of a bus link and a glancing arrival at
+ * a port is the ordinary way one ends.
  *
- * It used to report EXACTLY, because a rectilinear route meets its face square on and the box
- * around an axis-aligned triangle is the triangle's extent. Iteration 6.2 made a diagonal
- * final chord ordinary rather than rare -- most curved links now run straight from port to
- * port -- and an axis-aligned box around a 45-degree head over-reports by roughly half its
- * area. The consequence is one-directional and small: `headIsClear` can withhold a head that
- * would in fact have fitted, in the same near-miss geometry where it already withholds one.
- *
- * Exported because it is the whole of the geometry, and a pure call can pin it at a dozen
- * zoom levels faster than one screenshot can be read.
+ * Kept, exported and checked because it is the honest description of the head's extent, in the
+ * same spirit as `nif`'s `anchors` seam: a pure call pins it at a dozen zoom levels faster than
+ * one screenshot can be read, and the next thing that wants the head's box should not find a
+ * lie waiting for it.
  */
 export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
   const len = ARROW_LEN_PX * dpr;
@@ -752,6 +750,12 @@ export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** The back of the arrowhead: the midpoint of its base, one head-length behind the tip. */
+function arrowBase(tip: Vec2, dir: Vec2, dpr: number): Vec2 {
+  const len = ARROW_LEN_PX * dpr;
+  return { x: tip.x - dir.x * len, y: tip.y - dir.y * len };
+}
+
 /**
  * Is there room for the arrowhead, or would it be drawn on top of a block?
  *
@@ -764,11 +768,19 @@ export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
  * A manual route that has been dragged into its own target lands here too, which is right for
  * the same reason.
  *
- * Asked of a diagonal arrival since iteration 6.2, where `arrowBox` over-reports -- so the
- * threshold sits marginally earlier for a curve than for an arrow. Still one-directional: it
- * can only drop a head, never draw one over a block.
+ * **The question is where the WEDGE sits, not whether any ink touches it**, and the difference
+ * became visible in iteration 6.2. A head arriving at 15 degrees off a port's face genuinely
+ * lays a barb across that face -- which is what an arrow meeting a surface at a glancing angle
+ * looks like, and not a blob -- while the head's box, which cannot rotate, reports an overlap
+ * for the same reason. Testing the box dropped the arrowhead from every bus link in the app.
+ *
+ * So the test is the base point: outside every block means the wedge is in open space with its
+ * tip on a border, which is an arrow. Inside one means it is buried, which is not. A point,
+ * deliberately, so that nothing has to be deflated -- `ARROW_TIP_TOL_PX` records why shrinking
+ * the block is not an option, and unlike the tip, the base never lands on an outline by
+ * construction, so it needs no tolerance of its own.
  */
-function headIsClear(s: ConnectionShape, dc: DrawContext, head: Rect): boolean {
+function headIsClear(s: ConnectionShape, dc: DrawContext, base: Vec2): boolean {
   for (const name of [s.from, s.to]) {
     const r = dc.boundsOf(name);
     if (r === null) continue;
@@ -780,7 +792,7 @@ function headIsClear(s: ConnectionShape, dc: DrawContext, head: Rect): boolean {
       w: (b.x - a.x) * dc.dpr,
       h: (b.y - a.y) * dc.dpr,
     };
-    if (rectsIntersect(head, box)) return false;
+    if (pointInRect(base, box)) return false;
   }
   return true;
 }

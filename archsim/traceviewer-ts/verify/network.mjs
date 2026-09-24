@@ -1015,6 +1015,96 @@ async function connect(a, b) {
   );
 }
 
+// ------------------------------------- the arrowhead on a glancing arrival ----
+
+/*
+  A pixel check, because this one is invisible to every other kind.
+
+  Iteration 6.2 made a straight diagonal the ordinary shape of a bus link, and a diagonal
+  arrival meets a port at a glancing angle. `headIsClear` used to ask whether the head's BOX
+  overlapped the target -- and an axis-aligned box cannot rotate, so the corner behind a barb
+  swings past the tip's own plane and reports an overlap with the very face the arrow points
+  at. Every bus link in the app lost its arrowhead, and nothing in the suite could tell: the
+  geometry is right, the decision was wrong, and only lit pixels show the difference.
+
+  Probed just off the arrow's axis, on the side away from the target, where the barb is the
+  only thing that can put ink: the line itself is 1.5 CSS px wide and cannot reach.
+*/
+{
+  await seed([fabric('S', 120, 120, 256, 80, 1), fabric('T', 560, 400, 256, 80, 1)]);
+  await setPins('S', [['s', 'all', 'master']]);
+  await setPins('T', [['n', 'all', 'slave']]);
+  const [s] = await pinsOf('S');
+  const [d] = await pinsOf('T');
+  await connect(s, d);
+  await page.evaluate(() => {
+    window.__scene.setSelection(new Set());
+    window.__session.renderer.requestFrame();
+  });
+  await page.waitForTimeout(300);
+
+  const probe = await page.evaluate(() => {
+    const v = window.__view;
+    const sc = window.__scene;
+    const c = sc.shapes.find((x) => x.kind === 'conn');
+    if (c === undefined) return { n: -1, why: 'no link' };
+    const pts = c.points;
+    if (pts.length !== 2) return { n: -1, why: `${pts.length} points, so not a straight run` };
+    const tip = pts[pts.length - 1];
+    const prev = pts[pts.length - 2];
+    const dx = tip.x - prev.x;
+    const dy = tip.y - prev.y;
+    const l = Math.hypot(dx, dy);
+    const dir = { x: dx / l, y: dy / l };
+    // A glancing arrival is the point of the check; assert the geometry rather than assume it.
+    const glance = Math.abs(dir.y);
+    const target = sc.shapes.find((x) => x.name === c.to);
+    /*
+      Well inside the head: a third of the way from its base to its tip, where the triangle is
+      still 3 CSS px wide either side of the axis, and 1.3 px off that axis -- clear of the
+      1.5 px line, which is the only other thing that could light these pixels.
+    */
+    const base = { x: tip.x - dir.x * 6, y: tip.y - dir.y * 6 };
+    const inTarget = (q) =>
+      q.x >= target.x &&
+      q.x <= target.x + target.w &&
+      q.y >= target.y &&
+      q.y <= target.y + target.h;
+    const cand = [
+      { x: base.x - dir.y * 1.3, y: base.y + dir.x * 1.3 },
+      { x: base.x + dir.y * 1.3, y: base.y - dir.x * 1.3 },
+    ].filter((q) => !inTarget(q));
+    if (cand.length === 0) return { n: -1, why: 'no clear side' };
+    const at = v.toScreen(cand[0]);
+    const g = document.querySelector('[data-panel-id="diagram"] canvas').getContext('2d');
+    const x0 = Math.round((at.x - 1) * v.dpr);
+    const y0 = Math.round((at.y - 1) * v.dpr);
+    const w = Math.max(1, Math.round(2 * v.dpr));
+    const data = g.getImageData(x0, y0, w, w).data;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (
+        Math.abs(data[i] - 148) < 40 &&
+        Math.abs(data[i + 1] - 163) < 40 &&
+        Math.abs(data[i + 2] - 184) < 40
+      )
+        n++;
+    }
+    return { n, total: w * w, glance, why: '' };
+  });
+
+  t.ok(
+    'a bus link between two ports arrives at a glancing angle',
+    probe.glance !== undefined && probe.glance > 0.1 && probe.glance < 0.7,
+    JSON.stringify(probe),
+  );
+  t.ok(
+    'and still draws its arrowhead there',
+    probe.n > 0 && probe.n >= probe.total * 0.6,
+    JSON.stringify(probe),
+  );
+}
+
 // ----------------------------------------- dragging a connection by its own body ----
 
 /*
