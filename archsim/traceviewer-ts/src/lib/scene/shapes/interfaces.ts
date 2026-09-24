@@ -1,7 +1,7 @@
 import type { Rect, Side } from '../../geom/types';
 import type { NifShape, Shape, ShapeName } from '../shape';
 import { makeNif } from './nif';
-import { freeOffset, NIF_LENGTH, spreadOffsets } from './nif-geom';
+import { freeOffset, NIF_LENGTH, spreadOffsets, type NifSpan } from './nif-geom';
 
 /**
  * The `expand` and `interfaceSides` halves of a kind that carries network interfaces.
@@ -44,14 +44,19 @@ export function expandInterfaces(
 
   const spread = spreadOffsets(box, side, n, NIF_LENGTH);
   const out: Shape[] = [...existing];
-  // Rebuilt as we go, so two interfaces minted in one pass cannot be given the same slot.
-  const occupied = existing
+  /*
+    Each neighbour's OWN length, not the default, and rebuilt as we go so two interfaces minted
+    in one pass cannot be given the same slot. `length` is a saved property: a fabric from a
+    document written before iteration 6.2 carries 48-unit ports, and packing a new 32-unit one
+    against 32-unit assumptions put it through a real neighbour.
+  */
+  const occupied: NifSpan[] = existing
     .filter((s): s is NifShape => s.kind === 'nif' && s.side === side)
-    .map((s) => s.offset);
+    .map((s) => ({ offset: s.offset, length: s.length }));
 
   for (let i = existing.length; i < n; i++) {
     const at = freeOffset(box, side, NIF_LENGTH, occupied, spread[i] ?? 0);
-    occupied.push(at);
+    occupied.push({ offset: at, length: NIF_LENGTH });
     out.push(makeNif(mint(`${parent}.if`), parent, side, at));
   }
   return out;

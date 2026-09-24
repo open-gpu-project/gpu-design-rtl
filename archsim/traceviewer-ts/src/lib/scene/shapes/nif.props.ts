@@ -1,7 +1,8 @@
 import { descriptionProp, kindProp, labelProp, nameProp, zIndexProp } from '../../props/common';
 import { propSchema, type PropDef, type PropSchema, type WriteResult } from '../../props/spec';
 import type { Channel, Modport, NifShape } from '../shape';
-import { MIN_NIF_LENGTH } from './nif-geom';
+import { GRID } from '../../grid';
+import { MIN_NIF_LENGTH, NIF_DEPTH, NIF_LENGTH } from './nif-geom';
 
 type Write = WriteResult<NifShape>;
 
@@ -69,7 +70,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'offset',
     title: 'Offset',
-    doc: 'Distance along the border from its start corner, in world units — measured from the left for the top and bottom borders, and from the top for the left and right ones. Kept as written rather than as clamped, so shrinking the parent past this interface and growing it back puts the interface where you left it. Dragging on the canvas snaps to the 16-unit grid; a value typed here is used exactly.',
+    doc: `Distance along the border from its start corner, in world units — measured from the left for the top and bottom borders, and from the top for the left and right ones. Kept as written rather than as clamped, so shrinking the parent past this interface and growing it back puts the interface where you left it. Dragging on the canvas snaps to the ${GRID}-unit grid; a value typed here is used exactly. A connection lands on the centre of an edge, so a snapped offset puts that point on a grid dot too — as long as the along extent stays a multiple of ${2 * GRID}, which the default ${NIF_LENGTH} is.`,
     mode: 'edit',
     type: { type: 'integer' },
     read: (s) => s.offset,
@@ -83,7 +84,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'size',
     title: 'Size',
-    doc: `Extent as [along, across] in world units — how far the interface runs along the border, and how deep it is into the parent. The box sits wholly INSIDE the border, with its outward edge on the border line, so the across extent is clamped to the parent rather than allowed to punch through the far side. At least ${MIN_NIF_LENGTH} along.`,
+    doc: `Extent as [along, across] in world units — how far the interface runs along the border, and how deep it is into the parent. Defaults to [${NIF_LENGTH}, ${NIF_DEPTH}]. The box sits wholly INSIDE the border, with its outward edge on the border line, so the across extent is clamped to the parent rather than allowed to punch through the far side. At least ${MIN_NIF_LENGTH} along. Keep the along extent a multiple of ${2 * GRID} and this interface's connection points stay on the grid; ${NIF_LENGTH} is chosen for exactly that.`,
     mode: 'edit',
     type: {
       type: 'tuple',

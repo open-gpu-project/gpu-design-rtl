@@ -697,29 +697,131 @@ const clear = async () => {
   /*
     Raising the count keeps the interfaces already placed -- they may have been dragged -- so the
     new one cannot simply take its slot in the new even spread: the spread for four and the
-    spread for five do not line up, and it lands on top of an old one. Observed, back when an
-    interface was 32 units long, as a fourth at 288 and a sixth at 304, overlapping by 28 of
-    their 32.
+    spread for six do not line up, and it lands on top of an old one. Observed as a fourth at
+    288 and a sixth at 304, overlapping by 28 of their 32 units -- the exact case this asserts,
+    and reproducible again now that iteration 6.2 has put an interface back to 32 units.
 
-    Five and not six, deliberately. At the current 48-unit length six of them need 288 of this
-    face's 336, and the four already placed sit at the FOUR-way spread positions -- which
-    fragments what is left into gaps no 48-unit interface fits in. `freeOffset` then does the
-    documented thing and overlaps, because a hidden interface would be worse than a crowded one.
-    A face that is genuinely full is not what this assertion is about.
+    Six, which iteration 6.1 had to weaken to five: six 48-unit interfaces needed 288 of this
+    face's 336 and could not be fitted around four already sitting at the four-way spread
+    positions, so `freeOffset` did the documented thing and overlapped. Six 32-unit ones need
+    192, and the question is a real one again rather than a face that is simply full.
   */
-  const five = await spans(5);
+  const six = await spans(6);
   t.ok(
     'raising the count adds to the end and leaves the others put',
-    five.length === 5 && JSON.stringify(five.slice(0, 4)) === JSON.stringify(four),
-    JSON.stringify(five),
+    six.length === 6 && JSON.stringify(six.slice(0, 4)) === JSON.stringify(four),
+    JSON.stringify(six),
   );
-  t.ok('and finds a free slot for the new one', !overlapping(five), JSON.stringify(five));
+  t.ok('and finds a free slot for each new one', !overlapping(six), JSON.stringify(six));
 
   const two = await spans(2);
   t.ok(
     'lowering it removes from the end',
     two.length === 2 && JSON.stringify(two) === JSON.stringify(four.slice(0, 2)),
     JSON.stringify(two),
+  );
+
+  /*
+    What the 32-unit default is FOR, and the thing item 4 of iteration 6.2 is actually about:
+    an interface's connection point is the centre of an edge, so it sits on a grid dot only
+    while the along extent is a multiple of two grid steps. At 48 every anchor was 8 units off
+    every dot, and so was every wire leaving one. Asserted on all four sides of a grid-aligned
+    parent, since the two faces a fabric offers are not the two a block does.
+  */
+  const onGrid = await page.evaluate(() => {
+    const ops = window.__ops('nif');
+    const base = {
+      kind: 'nif',
+      name: 'p',
+      label: '',
+      description: '',
+      parent: 'f',
+      offset: 64,
+      length: 32,
+      depth: 16,
+      protocol: 'axi3',
+      channel: 'all',
+      modport: 'slave',
+      pending: [0, 0],
+      inward: true,
+    };
+    // A grid-aligned parent, and boxes placed the way `nifBox` would on each of its faces.
+    const pr = { x: 128, y: 96, w: 320, h: 160 };
+    const boxes = {
+      n: { x: pr.x + 64, y: pr.y, w: 32, h: 16 },
+      s: { x: pr.x + 64, y: pr.y + pr.h - 16, w: 32, h: 16 },
+      e: { x: pr.x + pr.w - 16, y: pr.y + 64, w: 16, h: 32 },
+      w: { x: pr.x, y: pr.y + 64, w: 16, h: 32 },
+    };
+    const out = {};
+    for (const side of ['n', 'e', 's', 'w']) {
+      const b = boxes[side];
+      const s = { ...base, side, x: b.x, y: b.y, w: b.w, h: b.h };
+      out[side] = ops
+        .anchors(s)
+        .map((a) => [a.pos.x, a.pos.y])
+        .flat();
+    }
+    return { out, length: window.__ops('nif').blank('z').length };
+  });
+  const everyOn = Object.values(onGrid.out)
+    .flat()
+    .every((v) => v % 16 === 0);
+  t.ok(
+    'an interface’s anchors land on the grid, on all four sides',
+    everyOn,
+    JSON.stringify(onGrid.out),
+  );
+  t.ok(
+    'because the default along extent is two grid steps',
+    onGrid.length === 32,
+    String(onGrid.length),
+  );
+
+  /*
+    A face of MIXED vintages, on a fabric of its own so that setting the lengths cannot itself
+    manufacture the overlap. This is what every document written before iteration 6.2 becomes
+    the moment a port is added to it: `length` is saved per interface, so the ones already
+    there are 48 units long and the new ones are 32. `freeOffset` used to test both intervals
+    with a single length -- the new one's -- and called an old neighbour clear when it
+    overlapped by up to 16 units.
+  */
+  await clear();
+  const old48 = await draw('Digit6', 'fabric', slot(0, 0), { w: 340, h: 80 }, { interfaces: 2 });
+  await page.evaluate(() => {
+    const sc = window.__scene;
+    for (const pin of sc.shapes.filter((s) => s.kind === 'nif')) {
+      const cur = sc.shapes.find((x) => x.name === pin.name);
+      sc.replaceShape(cur, { ...cur, length: 48 }, 'vintage');
+    }
+  });
+  await page.waitForTimeout(160);
+  const vintage = (await nifs()).map((s) => ({
+    side: s.side,
+    lo: s.offset,
+    hi: s.offset + s.length,
+  }));
+  t.ok(
+    'a fabric can carry interfaces of two vintages at once',
+    vintage.length === 2 && vintage.every((s) => s.hi - s.lo === 48) && !overlapping(vintage),
+    JSON.stringify(vintage),
+  );
+
+  await patchShape(old48, { interfaces: 4 });
+  const mixed = (await nifs()).map((s) => ({
+    side: s.side,
+    lo: s.offset,
+    hi: s.offset + s.length,
+  }));
+  t.ok(
+    'and a new one packs against its neighbours’ own lengths, not against its own',
+    mixed.length === 4 && !overlapping(mixed),
+    JSON.stringify(mixed),
+  );
+  t.ok(
+    'while the older ones keep the length they were saved with',
+    mixed.filter((s) => s.hi - s.lo === 48).length === 2,
+    JSON.stringify(mixed.map((s) => s.hi - s.lo)),
   );
 
   t.ok(

@@ -14,8 +14,22 @@ import { faceLength, NORMALS, OPPOSITE, SIDES } from './box';
 /** Extent across the border. Deep enough to hold a label; see `nifBox` for why it is inside. */
 export const NIF_DEPTH = GRID;
 
-/** Extent along the border, by default. Three grid steps, so a short name fits without fitting. */
-export const NIF_LENGTH = GRID * 3;
+/**
+ * Extent along the border, by default. Two grid steps.
+ *
+ * **Chosen for the ANCHOR, not for the box.** A port's connection point is the centre of an
+ * edge, and `offset` is grid-snapped by `spreadOffsets` and `projectPin` -- so the centre lands
+ * on a grid dot exactly when `length / 2` is a whole number of grid steps. At three steps it
+ * never did: every anchor sat 8 units off the dots, and so did every wire leaving one.
+ *
+ * That is a precondition, not a guarantee. It also needs a grid-aligned parent and no clamp
+ * biting: a port pushed to the far end of a face 340 wide is clamped to `340 - 32`, which is
+ * not on the grid either.
+ *
+ * The cost is the label: about 26 CSS px of inside width at zoom 1 rather than 42. See `nif.ts`
+ * for what is drawn when that holds nothing but an ellipsis.
+ */
+export const NIF_LENGTH = GRID * 2;
 
 /** The shortest interface worth drawing, along the border. */
 export const MIN_NIF_LENGTH = GRID / 2;
@@ -123,7 +137,10 @@ function distToFaceLine(pr: Rect, side: Side, p: Vec2): number {
  * happens to be nearest in the corner.
  *
  * The offset is grid-snapped, matching every other committed geometry in the editor; a value
- * typed into the property panel is still used exactly as written.
+ * typed into the property panel is still used exactly as written. Snapping here is half of what
+ * puts a dragged port's anchors on the grid -- the other half is `NIF_LENGTH` being a multiple
+ * of two grid steps, since the anchor is an edge CENTRE. The clamp can still defeat both, on a
+ * face whose length is not a whole number of grid steps.
  */
 export function projectPin(
   pr: Rect,
@@ -151,9 +168,15 @@ export function projectPin(
 /**
  * Offsets for `count` interfaces spread evenly along one face.
  *
- * Every new interface goes on the FIRST allowed face, deliberately. Alternating them between a
- * fabric's two borders would be a guess about which side is upstream, and the user can drag one
- * across in a single gesture; starting them all in a row they can see is the honest default.
+ * Every new interface goes on the first face its parent allows -- `interfaces.ts` passes
+ * `interfaceSides(parent)[0]`, which is the top border for a fabric as well as for a block.
+ * Alternating them between a fabric's two borders would be a guess about which side is
+ * upstream, and the user can drag one across in a single gesture; starting them all in a row
+ * they can see is the honest default.
+ *
+ * `length` is the length of the interfaces being PLACED, which is the default for every caller
+ * today. The spread is only a hint: `freeOffset` is what has to reckon with neighbours that are
+ * a different size.
  */
 export function spreadOffsets(
   pr: Rect,
@@ -172,9 +195,22 @@ export function spreadOffsets(
   return out;
 }
 
-/** Do two interfaces of length `length` at these offsets overlap along their shared face? */
-function overlaps(a: number, b: number, length: number): boolean {
-  return a < b + length && b < a + length;
+/** One interface's extent along its face: where it starts, and how far it runs. */
+export interface NifSpan {
+  readonly offset: number;
+  readonly length: number;
+}
+
+/**
+ * Do two interfaces overlap along their shared face?
+ *
+ * **Both lengths, not one.** `length` is a saved property, so a face can carry ports of two
+ * vintages at once -- every document written before iteration 6.2 holds 48-unit ports, and a
+ * port added to such a fabric afterwards is 32. Testing both intervals with the NEW port's
+ * length declared an old neighbour clear when it overlapped by up to 16 units.
+ */
+function overlaps(a: NifSpan, b: NifSpan): boolean {
+  return a.offset < b.offset + b.length && b.offset < a.offset + a.length;
 }
 
 /**
@@ -185,22 +221,26 @@ function overlaps(a: number, b: number, length: number): boolean {
  * throw that away. But the even spread for N and the even spread for N+2 do not line up, so
  * taking positions 5 and 6 of a six-way spread while four interfaces sit at the four-way
  * positions lands one of the new ones on top of an old one. Observed: a fourth interface at 288
- * and a sixth at 304, overlapping by 28 of their 32 units.
+ * and a sixth at 304, overlapping by 28 of their 32 units -- a worked example that is
+ * reproducible again now that a port is 32 units long.
  *
  * So: walk the face on the grid and take the first offset that collides with nothing. Falling
  * back to the spread position when the face is genuinely full is the one case where an overlap is
  * the truth -- there is nowhere else to put it, and a hidden interface would be worse than a
  * visibly crowded one.
+ *
+ * `occupied` carries each neighbour's OWN length, because they need not all be the same -- see
+ * `overlaps`.
  */
 export function freeOffset(
   pr: Rect,
   side: Side,
   length: number,
-  occupied: readonly number[],
+  occupied: readonly NifSpan[],
   wanted: number,
 ): number {
   const room = Math.max(0, faceLength(pr, side) - length);
-  const clear = (at: number): boolean => !occupied.some((o) => overlaps(at, o, length));
+  const clear = (at: number): boolean => !occupied.some((o) => overlaps({ offset: at, length }, o));
 
   // The even spread first, so a fresh row of interfaces is actually spread. Scanning
   // unconditionally would pack every one of them flush from the face's start corner, which is

@@ -199,8 +199,8 @@ export const nifOps: ShapeOps<NifShape> = {
     A box kind offers a continuous perimeter because a wire may meaningfully land anywhere along
     a block's edge. An interface is not a surface, it is a port: it has an outward edge, and --
     where its parent allows it -- an inward one. Two discrete points is what it actually offers,
-    and offering a slider along a 48-unit edge only invited a wire to attach somewhere the port
-    does not mean anything.
+    and offering a slider along the edge only invited a wire to attach somewhere the port does
+    not mean anything.
 
     All three seams read `nifAnchors`, so none of them can drift from the others.
   */
@@ -297,7 +297,13 @@ export const nifOps: ShapeOps<NifShape> = {
     if (across >= NIF_LABEL_MIN_PX) {
       ctx.font = NIF_LABEL_FONT;
       const text = fitText(ctx, s.label, Math.max(0, along - 2 * NIF_LABEL_PAD_PX));
-      if (text !== '') {
+      /*
+        Nothing at all, rather than a bare ellipsis. The gate above is on the ACROSS extent, so
+        there is a band of zoom where the box is deep enough for a label while the 32-unit width
+        holds only the ellipsis `fitText` fell back to -- and a lone `…` inside a port reads as
+        a rendering fault rather than as a name that did not fit.
+      */
+      if (text !== '' && text !== '…') {
         ctx.save();
         ctx.translate((p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
         if (vertical) ctx.rotate(-Math.PI / 2);
