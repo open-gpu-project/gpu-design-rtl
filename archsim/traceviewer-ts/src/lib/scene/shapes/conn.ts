@@ -544,6 +544,10 @@ export const connOps: ShapeOps<ConnectionShape> = {
           same thing wherever the anchors go -- unlike a rectilinear route, whose interior is a
           set of axis constraints that a moved end can invalidate, which is why `patchStart` and
           `patchEnd` have to re-hang a point and can fail.
+
+          That is right for one end moving and wrong for both, which is why the case where both
+          are moving never reaches here: `movesWith` translates such a connection bodily, and
+          the patch below then finds its ends already correct and returns by reference.
         */
         const patched = [a.pos, ...s.points.slice(1, -1), b.pos];
         return samePoints(patched, s.points) ? s : { ...s, points: patched };
@@ -721,8 +725,14 @@ function drawBadge(dc: DrawContext, at: Vec2): void {
  * The box around the triangle, with the tip discounted by ARROW_TIP_TOL_PX along the arrow's
  * own axis -- see that constant for why the discount is axial and not a deflated block. The
  * box rather than the triangle slightly over-reports in the two corners behind the barbs,
- * which is the safe direction, and reports exactly for the case that actually arises: routes
- * are rectilinear and anchors sit on faces, so the last run always meets its face square on.
+ * which is the safe direction.
+ *
+ * It used to report EXACTLY, because a rectilinear route meets its face square on and the box
+ * around an axis-aligned triangle is the triangle's extent. Iteration 6.2 made a diagonal
+ * final chord ordinary rather than rare -- most curved links now run straight from port to
+ * port -- and an axis-aligned box around a 45-degree head over-reports by roughly half its
+ * area. The consequence is one-directional and small: `headIsClear` can withhold a head that
+ * would in fact have fitted, in the same near-miss geometry where it already withholds one.
  *
  * Exported because it is the whole of the geometry, and a pure call can pin it at a dozen
  * zoom levels faster than one screenshot can be read.
@@ -753,6 +763,10 @@ export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
  *
  * A manual route that has been dragged into its own target lands here too, which is right for
  * the same reason.
+ *
+ * Asked of a diagonal arrival since iteration 6.2, where `arrowBox` over-reports -- so the
+ * threshold sits marginally earlier for a curve than for an arrow. Still one-directional: it
+ * can only drop a head, never draw one over a block.
  */
 function headIsClear(s: ConnectionShape, dc: DrawContext, head: Rect): boolean {
   for (const name of [s.from, s.to]) {

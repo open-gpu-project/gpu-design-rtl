@@ -180,7 +180,9 @@ export type PathStyle = 'ortho' | 'curve';
  *
  * The route is stored, not re-derived on read: `points` is the truth the renderer, the hit test
  * and the file all use. While `routing` is `'auto'` it is re-derived on every commit that moves
- * an endpoint; while it is `'manual'` the user owns it and only the ends are patched.
+ * an endpoint; while it is `'manual'` the user owns it and only the ends are patched -- unless
+ * the gesture moved BOTH of them, in which case `movesWith` translates the whole route and the
+ * patch has nothing left to do.
  */
 export interface ConnectionShape extends ShapeBase {
   readonly kind: 'conn';

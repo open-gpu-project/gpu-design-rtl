@@ -12,8 +12,9 @@ into windows, or collapsed to an edge. Three panels exist so far.
   gap and three more), and **fabrics**, which carry **network interfaces** on their borders. An
   interface is a first-class object with its own name, protocol and modport, but it is not drawn
   from the toolbar: you set how many a fabric or a block carries and drag them into place. A
-  link drawn between two interfaces is a **curve** rather than a rectilinear wire — straight
-  when the two face each other, bowed when they do not, and bent through waypoints you insert.
+  link drawn between two interfaces is a **curve** rather than a rectilinear wire — a straight
+  run unless a straight line would leave one port backwards or arrive at the other from behind,
+  in which case it bows out along both normals, and bent through waypoints you insert.
   Joining two interfaces that disagree — different channels, or two masters — badges the link,
   and clicking the badge says what is wrong. Every
   box kind carries a label and a subtitle, and `labelMode` decides how they are shown: `inset`
@@ -63,7 +64,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 529 assertions across ten suites. Anything touching
+iteration document. `npm run verify` is 548 assertions across ten suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -81,7 +82,7 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | Drag with the rectangle tool                          | Draw a block, snapped to the grid                          |
 | Drag with the queue or fabric tool                    | Draw a FIFO or a switch fabric                             |
 | Drag a network interface                              | Slide it along its parent's border, or onto another        |
-| Click two network interfaces with the connection tool | Draw a curved bus link between them                        |
+| Click two network interfaces with the connection tool | Draw a bus link between them, straight where it can be     |
 | Click the `+` on a selected curve                     | Insert a waypoint there                                    |
 | Click a waypoint, then `⌫`                            | Remove just that waypoint                                  |
 | Click a red `!` badge                                 | List what is wrong with that link                          |

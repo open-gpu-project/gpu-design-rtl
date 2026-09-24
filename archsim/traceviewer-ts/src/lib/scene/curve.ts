@@ -12,7 +12,8 @@ import { samePoint } from './route';
  *
  * **`points` is the CONTROL POLYGON, not the drawn path**: the source anchor, the target anchor,
  * and the user's waypoints in between. Two points is a straight line, which is how "try to
- * connect the two interfaces directly" falls out of the general form instead of being a case.
+ * connect the two interfaces directly" falls out of the general form instead of being a case --
+ * and since iteration 6.2 that is the ordinary shape of a link rather than the rare one.
  *
  * Every function returns its INPUT reference when nothing changed, because `SceneStore.commit`
  * decides whether to record an undo entry by comparing array identity.
@@ -23,9 +24,6 @@ const ALPHA = 0.5;
 
 /** Below this a chord is a duplicate point, and the knot spacing would divide by zero. */
 const EPS = 1e-6;
-
-/** cos(15 degrees): how near a normal a straight line must run to be left straight. */
-const ALIGNED = 0.966;
 
 /** Samples per span when flattening. Enough that the polyline is within a hair at any zoom. */
 const FLATTEN_STEPS = 16;
@@ -278,13 +276,29 @@ export function moveWaypoint(points: readonly Vec2[], index: number, to: Vec2): 
 }
 
 /**
- * The `routing: 'auto'` shape of a curved link: nothing at all when a straight line already
- * leaves and arrives the right way, and two waypoints on the two outward normals otherwise.
+ * The `routing: 'auto'` shape of a curved link: nothing at all when a straight line leaves the
+ * front of one port and arrives at the front of the other, and two waypoints on the two
+ * outward normals when it would not.
  *
  * **Straight when it can be straight, and by construction rather than by a special case.** Two
  * control points IS a straight line, so the test is only whether one would look wrong: it does
  * when the line leaves an interface backwards through its own parent, or arrives at the far one
- * from behind. Both are dot products against the anchor normals.
+ * from behind. Both are dot products against the anchor normals, and both being positive is
+ * exactly "in front of".
+ *
+ * Iteration 6.2 moved that threshold from cos(15 degrees) to zero, which inverts which case is
+ * the common one: a link runs straight unless a straight line would leave or arrive backwards.
+ * The narrow rule it replaces called anything meaningfully off-axis a bow, on the grounds that
+ * a bus leaving its own port diagonally does not read as a bus -- true of the 15-degree band it
+ * was drawn for, and false of the offset pairs that are most of a real diagram.
+ *
+ * The case that WANTS a bow survives the change without being named: when two anchors share a
+ * normal -- two ports on one face, which is what a loopback is -- `arrives` is exactly
+ * `-leaves`, so the two can never both be positive and the pair always bows. Two ports on one
+ * face of the same parent give both terms zero, and bow. Two on the same face of DIFFERENT
+ * parents, diagonally apart, also bow, which is right: a straight chord there would run down
+ * through the far parent's body. And two ports facing away from each other bow on two negative
+ * terms. None of that needs to know what a fabric is.
  *
  * Deliberately modest -- no obstacle avoidance, in the spirit of `ROUTE_MAX_SEGMENTS = 3`. The
  * user is expected to drag a waypoint when the automatic answer runs through something, and
@@ -299,17 +313,8 @@ export function autoWaypoints(a: Anchor, b: Anchor): readonly Vec2[] {
   const leaves = dir.x * a.normal.x + dir.y * a.normal.y;
   const arrives = -(dir.x * b.normal.x + dir.y * b.normal.y);
 
-  /*
-    A straight line will do only when it leaves and arrives roughly ALONG the two normals, not
-    merely somewhere in front of them.
-    
-    `> 0` is the tempting test and it is too weak: two ports facing each other but offset across
-    the gap pass it easily, and the straight line they get leaves the port at an angle. A bus
-    drawn leaving its own port diagonally does not read as a bus. `ALIGNED` is cos(15 degrees),
-    so a genuinely straight shot stays a straight line -- two points, no waypoints, which is the
-    literal "connect them directly" case -- and anything meaningfully off-axis bows instead.
-  */
-  if (leaves > ALIGNED && arrives > ALIGNED) return [];
+  // In front of both, so a direct line is what the link is: two points, and no waypoints.
+  if (leaves > 0 && arrives > 0) return [];
 
   /*
     Far enough out to clear the face it is leaving, and proportional to the separation so a long

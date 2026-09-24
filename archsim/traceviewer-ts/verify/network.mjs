@@ -170,7 +170,11 @@ async function connect(a, b) {
       facing: auto(P(1, 0), P(-1, 0), 0, 0, 200, 0),
       offset: auto(P(1, 0), P(-1, 0), 0, 0, 200, 120),
       sameWay: auto(P(0, -1), P(0, -1), 0, 0, 200, 0),
-      barelyOff: auto(P(1, 0), P(-1, 0), 0, 0, 400, 16),
+      // Same normal, diagonally apart: two ports on the same face of two DIFFERENT parents.
+      sameWayDiagonal: auto(P(0, -1), P(0, -1), 0, 0, 240, 160),
+      // In front of the source, behind the target -- the half of the rule `arrives` carries.
+      behind: auto(P(1, 0), P(1, 0), 0, 0, 200, 0),
+      awayFromEachOther: auto(P(-1, 0), P(1, 0), 0, 0, 200, 0),
       keepsCollinear: C.collapseCurve([P(0, 0), P(50, 0), P(100, 0)]).length,
       keepsBend: C.collapseCurve([P(0, 0), P(50, 40), P(100, 0)]).length,
       dedupes: C.collapseCurve([P(0, 0), P(50, 40), P(50, 40), P(100, 0)]).length,
@@ -198,11 +202,35 @@ async function connect(a, b) {
     r.facing === 0,
     String(r.facing),
   );
-  t.ok('and neither does a pair barely off the axis', r.barelyOff === 0, String(r.barelyOff));
-  // `> 0` is the tempting test for "a straight line will do" and it is too weak: a bus leaving
-  // its own port diagonally does not read as a bus.
-  t.ok('but an offset pair bows instead of running diagonally', r.offset === 2, String(r.offset));
-  t.ok('as does a pair facing the same way on one plane', r.sameWay === 2, String(r.sameWay));
+  /*
+    Iteration 6.2 inverted which of these is the common case. The rule used to be cos(15
+    degrees) off either normal, which made a bow of anything meaningfully off-axis -- including
+    the offset pair below, which is most of a real diagram. It is now simply "in front of
+    both", so a link runs straight unless a straight line would leave or arrive backwards.
+  */
+  t.ok(
+    'and neither does an offset pair, which runs straight rather than bowing',
+    r.offset === 0,
+    String(r.offset),
+  );
+  /*
+    What still bows, and none of it by naming a fabric. Two anchors that SHARE a normal -- a
+    loopback, two ports on one face -- make `arrives` exactly `-leaves`, so they can never both
+    be positive; the diagonal pair is two ports on the same face of different parents, where a
+    straight chord would run down through the far parent's body.
+  */
+  t.ok('but a pair facing the same way on one plane bows', r.sameWay === 2, String(r.sameWay));
+  t.ok(
+    'as does the same pair pulled diagonally apart',
+    r.sameWayDiagonal === 2,
+    String(r.sameWayDiagonal),
+  );
+  t.ok('as does a line that arrives at its target from behind', r.behind === 2, String(r.behind));
+  t.ok(
+    'and a pair facing away from each other',
+    r.awayFromEachOther === 2,
+    String(r.awayFromEachOther),
+  );
 
   /*
     A waypoint is EXPLICIT: the user inserts it with the badge and removes it with Delete.
@@ -254,6 +282,51 @@ async function connect(a, b) {
     'a plain arrow may still be drawn to an interface, and stays rectilinear',
     toBlock !== undefined && toBlock.path === 'ortho',
     JSON.stringify(w),
+  );
+
+  /*
+    The bow rule end to end, and the settling fold with it. Dragging A's port from the bottom
+    border to the top one reverses its outward normal, so the straight line to B now leaves
+    backwards through A's own body and the link has to bow instead.
+
+    The point of driving it through a gesture is the phrase "in the same commit": the shape of
+    the link is two levels down from the thing that moved (fabric -> port -> link), which is
+    exactly the chain that used to resolve one level per commit.
+  */
+  const bus = w[0].name;
+  /*
+    Pressed on the INWARD half of the port's box, not on its centre: two wires leave the centre
+    of its outward edge, connections sit above their ports in the z-order, and a press within a
+    few pixels of a wire grabs the wire.
+  */
+  const grip = await page.evaluate(() => {
+    const s = window.__scene.shapes.find((x) => x.kind === 'nif' && x.parent === 'A');
+    return [s.x + 12, s.y + 4];
+  });
+  const at = await toScreen(grip[0], grip[1]);
+  const top = await toScreen(grip[0], 64);
+  await page.keyboard.press('Digit1');
+  await page.mouse.move(box.x + at.x, box.y + at.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + top.x, box.y + top.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+
+  const flipped = await page.evaluate((n) => {
+    const sc = window.__scene;
+    const pin = sc.shapes.find((s) => s.kind === 'nif' && s.parent === 'A');
+    const link = sc.shapes.find((s) => s.name === n);
+    return { side: pin.side, points: link.points.length, label: sc.history.undoLabel };
+  }, bus);
+  t.ok(
+    'dragging a port to the opposite border moves it there',
+    flipped.side === 'n',
+    JSON.stringify(flipped),
+  );
+  t.ok(
+    'and the link it carries bows in the same commit as the side change',
+    flipped.points === 4,
+    JSON.stringify(flipped),
   );
 }
 
