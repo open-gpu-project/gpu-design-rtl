@@ -41,7 +41,7 @@ export function makeValidator(ps: PropSchema, others: () => Iterable<string>): V
         if (taken !== name) continue;
         errors.push({
           path: ['name'],
-          message: `Another block is already named “${name}”.`,
+          message: `Another object is already named “${name}”.`,
           severity: ValidationSeverity.error,
         });
         break;

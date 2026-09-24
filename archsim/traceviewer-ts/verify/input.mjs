@@ -429,10 +429,10 @@ t.ok(
   not divide evenly, and a label that fits must come back whole.
 */
 const budgets = await page.evaluate(async () => {
-  const rect = await import('/src/lib/scene/shapes/rect.ts');
+  const heading = await import('/src/lib/scene/shapes/heading.ts');
   const text = await import('/src/lib/canvas/text.ts');
   const ctx = window.__view.ctx;
-  const measure = rect.tabMeasurer(ctx);
+  const measure = heading.tabMeasurer(ctx);
   const bad = [];
   for (const label of ['XBN', 'RF', 'XU_0', 'W', 'decode', 'primary_bus', 'mm', 'iiii']) {
     for (const z of [0.73, 1, 1.16, 1.37, 2.5, 3.01, 7.9]) {
@@ -445,12 +445,10 @@ const budgets = await page.evaluate(async () => {
         subtitle: '',
         labelMode: 'tabbed_left',
         description: '',
-        x: 0,
-        y: 0,
-        w: 4000,
-        h: 100,
       };
-      const box = rect.tabRect(s, 1 / z, measure);
+      // The body rectangle is a parameter since iteration 6: a FIFO's drawn box is derived
+      // from its cell count rather than stored, so `tabRect` cannot read it off the shape.
+      const box = heading.tabRect(s, { x: 0, y: 0, w: 4000, h: 100 }, 1 / z, measure);
       if (box === null) continue;
       ctx.font = (await import('/src/lib/canvas/theme.ts')).TAB_FONT;
       const drawn = text.fitText(ctx, label, box.textW);

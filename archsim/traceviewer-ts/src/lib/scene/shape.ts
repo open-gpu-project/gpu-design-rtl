@@ -32,18 +32,29 @@ export interface ShapeBase {
  */
 export type LabelMode = 'inset' | 'tabbed_left' | 'tabbed_right';
 
-/** A block in the architecture diagram. The only entity kind so far. */
-export interface RectShape extends ShapeBase {
+/**
+ * What every box kind presents in common: a heading, an optional second line, and a note.
+ *
+ * Named separately from `RectShape` since iteration 6, when `fifo` and `fabric` arrived wanting
+ * the identical three label modes. `shapes/heading.ts` renders anything that satisfies this, and
+ * takes the body rectangle as a parameter rather than reading it off the shape -- a FIFO's drawn
+ * box is derived from its cell count, so there is no `w` on it that would give the right answer.
+ */
+export interface Headed extends ShapeBase {
+  /** Second line under an inset label. Moves into the tooltip in the tabbed modes. */
+  readonly subtitle: string;
+  readonly labelMode: LabelMode;
+  /** Free-text note on what this entity is. Shown as a tooltip on hover. */
+  readonly description: string;
+}
+
+/** A block in the architecture diagram. */
+export interface RectShape extends Headed {
   readonly kind: 'rect';
   readonly x: number;
   readonly y: number;
   readonly w: number;
   readonly h: number;
-  /** Second line under an inset label. Moves into the tooltip in the tabbed modes. */
-  readonly subtitle: string;
-  readonly labelMode: LabelMode;
-  /** Free-text note on what this hardware block is. Shown as a tooltip on hover. */
-  readonly description: string;
 }
 
 /**

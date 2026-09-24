@@ -11,7 +11,7 @@ import {
   translateAll,
 } from '../scene/fragment';
 import { opsFor } from '../scene/registry';
-import { tabMeasurer } from '../scene/shapes/rect';
+import { tabMeasurer } from '../scene/shapes/heading';
 import type { DrawContext, Shape, ShapeName, ShapeTooltip } from '../scene/shape';
 import type { SceneStore } from '../scene/scene.svelte';
 import type { SceneDoc } from '../scene/serialize';

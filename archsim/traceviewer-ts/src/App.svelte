@@ -28,7 +28,7 @@
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
   import { arrowBox } from './lib/scene/shapes/conn';
-  import { fitInsetLine, insetType } from './lib/scene/shapes/rect';
+  import { fitInsetLine, insetType } from './lib/scene/shapes/heading';
   import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
   import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
   import { serializeScene } from './lib/scene/serialize';
