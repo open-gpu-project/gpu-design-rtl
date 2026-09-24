@@ -1,5 +1,6 @@
 import type { Rect } from '../geom/types';
 import { unionBounds } from './bounds';
+import { expandChildren } from './expand';
 import { History } from './history.svelte';
 import { nextIndexedName } from './names';
 import { opsFor, registryHasDependencies } from './registry';
@@ -145,6 +146,10 @@ export class SceneStore {
     this.draft = null;
 
     mutate();
+    // Before dependency resolution, so a freshly minted child gets its geometry from the same
+    // `rerouteAll` rather than flashing at the origin for a frame. Deliberately NOT inside
+    // `resolveDependencies` -- see `expandChildren` for why that has to stay pure.
+    this.#expandChildren();
     this.#resolveDependencies();
 
     if (this.shapes !== before) {
@@ -184,6 +189,17 @@ export class SceneStore {
     this.shapes = entry.after;
     this.#setSelection(entry.afterSel);
     this.onCommit?.();
+  }
+
+  /**
+   * Bring parent-owned children into line with what their parents ask for.
+   *
+   * The identity guard is the same load-bearing one as below: an equal-but-new array here would
+   * make every commit -- including ones that changed nothing -- an undoable step.
+   */
+  #expandChildren(): void {
+    const next = expandChildren(this.shapes);
+    if (next !== this.shapes) this.shapes = next;
   }
 
   /**

@@ -571,6 +571,7 @@ await leaveToolbar();
         'Rectangle (3)',
         'Connection (4)',
         'Queue (FIFO) (5)',
+        'Fabric (6)',
       ]),
     JSON.stringify(expected.map((e) => e[1])),
   );
@@ -597,7 +598,11 @@ await leaveToolbar();
   t.ok(
     'the selection tools and the shape tools are separate clusters, with a rule between',
     JSON.stringify(bar?.slice(0, 3)) ===
-      JSON.stringify([['Pointer', 'Select'], 'rule', ['Rectangle', 'Connection', 'Queue (FIFO)']]),
+      JSON.stringify([
+        ['Pointer', 'Select'],
+        'rule',
+        ['Rectangle', 'Connection', 'Queue (FIFO)', 'Fabric'],
+      ]),
     JSON.stringify(bar),
   );
 }

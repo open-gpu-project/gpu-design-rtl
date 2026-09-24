@@ -5,6 +5,9 @@ const registry = new Map<string, ShapeOps<never>>();
 /** True once any registered kind implements the connection seams, so commit can skip the walk. */
 let anyDependent = false;
 
+/** The same trick for the parent/child reconcile, which most documents never need either. */
+let anyChildren = false;
+
 export function registerShape<S extends ShapeBase>(ops: ShapeOps<S>): void {
   if (registry.has(ops.kind)) {
     // Hot reload re-runs module side effects, so replacing is the only workable dev behaviour.
@@ -12,6 +15,7 @@ export function registerShape<S extends ShapeBase>(ops: ShapeOps<S>): void {
   }
   registry.set(ops.kind, ops as unknown as ShapeOps<never>);
   if (ops.dependsOn !== undefined) anyDependent = true;
+  if (ops.expand !== undefined || ops.childOf !== undefined) anyChildren = true;
 }
 
 /** A missing registration is a programming error, not a data error, so this throws. */
@@ -33,4 +37,8 @@ export function tryOpsForKind(kind: unknown): ShapeOps<Shape> | null {
 
 export function registryHasDependencies(): boolean {
   return anyDependent;
+}
+
+export function registryHasChildren(): boolean {
+  return anyChildren;
 }

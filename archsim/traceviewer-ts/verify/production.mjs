@@ -67,7 +67,8 @@ const keys = await page.evaluate(() =>
 );
 t.ok(
   'property panel populated, in canonical order: kind, then editable, then generated',
-  keys.join() === '/kind,/description,/label,/labelMode,/name,/position,/size,/subtitle,/zIndex',
+  keys.join() ===
+    '/kind,/description,/interfaces,/label,/labelMode,/name,/position,/size,/subtitle,/zIndex',
   JSON.stringify(keys),
 );
 t.ok(

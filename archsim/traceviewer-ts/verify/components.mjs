@@ -1,7 +1,8 @@
 import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
 
 /*
-  Iteration 6's component kinds: the FIFO so far.
+  Iteration 6's component kinds: the FIFO, the fabric, and the network interfaces a fabric or a
+  block carries.
 
   Three things here cannot be reached from the type checker, and they are why this file exists.
 
@@ -80,6 +81,7 @@ const shape = (name) =>
   page.evaluate((n) => window.__scene.shapes.find((s) => s.name === n) ?? null, name);
 const kinds = () => page.evaluate(() => window.__scene.shapes.map((s) => s.kind));
 const names = () => page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+const nifs = () => page.evaluate(() => window.__scene.shapes.filter((s) => s.kind === 'nif'));
 const clear = async () => {
   await page.evaluate(() => {
     const sc = window.__scene;
@@ -99,6 +101,8 @@ const clear = async () => {
   const four = await page.evaluate(() => window.__host.activeToolId);
   await page.keyboard.press('Digit5');
   const five = await page.evaluate(() => window.__host.activeToolId);
+  await page.keyboard.press('Digit6');
+  const six = await page.evaluate(() => window.__host.activeToolId);
   await page.keyboard.press('Digit1');
   /*
     Digits come from toolbar POSITION, so a kind registered ahead of an existing tool renumbers
@@ -106,9 +110,9 @@ const clear = async () => {
     three together is what makes "appended, not inserted" the thing under test.
   */
   t.ok(
-    'the queue tool takes the next free digit and moves no existing one',
-    four === 'connect' && five === 'fifo',
-    `4=${four} 5=${five}`,
+    'the new tools take the next free digits and move no existing one',
+    four === 'connect' && five === 'fifo' && six === 'fabric',
+    `4=${four} 5=${five} 6=${six}`,
   );
 
   const wide = await shape(await draw('Digit5', 'fifo', slot(0, 0), { w: 240, h: 60 }));
@@ -121,6 +125,14 @@ const clear = async () => {
 
   const tall = await shape(await draw('Digit5', 'fifo', slot(1, 0), { w: 50, h: 160 }));
   t.ok('a tall drag runs them vertically', tall?.orientation === 'vertical', tall?.orientation);
+
+  const fab = await shape(await draw('Digit6', 'fabric', slot(0, 1), { w: 300, h: 70 }));
+  t.ok('dragging creates a fabric', fab !== null && fab.kind === 'fabric', JSON.stringify(fab));
+  t.ok('a new fabric starts with no interfaces', fab?.interfaces === 0, String(fab?.interfaces));
+  t.ok(
+    'and no interface tool exists — they come from the count',
+    !(await page.evaluate(() => window.__host.toolGroups.flat().some((x) => x.id === 'nif'))),
+  );
 }
 
 // ------------------------------------------------- the FIFO's derived length ----
@@ -489,9 +501,275 @@ const clear = async () => {
   void depth;
 }
 
+// -------------------------------------------------------- interfaces on a parent ----
+
+{
+  await clear();
+  const fab = await draw('Digit6', 'fabric', slot(0, 0), { w: 340, h: 80 });
+
+  const spans = async (n) => {
+    await patchShape(fab, { interfaces: n });
+    return (await nifs()).map((s) => ({ side: s.side, lo: s.offset, hi: s.offset + s.length }));
+  };
+  const overlapping = (iv) =>
+    iv.some((a, i) =>
+      iv.some((z, j) => i !== j && a.side === z.side && a.lo < z.hi && z.lo < a.hi),
+    );
+
+  const four = await spans(4);
+  t.ok('a count of four spawns four interfaces', four.length === 4, JSON.stringify(four));
+  t.ok(
+    'spread along the default border, not stacked at its corner',
+    new Set(four.map((s) => s.lo)).size === 4 && four.some((s) => s.lo > 0),
+    JSON.stringify(four.map((s) => s.lo)),
+  );
+  t.ok('none of them overlapping', !overlapping(four), JSON.stringify(four));
+
+  /*
+    Raising the count keeps the interfaces already placed -- they may have been dragged -- so the
+    new ones cannot simply take their slot in the new even spread: the spread for four and the
+    spread for six do not line up, and one of the new ones lands on top of an old one. Observed
+    as a fourth interface at 288 and a sixth at 304, overlapping by 28 of their 32 units.
+  */
+  const six = await spans(6);
+  t.ok(
+    'raising the count adds to the end and leaves the others put',
+    six.length === 6 && JSON.stringify(six.slice(0, 4)) === JSON.stringify(four),
+    JSON.stringify(six),
+  );
+  t.ok('and finds free slots for the new ones', !overlapping(six), JSON.stringify(six));
+
+  const two = await spans(2);
+  t.ok(
+    'lowering it removes from the end',
+    two.length === 2 && JSON.stringify(two) === JSON.stringify(four.slice(0, 2)),
+    JSON.stringify(two),
+  );
+
+  t.ok(
+    'a fabric offers only its top and bottom borders',
+    JSON.stringify(await page.evaluate(() => window.__ops('fabric').interfaceSides({}))) ===
+      JSON.stringify(['n', 's']),
+  );
+  t.ok(
+    'a block offers all four',
+    JSON.stringify(await page.evaluate(() => window.__ops('rect').interfaceSides({}))) ===
+      JSON.stringify(['n', 'e', 's', 'w']),
+  );
+}
+
+// ------------------------------------------------------ z-order, delete, cascade ----
+
+{
+  const fab = await page.evaluate(
+    () => window.__scene.shapes.find((s) => s.kind === 'fabric').name,
+  );
+  await patchShape(fab, { interfaces: 2 });
+  // A second shape, so "restacked past something" is actually observable.
+  await draw('Digit3', 'rect', slot(1, 1), { w: 90, h: 70 });
+
+  /*
+    Interfaces must sit directly above the parent they are glued to: both `hitTest` and
+    `anchorHitTest` walk the z-order top-down, so an interface underneath its parent is
+    unclickable and a wire aimed at it attaches to the fabric's body instead. Appending would put
+    it there once -- but one `bringToFront` on the parent buries every interface it owns, which is
+    why the reconcile re-seats them on every commit.
+  */
+  const order = await names();
+  const fi = order.indexOf(fab);
+  const pins = order.filter((n) => n.startsWith(`${fab}.`));
+  t.ok(
+    'interfaces sit directly above their parent',
+    order[fi + 1] === pins[0] && order[fi + 2] === pins[1],
+    order.join(','),
+  );
+
+  await page.evaluate((n) => window.__scene.selectOnly(n), fab);
+  await page.evaluate(() => window.__host.bringToFront());
+  await page.waitForTimeout(160);
+  const after = await names();
+  const ai = after.indexOf(fab);
+  t.ok(
+    'and are still above it after the parent is brought to the front',
+    after[ai + 1] === pins[0] && after[ai + 2] === pins[1],
+    after.join(','),
+  );
+  t.ok('which did move the parent past the other shape', ai > 0, after.join(','));
+
+  // Deleting an interface is refused, and must not record an undo entry for doing nothing.
+  const label = await page.evaluate(() => window.__scene.history.undoLabel);
+  await page.evaluate(() =>
+    window.__scene.selectOnly(window.__scene.shapes.find((s) => s.kind === 'nif').name),
+  );
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(160);
+  t.ok(
+    'an interface cannot be deleted on its own',
+    (await nifs()).length === 2,
+    String((await nifs()).length),
+  );
+  t.ok(
+    'and the refusal records no undo entry',
+    (await page.evaluate(() => window.__scene.history.undoLabel)) === label,
+    `${label} -> ${await page.evaluate(() => window.__scene.history.undoLabel)}`,
+  );
+
+  // Deleting the parent takes them with it, and undo brings all three back.
+  await page.evaluate((n) => window.__scene.selectOnly(n), fab);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  t.ok(
+    'deleting the parent cascades to its interfaces',
+    !(await kinds()).includes('nif') && !(await kinds()).includes('fabric'),
+    (await kinds()).join(','),
+  );
+  await page.keyboard.press('Meta+z');
+  await page.waitForTimeout(250);
+  const back = await kinds();
+  t.ok(
+    'and one undo restores the parent and both interfaces',
+    back.filter((k) => k === 'nif').length === 2 && back.includes('fabric'),
+    back.join(','),
+  );
+}
+
+// ------------------------------------------------------------ dragging a pin ----
+
+{
+  await clear();
+  const fab = await draw('Digit6', 'fabric', slot(0, 0), { w: 320, h: 80 }, { interfaces: 3 });
+  const geom = await shape(fab);
+  const pin = (await nifs())[0].name;
+
+  const toScreen = (x, y) =>
+    page.evaluate(
+      ([a, b2]) => {
+        const p = window.__view.toScreen({ x: a, y: b2 });
+        return { x: p.x, y: p.y };
+      },
+      [x, y],
+    );
+  const centreOf = async (n) => {
+    const s = await shape(n);
+    return toScreen(s.x + s.w / 2, s.y + s.h / 2);
+  };
+  const glue = () =>
+    page.evaluate(
+      ([n, f]) => {
+        const s = window.__scene.shapes.find((x) => x.name === n);
+        const p = window.__scene.shapes.find((x) => x.name === f);
+        const mid = s.y + s.h / 2;
+        return {
+          side: s.side,
+          offset: s.offset,
+          on: Math.abs(mid - p.y) < 0.01 ? 'n' : Math.abs(mid - (p.y + p.h)) < 0.01 ? 's' : 'off',
+          within: s.x >= p.x && s.x + s.w <= p.x + p.w,
+          right: s.x + s.w,
+          edge: p.x + p.w,
+          parentBox: `${p.x},${p.y} ${p.w}x${p.h}`,
+        };
+      },
+      [pin, fab],
+    );
+
+  const parentBefore = (await glue()).parentBox;
+
+  /*
+    A press near the border used to start resizing the PARENT: an interface is glued exactly
+    where the parent's invisible edge grab zone runs, and handles of a selected shape beat any
+    body underneath them. Selecting a fabric therefore covered every one of its interfaces with a
+    resize zone and made them ungrabbable until it was deselected.
+  */
+  await page.evaluate((n) => window.__scene.selectOnly(n), fab);
+  const start = await centreOf(pin);
+  const acrossTo = await toScreen(geom.x + geom.w / 2, geom.y + geom.h);
+  await dragOn(start, acrossTo);
+  const moved = await glue();
+  t.ok(
+    'an interface can be dragged even while its parent is selected',
+    moved.on !== 'off',
+    JSON.stringify(moved),
+  );
+  t.ok(
+    'dragging it across moves it to the other border',
+    moved.side === 's' && moved.on === 's',
+    JSON.stringify(moved),
+  );
+  t.ok(
+    'and the parent is not resized by the gesture',
+    moved.parentBox === parentBefore,
+    `${moved.parentBox} vs ${parentBefore}`,
+  );
+
+  const farOut = await toScreen(geom.x + geom.w + 400, geom.y + geom.h);
+  await dragOn(await centreOf(pin), farOut);
+  const clamped = await glue();
+  t.ok(
+    'dragging it past the end clamps it inside the parent',
+    clamped.within && clamped.right === clamped.edge,
+    JSON.stringify(clamped),
+  );
+
+  await dragOn(await centreOf(pin), await toScreen(geom.x + geom.w / 2, geom.y));
+  t.ok(
+    'and it can be dragged back to the first border',
+    (await glue()).side === 'n',
+    JSON.stringify(await glue()),
+  );
+
+  // Moving the parent carries the interfaces, without rewriting their offsets.
+  const off = (await glue()).offset;
+  await page.evaluate((n) => window.__scene.selectOnly(n), fab);
+  const fc = await toScreen(geom.x + geom.w / 2, geom.y + geom.h / 2);
+  await dragOn(fc, { x: fc.x + 64, y: fc.y + 48 });
+  const carried = await page.evaluate(
+    ([n, f]) => {
+      const s = window.__scene.shapes.find((x) => x.name === n);
+      const p = window.__scene.shapes.find((x) => x.name === f);
+      return { offset: s.offset, onBorder: Math.abs(s.y + s.h / 2 - p.y) < 0.01 };
+    },
+    [pin, fab],
+  );
+  t.ok('moving the parent carries its interfaces', carried.onBorder, JSON.stringify(carried));
+  t.ok(
+    'without rewriting the offset the user authored',
+    carried.offset === off,
+    `${off} -> ${carried.offset}`,
+  );
+}
+
 // ------------------------------------------------------------- serialization ----
 
 {
+  const round = await page.evaluate(() => {
+    const before = window.__scene.shapes;
+    const doc = window.__doc.serializeScene(before);
+    const back = window.__doc.deserializeScene(doc);
+    const key = (s) => `${s.kind}:${s.name}`;
+    return {
+      same: JSON.stringify(before.map(key)) === JSON.stringify(back.map(key)),
+      order: back.map(key),
+      pins: back
+        .filter((s) => s.kind === 'nif')
+        .map((s) => `${s.parent}/${s.side}/${s.offset}/${s.protocol}/${s.channel}/${s.modport}`),
+      // `box` is computed, so it must NOT be in the record.
+      recordKeys: Object.keys(doc.shapes.find((r) => r.kind === 'nif') ?? {}),
+    };
+  });
+  t.ok('a scene of fabrics and interfaces round-trips', round.same, JSON.stringify(round.order));
+  t.ok(
+    'carrying each interface parent, side, offset and bus identity',
+    round.pins.every((p) =>
+      /^[^/]+\/[nesw]\/-?\d+\/axi3\/(aw|w|b|ar|r|all)\/(master|slave)$/.test(p),
+    ),
+    JSON.stringify(round.pins),
+  );
+  t.ok(
+    'and not the derived box, which is computed',
+    !round.recordKeys.includes('box') && round.recordKeys.includes('side'),
+    JSON.stringify(round.recordKeys),
+  );
+
   const fifoRound = await page.evaluate(() => {
     const doc = window.__doc.serializeScene([
       {
@@ -532,7 +810,8 @@ const clear = async () => {
   Array order in the file is the Z-ORDER, which says nothing about what depends on what, while a
   record's writers see only the shapes loaded before it. A connection stored below its blocks --
   one `Cmd+[` does that -- had its endpoints refused, kept `blank`'s empty `from`, and was then
-  dropped by `normalize`. Nothing threw; the wire was simply not there.
+  dropped by `normalize`. Nothing threw; the wire was simply not there. Iteration 6 makes the
+  chain three deep -- fabric to interface to connection -- so this goes from latent to ordinary.
 */
 {
   const r = await page.evaluate(() => {
@@ -546,7 +825,7 @@ const clear = async () => {
           description: '',
           labelOffset: [0, 0],
           routing: 'auto',
-          source: ['a', 'e'],
+          source: ['fab.if_1', 'n'],
           target: ['b', 'w'],
           points: [
             [160, 88],
@@ -554,14 +833,28 @@ const clear = async () => {
           ],
         },
         {
-          kind: 'rect',
-          name: 'a',
+          kind: 'nif',
+          name: 'fab.if_1',
+          label: '',
+          description: '',
+          parent: 'fab',
+          side: 'n',
+          offset: 32,
+          size: [32, 8],
+          protocol: 'axi3',
+          channel: 'aw',
+          modport: 'slave',
+        },
+        {
+          kind: 'fabric',
+          name: 'fab',
           label: '',
           subtitle: '',
           labelMode: 'inset',
           description: '',
           position: [80, 48],
-          size: [80, 80],
+          size: [160, 80],
+          interfaces: 1,
         },
         {
           kind: 'rect',
@@ -570,8 +863,9 @@ const clear = async () => {
           subtitle: '',
           labelMode: 'inset',
           description: '',
-          position: [240, 48],
+          position: [320, 48],
           size: [80, 80],
+          interfaces: 0,
         },
       ],
     };
@@ -582,13 +876,13 @@ const clear = async () => {
     };
   });
   t.ok(
-    'a connection stored before its blocks still loads',
-    JSON.stringify(r.wires) === JSON.stringify(['a->b']),
+    'a connection stored before BOTH its interface and that interface’s parent still loads',
+    JSON.stringify(r.wires) === JSON.stringify(['fab.if_1->b']),
     JSON.stringify(r.wires),
   );
   t.ok(
     'and the file order, which is the z-order, is left alone',
-    JSON.stringify(r.names) === JSON.stringify(['w0', 'a', 'b']),
+    JSON.stringify(r.names) === JSON.stringify(['w0', 'fab.if_1', 'fab', 'b']),
     JSON.stringify(r.names),
   );
 }

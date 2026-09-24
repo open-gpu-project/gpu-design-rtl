@@ -442,6 +442,7 @@ t.ok(
     JSON.stringify([
       'kind',
       'description',
+      'interfaces',
       'label',
       'labelMode',
       'name',

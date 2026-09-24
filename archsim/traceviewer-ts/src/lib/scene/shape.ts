@@ -1,6 +1,6 @@
 import type { PropSchema } from '../props/spec';
 import type { Theme } from '../canvas/theme';
-import type { Anchor, Modifiers, Rect, Vec2 } from '../geom/types';
+import type { Anchor, Modifiers, Rect, Side, Vec2 } from '../geom/types';
 
 /**
  * A shape's identity **is** its name. There is no separate opaque id.
@@ -51,6 +51,82 @@ export interface Headed extends ShapeBase {
 /** A block in the architecture diagram. */
 export interface RectShape extends Headed {
   readonly kind: 'rect';
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  /** How many network interfaces sit on its border. Reconciled into `nif` children. */
+  readonly interfaces: number;
+}
+
+/**
+ * A switch fabric: a box that carries a row of network interfaces.
+ *
+ * The same shape as a block, minus the freedom -- its interfaces may only sit on the top and
+ * bottom borders, because a fabric is drawn between the things it connects, and a port on its
+ * left or right edge would read as belonging to the neighbour rather than to the fabric.
+ */
+export interface FabricShape extends Headed {
+  readonly kind: 'fabric';
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  /** How many network interfaces sit on its border. Reconciled into `nif` children. */
+  readonly interfaces: number;
+}
+
+/** Which end of a bus this interface is. SystemVerilog modport convention. */
+export type Modport = 'master' | 'slave';
+
+/** An AXI3 channel, or `all` for an interface standing in for the whole bundle. */
+export type Channel = 'aw' | 'w' | 'b' | 'ar' | 'r' | 'all';
+
+/**
+ * A network interface: a flat plain box glued to a parent's border.
+ *
+ * A first-class shape rather than data nested in its parent, which is what buys it the whole
+ * editor for free -- selection, the property panel, a name a connection can bind to,
+ * cascade-deletion through `dependsOn`, undo, and the clipboard. `PropValue` has no object case,
+ * so nesting would have meant a list of tuples and a sub-object selection model built from
+ * scratch.
+ *
+ * Its own creation and destruction are NOT its business: the parent's `interfaces` count is
+ * authoritative and `expandChildren` reconciles against it. `deletable` returns false to say so.
+ */
+export interface NifShape extends ShapeBase {
+  readonly kind: 'nif';
+  /** The box this interface is glued to. Empty only on a blank awaiting an import. */
+  readonly parent: ShapeName;
+  readonly side: Side;
+  /**
+   * Distance along `side` from its start corner, AS AUTHORED.
+   *
+   * Clamped where the box is computed rather than stored clamped, so shrinking a parent past an
+   * interface and growing it back puts the interface where the user left it -- the same reason
+   * `makeBoxAnchor` carries the unclamped offset in its id.
+   */
+  readonly offset: number;
+  /** Extent along the border, and across it. */
+  readonly length: number;
+  readonly depth: number;
+  /** The bus standard. Means something beyond this editor later; today it is a label. */
+  readonly protocol: 'axi3';
+  readonly channel: Channel;
+  readonly modport: Modport;
+  readonly description: string;
+  /**
+   * An uncommitted drag, in world units, waiting to be turned into a `side` and an `offset`.
+   *
+   * This field exists because of a gap in the seams, and it is worth being explicit about.
+   * Deciding which border a dragged interface landed on needs the PARENT's box, and neither
+   * `translate` nor `resize` is given it -- only `reroute` is. So `translate` records the
+   * gesture here and `reroute` consumes it, resolves the face, and zeroes it again.
+   *
+   * `computed`, so it never reaches the file: a saved interface is always already resolved.
+   */
+  readonly pending: readonly [number, number];
+  /** Derived from the parent's box by `reroute`. `computed` -- never authored, never saved. */
   readonly x: number;
   readonly y: number;
   readonly w: number;
@@ -113,8 +189,8 @@ export interface ConnectionShape extends ShapeBase {
   readonly description: string;
 }
 
-/** Widen as kinds are added: `| PortShape | LabelShape`. */
-export type Shape = RectShape | FifoShape | ConnectionShape;
+/** Widen as kinds are added: `| LabelShape`. */
+export type Shape = RectShape | FifoShape | FabricShape | NifShape | ConnectionShape;
 
 /** The eight box handles, plus kind-specific ids like a connection's `seg:0` or `end:from`. */
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | (string & {});
@@ -362,4 +438,47 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * outline is deliberately not a corridor -- lines bundle with lines, not with boxes.
    */
   corridors?(s: S): readonly Vec2[] | null;
+
+  /* ------------------------------------------------------ parents and children ---- */
+
+  /**
+   * The shape that OWNS this one, for that parent's `expand` to reconcile against, or null.
+   *
+   * Narrower than `dependsOn`, which is about geometry and returns two names for a connection.
+   * This one answers "whose count decides whether you exist", and only a child kind implements
+   * it.
+   */
+  childOf?(s: S): ShapeName | null;
+
+  /**
+   * The children this shape must be accompanied by, reconciled on every commit.
+   *
+   * `existing` is its current children in document order; `mint` yields a free name. MUST return
+   * `existing` BY REFERENCE when the set is already correct -- `expandChildren` decides whether
+   * anything changed by identity, and an unconditional allocation would make every commit an
+   * undoable step.
+   *
+   * Runs in `SceneStore.commit`, not in `resolve.ts`: minting a name is not pure, and `resolve.ts`
+   * is documented as a pure function of the shape array -- the select tool calls its `rerouteAll`
+   * directly, mid-drag, where nothing should be created.
+   */
+  expand?(s: S, existing: readonly Shape[], mint: (prefix: string) => ShapeName): readonly Shape[];
+
+  /**
+   * Which of its faces this shape lets an interface attach to. Omitted means it carries none.
+   *
+   * Asked of the PARENT by the child, so a `nif` never switches on its parent's kind. Note this
+   * is a different question from `anchorAt`, which is where a WIRE may land: a fabric restricts
+   * its interfaces to two borders but takes a wire anywhere on its perimeter.
+   */
+  interfaceSides?(s: S): readonly Side[];
+
+  /**
+   * False to refuse direct deletion. Omitted means deletable.
+   *
+   * What keeps a parent's `interfaces` count authoritative: you change the number of interfaces
+   * on the parent, you do not delete interfaces off it. Without this the reconcile would simply
+   * mint the deleted one again on the next commit, which is a worse answer than refusing.
+   */
+  deletable?(s: S): boolean;
 }

@@ -6,8 +6,13 @@ is deliberately **not** wired into the CMake build.
 The app is a dockable workspace: panels can be split, tabbed, dragged onto one another, floated
 into windows, or collapsed to an edge. Three panels exist so far.
 
-- **Diagram** — the architecture canvas, where the hardware design is laid out as blocks. A
-  block carries a label and a subtitle, and `labelMode` decides how they are shown: `inset`
+- **Diagram** — the architecture canvas, where the hardware design is laid out. Alongside plain
+  blocks it carries **queues**, drawn as a run of cells whose length is the cell count times the
+  divider pitch (set the count to `-1` for an unbounded queue, drawn as one cell, a stretchable
+  gap and three more), and **fabrics**, which carry **network interfaces** on their borders. An
+  interface is a first-class object with its own name, protocol and modport, but it is not drawn
+  from the toolbar: you set how many a fabric or a block carries and drag them into place. Every
+  box kind carries a label and a subtitle, and `labelMode` decides how they are shown: `inset`
   centres the label in the block with the subtitle beneath it, while `tabbed_left` and
   `tabbed_right` put the label in a small folder tab above a top corner and leave the body
   empty. Hovering a block or a wire raises a tooltip — a block's description, a wire's name and
@@ -54,35 +59,37 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 423 assertions across nine suites. Anything touching
+iteration document. `npm run verify` is 451 assertions across nine suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
 ## Controls
 
-| Gesture                                        | Action                                               |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| Drag empty space / middle-drag / space+drag    | Pan                                                  |
-| Two-finger scroll (trackpad)                   | Pan                                                  |
-| Mouse wheel, trackpad pinch                    | Zoom at the cursor                                   |
-| `⌘`+wheel / `⇧`+wheel                          | Force zoom / force horizontal pan                    |
-| `1` / `2` / `3` / `4`                          | Pointer / Select / Rectangle / Connection            |
-| Drag with the select tool                      | Select everything the band touches                   |
-| `⇧`+drag with the select tool                  | Add the band's contents to the selection             |
-| Drag with the rectangle tool                   | Draw a block, snapped to the grid                    |
-| Click two block edges with the connection tool | Draw an arrow between them                           |
-| Drag a segment of a selected connection        | Reshape its route, pinning it to manual routing      |
-| Drag a round bead on a selected connection     | Slide that end along its edge, or onto another block |
-| Click a block, then drag its body or handles   | Move or resize                                       |
-| Hold the pointer still over a block or wire    | Show its description as a tooltip                    |
-| Hold the pointer still over a toolbar button   | Show its name and keyboard shortcut                  |
-| `⇧`+click                                      | Add to or remove from the selection                  |
-| `⌫`                                            | Delete the selection                                 |
-| `⌘C` / `⌘X` / `⌘V`                             | Copy / cut / paste the selection                     |
-| `⌘Z` / `⇧⌘Z`                                   | Undo / redo                                          |
-| `⌘]` `⌘[` `⇧⌘]` `⇧⌘[`                          | To front / to back / forward / backward              |
-| `⌘0` / `⌘1`                                    | Reset zoom / zoom to fit                             |
-| `Esc`                                          | Cancel the current gesture, then clear the selection |
+| Gesture                                        | Action                                                     |
+| ---------------------------------------------- | ---------------------------------------------------------- |
+| Drag empty space / middle-drag / space+drag    | Pan                                                        |
+| Two-finger scroll (trackpad)                   | Pan                                                        |
+| Mouse wheel, trackpad pinch                    | Zoom at the cursor                                         |
+| `⌘`+wheel / `⇧`+wheel                          | Force zoom / force horizontal pan                          |
+| `1` / `2` / `3` / `4` / `5` / `6`              | Pointer / Select / Rectangle / Connection / Queue / Fabric |
+| Drag with the select tool                      | Select everything the band touches                         |
+| `⇧`+drag with the select tool                  | Add the band's contents to the selection                   |
+| Drag with the rectangle tool                   | Draw a block, snapped to the grid                          |
+| Drag with the queue or fabric tool             | Draw a FIFO or a switch fabric                             |
+| Drag a network interface                       | Slide it along its parent's border, or onto another        |
+| Click two block edges with the connection tool | Draw an arrow between them                                 |
+| Drag a segment of a selected connection        | Reshape its route, pinning it to manual routing            |
+| Drag a round bead on a selected connection     | Slide that end along its edge, or onto another block       |
+| Click a block, then drag its body or handles   | Move or resize                                             |
+| Hold the pointer still over a block or wire    | Show its description as a tooltip                          |
+| Hold the pointer still over a toolbar button   | Show its name and keyboard shortcut                        |
+| `⇧`+click                                      | Add to or remove from the selection                        |
+| `⌫`                                            | Delete the selection                                       |
+| `⌘C` / `⌘X` / `⌘V`                             | Copy / cut / paste the selection                           |
+| `⌘Z` / `⇧⌘Z`                                   | Undo / redo                                                |
+| `⌘]` `⌘[` `⇧⌘]` `⇧⌘[`                          | To front / to back / forward / backward                    |
+| `⌘0` / `⌘1`                                    | Reset zoom / zoom to fit                                   |
+| `Esc`                                          | Cancel the current gesture, then clear the selection       |
 
 In the trace panel:
 
@@ -115,7 +122,7 @@ src/lib/canvas/    Camera, renderer, dot grid, hit testing, wheel/trackpad input
 src/lib/scene/     The document: shapes, z-order, bounds, history, serialization
 src/lib/props/     Property declarations, the JSON Schema generator, projection, validation,
                    and the property editor's context menu
-src/lib/tools/     Tool contract, registry, pointer plumbing, and the four tools
+src/lib/tools/     Tool contract, registry, pointer plumbing, and the six tools
 src/lib/trace/     The trace document: model, queries, the synthetic fixture, and the store
 src/lib/timeline/  The trace panel's canvas: camera, tick ladder, flag layout, renderer, hit
                    testing, input host, and its theme
@@ -141,11 +148,12 @@ import to `src/lib/register.ts`. Nothing else switches on `kind`.
 is what `register.ts` imports, so `<kind>.props.ts` importing back from `<kind>.ts` closes a
 cycle — and because the props module consumes those values while it is still evaluating its
 top-level array, they land in the temporal dead zone and the app dies at load with
-`Cannot access '…' before initialization`. `fifo-geom.ts` is that third module; `rect` and
-`conn` never needed one because their props files ask for nothing back.
+`Cannot access '…' before initialization`. `fifo-geom.ts` and `nif-geom.ts` are that third
+module; `rect` and `conn` never needed one because their props files ask for nothing back.
 
 A kind that draws an axis-aligned box should delegate to `shapes/box.ts` for its handles, resize
-arithmetic, perimeter anchors and body, and to `shapes/heading.ts` for its label.
+arithmetic, perimeter anchors and body, to `shapes/heading.ts` for its label, and to
+`props/common.ts` for the nine properties every box repeats.
 
 ### Adding a property
 

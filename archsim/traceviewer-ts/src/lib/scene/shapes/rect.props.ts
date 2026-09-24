@@ -11,6 +11,7 @@ import {
 } from '../../props/common';
 import { propSchema, type PropDef, type PropSchema } from '../../props/spec';
 import type { RectShape } from '../shape';
+import { interfacesProp } from './interfaces.props';
 
 /**
  * The rectangle's properties.
@@ -31,6 +32,7 @@ const props: readonly PropDef<RectShape>[] = [
   labelProp('block'),
   positionProp(),
   sizeProp('block'),
+  interfacesProp('block', 'the top border'),
   subtitleProp('block'),
   labelModeProp('block'),
   descriptionProp('what this hardware block does'),

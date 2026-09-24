@@ -19,6 +19,14 @@ export interface HitScene {
  *
  * Handles only exist on selected shapes, so an unselected block lying on top can never steal a
  * resize gesture from the selected one underneath it.
+ *
+ * **With one exception, and it is the same reasoning rather than a hole in it.** That rule is
+ * about an *unrelated* shape lying on top. A shape's own CHILD is not unrelated: a network
+ * interface is glued to its parent's border, which is exactly where the parent's invisible edge
+ * grab zone runs. Without the exception, selecting a fabric covers every one of its interfaces
+ * with a resize zone, and a press meant for a port silently resizes the fabric instead -- the
+ * port becomes ungrabbable until you deselect its parent. So a selected shape's handles yield at
+ * points its own children occupy, and the body pass below picks the child, which sits above it.
  */
 export function hitTest(scene: HitScene, world: Vec2, hc: HitContext): HitResult {
   // A screen-pixel tolerance converted to world units, so the grab zone feels the same at
@@ -28,6 +36,7 @@ export function hitTest(scene: HitScene, world: Vec2, hc: HitContext): HitResult
   for (let i = scene.shapes.length - 1; i >= 0; i--) {
     const s = scene.shapes[i]!;
     if (!scene.selection.has(s.name)) continue;
+    if (childCovers(scene.shapes, s.name, world, hc)) continue;
     for (const h of opsFor(s).handles(s)) {
       const hit =
         h.geom === 'point'
@@ -43,6 +52,21 @@ export function hitTest(scene: HitScene, world: Vec2, hc: HitContext): HitResult
   }
 
   return { type: 'empty' };
+}
+
+/** Is `world` on a child of `parent`? Drives the handle exception documented above. */
+function childCovers(
+  shapes: readonly Shape[],
+  parent: ShapeName,
+  world: Vec2,
+  hc: HitContext,
+): boolean {
+  for (const t of shapes) {
+    const ops = opsFor(t);
+    if (ops.childOf?.(t) !== parent) continue;
+    if (ops.hitTest(t, world, hc)) return true;
+  }
+  return false;
 }
 
 export interface AnchorHit {

@@ -1,5 +1,5 @@
 import { normalizeRect, pointInRect, rectFromPoints, rectsIntersect } from '../../geom/math';
-import type { Rect, Vec2 } from '../../geom/types';
+import type { Rect, Side, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
 import type { RectShape, ShapeName, ShapeOps, ShapeTooltip } from '../shape';
@@ -12,7 +12,16 @@ import {
   resolveBoxAnchor,
 } from './box';
 import { headingHit, headingTooltip } from './heading';
+import { expandInterfaces } from './interfaces';
 import { rectProps } from './rect.props';
+
+/**
+ * A block offers all four borders to its interfaces, unlike a fabric.
+ *
+ * `'n'` first is what `expand` lays new ones out along -- see `spreadOffsets` for why every new
+ * interface starts on one face rather than being distributed around the box.
+ */
+const RECT_SIDES: readonly Side[] = ['n', 'e', 's', 'w'];
 
 /** Mid-drag a rect may carry negative w/h (the user flipped it). Everything reads through this. */
 function box(s: RectShape): Rect {
@@ -32,6 +41,7 @@ export function makeRect(a: Vec2, b: Vec2, name: ShapeName): RectShape {
     y: r.y,
     w: r.w,
     h: r.h,
+    interfaces: 0,
   };
 }
 
@@ -52,6 +62,7 @@ export const rectOps: ShapeOps<RectShape> = {
       y: 0,
       w: GRID,
       h: GRID,
+      interfaces: 0,
     };
   },
 
@@ -91,6 +102,11 @@ export const rectOps: ShapeOps<RectShape> = {
   resolveAnchor: (s, id) => resolveBoxAnchor(box(s), id),
 
   anchors: (s) => boxAnchors(box(s)),
+
+  interfaceSides: () => RECT_SIDES,
+
+  expand: (s, existing, mint) =>
+    expandInterfaces(s.name, box(s), RECT_SIDES[0]!, s.interfaces, existing, mint),
 };
 
 registerShape(rectOps);

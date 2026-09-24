@@ -559,8 +559,25 @@ export class ToolHost {
     // and the eventual pointerup would then push the resurrected shape back into history.
     if (this.isGesturing()) return;
     if (ids.size === 0) return;
+
+    /*
+      A kind may refuse to be deleted on its own: a network interface exists because its parent
+      asked for a number of them, so removing one would leave the count saying something the
+      diagram does not -- and the reconcile would mint it again on the next commit anyway.
+
+      The length check is not an optimisation. `filter` allocates a new array even when it
+      removed nothing, and `commit` decides whether to push an undo entry by comparing `shapes`
+      by identity -- so pressing Delete on a selection of nothing BUT interfaces would otherwise
+      record an undoable step that changed the document not at all. `ids.size === 0` above used
+      to cover every such case; with a refusal it no longer does.
+    */
+    const kept = this.scene.shapes.filter(
+      (s) => !ids.has(s.name) || opsFor(s).deletable?.(s) === false,
+    );
+    if (kept.length === this.scene.shapes.length) return;
+
     this.scene.commit(label, () => {
-      this.scene.shapes = this.scene.shapes.filter((s) => !ids.has(s.name));
+      this.scene.shapes = kept;
       this.scene.setSelection(new Set());
     });
     this.invalidate();

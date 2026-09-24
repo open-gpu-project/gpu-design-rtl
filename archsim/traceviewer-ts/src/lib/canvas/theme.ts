@@ -11,6 +11,11 @@ export interface Theme {
   readonly shapeSubtitle: string;
   /** The cell dividers inside a FIFO. Quieter than the outline: they are internal structure. */
   readonly fifoDivider: string;
+  /** A network interface's flat box, and the tick that says which end of the bus it is. */
+  readonly nifFill: string;
+  readonly nifStroke: string;
+  readonly nifMarkMaster: string;
+  readonly nifMarkSlave: string;
   readonly ghostFill: string;
   readonly ghostStroke: string;
   readonly handleFill: string;
@@ -44,6 +49,10 @@ export const darkTheme: Theme = {
   shapeLabel: '#dbe3ef',
   shapeSubtitle: '#93a1b8',
   fifoDivider: 'rgba(96, 165, 250, 0.55)',
+  nifFill: 'rgba(148, 163, 184, 0.35)',
+  nifStroke: '#94a3b8',
+  nifMarkMaster: '#fbbf24',
+  nifMarkSlave: '#38bdf8',
   ghostFill: 'rgba(96, 165, 250, 0.08)',
   ghostStroke: '#7dd3fc',
   handleFill: '#0f1115',
@@ -178,6 +187,10 @@ export const TAB_EST_CHAR_PX = 5.6;
  * maximum `CONN_LABEL_OFFSET_MAX` off its run, with room left over. Overdrawing a few shapes
  * just outside the viewport costs far less than one invisible label.
  */
+/** A network interface's label, drawn outside the box because the box is one grid step across. */
+export const NIF_LABEL_FONT = '10px ui-sans-serif, system-ui, sans-serif';
+export const NIF_LABEL_PAD_PX = 3;
+
 export const CULL_MARGIN_PX = 96;
 
 /** Connection line width, in CSS pixels. */
