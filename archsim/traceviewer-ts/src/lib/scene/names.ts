@@ -34,11 +34,6 @@ export function nextIndexedName(
   }
 }
 
-/** The first free `block_N`. */
-export function nextBlockName(taken: ReadonlySet<ShapeName>, from = 1): ShapeName {
-  return nextIndexedName('block', taken, from);
-}
-
 /** A trailing decimal counter, with no separator required: `block0`, `conn_7`, `u12`. */
 const TRAILING_INDEX = /^(.*?)(\d+)$/;
 

@@ -143,10 +143,3 @@ export function defFor<S extends ShapeBase>(
   if (key === undefined) return undefined;
   return ps.props.find((d) => d.key === key);
 }
-
-export function isEditable<S extends ShapeBase>(
-  ps: PropSchema<S>,
-  key: string | undefined,
-): boolean {
-  return defFor(ps, key)?.mode === 'edit';
-}

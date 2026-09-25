@@ -1544,24 +1544,8 @@ t.ok(
   longer pointing at the target so much as sitting in the source, and a blob between two boxes
   says less than the bare line does.
 
-  The geometry is pinned as a pure call and the decision is then read off the canvas, because
-  the two can disagree in exactly one interesting way: a correct box wired to nothing.
+  The decision is read off the canvas.
 */
-{
-  const box = await page.evaluate(() => ({
-    east: window.__arrowBox({ x: 100, y: 50 }, { x: 1, y: 0 }, 2),
-    south: window.__arrowBox({ x: 100, y: 50 }, { x: 0, y: 1 }, 2),
-  }));
-  // 9px long and 9px across at dpr 2 is 18 by 18 device px, less the 3 device px of tip that
-  // is discounted along the arrow's own axis -- so 15 by 18 going east, 18 by 15 going south.
-  t.ok(
-    "the arrowhead's box is the head, less the tip resting on the outline",
-    JSON.stringify(box.east) === JSON.stringify({ x: 82, y: 41, w: 15, h: 18 }) &&
-      JSON.stringify(box.south) === JSON.stringify({ x: 91, y: 32, w: 18, h: 15 }),
-    JSON.stringify(box),
-  );
-}
-
 {
   await page.keyboard.press('Digit1');
   await page.evaluate(() => {

@@ -77,10 +77,6 @@ export class TraceStore {
     return this.doc.tracks[id];
   }
 
-  rowIndexOf(id: SignalId): number {
-    return this.rows.indexOf(id);
-  }
-
   /** Ticks are integers, so every cursor move snaps. Clamped to the document. */
   setCursor(tick: Tick): void {
     const t = Math.max(0, Math.min(this.doc.lastTick, Math.round(tick)));
@@ -100,30 +96,23 @@ export class TraceStore {
    * Move the cursor to the next record on the selected row.
    *
    * With no row selected this steps one tick, so the arrow keys always do something sensible.
-   * Returns whether the cursor moved, which is what the caller uses to decide about scrolling.
    */
-  nextEvent(): boolean {
+  nextEvent(): void {
     const track = this.#selectedTrack();
-    const before = this.cursorTick;
     if (track === null) this.setCursor(this.cursorTick + 1);
     else {
       const t = nextEventTick(track, this.cursorTick);
-      if (t === null) return false;
-      this.setCursor(t);
+      if (t !== null) this.setCursor(t);
     }
-    return this.cursorTick !== before;
   }
 
-  prevEvent(): boolean {
+  prevEvent(): void {
     const track = this.#selectedTrack();
-    const before = this.cursorTick;
     if (track === null) this.setCursor(this.cursorTick - 1);
     else {
       const t = prevEventTick(track, this.cursorTick);
-      if (t === null) return false;
-      this.setCursor(t);
+      if (t !== null) this.setCursor(t);
     }
-    return this.cursorTick !== before;
   }
 
   /** First record on the selected row, or tick 0. */

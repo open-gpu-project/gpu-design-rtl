@@ -3,14 +3,7 @@ import type { Rect, Side, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
 import type { FabricShape, ShapeName, ShapeOps, ShapeTooltip } from '../shape';
-import {
-  boxAnchorAt,
-  boxAnchors,
-  boxHandles,
-  drawBoxBody,
-  resizeBox,
-  resolveBoxAnchor,
-} from './box';
+import { boxAnchorAt, boxHandles, drawBoxBody, resizeBox, resolveBoxAnchor } from './box';
 import { fabricProps } from './fabric.props';
 import { headingHit, headingTooltip } from './heading';
 import { expandInterfaces } from './interfaces';
@@ -91,8 +84,6 @@ export const fabricOps: ShapeOps<FabricShape> = {
   anchorAt: (s, p, hc) => boxAnchorAt(box(s), p, hc),
 
   resolveAnchor: (s, id) => resolveBoxAnchor(box(s), id),
-
-  anchors: (s) => boxAnchors(box(s)),
 
   interfaceSides: () => FABRIC_SIDES,
 

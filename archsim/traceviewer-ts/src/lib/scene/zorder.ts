@@ -1,24 +1,9 @@
 import type { Shape, ShapeName } from './shape';
 
-/**
+/*
  * Z-order lives in the `shapes` array: index 0 is the bottom of the stack. These are pure array
- * transforms; `reorder` is the primitive a layers panel will drag against, and the four commands
- * below are conveniences on top of the same idea.
+ * transforms.
  */
-export function reorder(
-  shapes: readonly Shape[],
-  id: ShapeName,
-  toIndex: number,
-): readonly Shape[] {
-  const from = shapes.findIndex((s) => s.name === id);
-  if (from < 0) return shapes;
-  const to = Math.max(0, Math.min(shapes.length - 1, toIndex));
-  if (from === to) return shapes;
-  const out = shapes.slice();
-  const [moved] = out.splice(from, 1);
-  out.splice(to, 0, moved!);
-  return out;
-}
 
 /** Stable partition: everything else keeps its order, the moved set keeps its order too. */
 export function bringToFront(

@@ -1,5 +1,5 @@
 import { nextIndexedName } from './names';
-import { opsFor, registryHasChildren } from './registry';
+import { opsFor } from './registry';
 import type { Shape, ShapeName } from './shape';
 
 const EMPTY: readonly Shape[] = [];
@@ -33,8 +33,6 @@ const EMPTY: readonly Shape[] = [];
  * decide whether to record an undo entry.
  */
 export function expandChildren(shapes: readonly Shape[]): readonly Shape[] {
-  if (!registryHasChildren()) return shapes;
-
   const byParent = new Map<ShapeName, Shape[]>();
   const isChild = new Set<ShapeName>();
   for (const s of shapes) {

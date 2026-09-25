@@ -47,10 +47,6 @@ export class ViewController {
     this.ctx = null;
   }
 
-  get ready(): boolean {
-    return this.ctx !== null && this.cssW > 0 && this.cssH > 0;
-  }
-
   get worldPerPx(): number {
     return 1 / this.z;
   }
@@ -108,12 +104,6 @@ export class ViewController {
   pan(dxScreen: number, dyScreen: number): void {
     this.camX -= dxScreen / this.z;
     this.camY -= dyScreen / this.z;
-    this.clampCamera();
-  }
-
-  panWorld(dx: number, dy: number): void {
-    this.camX += dx;
-    this.camY += dy;
     this.clampCamera();
   }
 

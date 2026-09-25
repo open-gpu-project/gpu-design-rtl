@@ -8,7 +8,7 @@ import {
   type DockNode,
   type DockPane,
 } from '@svgrid/grid';
-import { allPanels, panelFor } from '../panels/registry';
+import { panelFor } from '../panels/registry';
 import { DIAGRAM_PANEL, TRACE_PANEL, type PanelId } from '../session.svelte';
 
 /** Bump to invalidate every saved layout after a structural change to the default. */
@@ -114,12 +114,4 @@ export function clearWorkspace(): void {
   } catch {
     /* see above */
   }
-}
-
-/** Panels that exist but are not currently anywhere in the workspace, for a "reopen" menu. */
-export function missingPanels(w: DockManagerState): readonly PanelId[] {
-  const present = new Set(allManagerPaneIds(w));
-  return allPanels()
-    .map((p) => p.id)
-    .filter((id) => !present.has(id));
 }

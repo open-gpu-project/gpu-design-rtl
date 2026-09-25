@@ -9,8 +9,6 @@ import type { ViewController } from './view.svelte';
 export interface RenderInput {
   readonly shapes: readonly Shape[];
   readonly selection: ReadonlySet<ShapeName>;
-  /** The selected sub-part, so the shape that owns it can draw that one differently. */
-  readonly activePart: { readonly shape: ShapeName; readonly index: number } | null;
   /** Uncommitted preview, drawn above everything as a ghost. */
   readonly draft: Shape | null;
   /** The active tool's overlay: selection handles, marquees. Drawn in world space. */
@@ -107,7 +105,6 @@ export class Renderer {
       ctx,
       worldPerPx,
       dpr,
-      viewport,
       theme,
       toScreenSpace() {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -141,7 +138,6 @@ export class Renderer {
       ops.draw(s, dc, {
         selected: input.selection.has(s.name),
         ghost: false,
-        activePart: input.activePart?.shape === s.name ? input.activePart.index : undefined,
       });
     }
 

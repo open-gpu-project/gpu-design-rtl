@@ -1,4 +1,4 @@
-import { opsFor, registryHasDependencies } from './registry';
+import { opsFor } from './registry';
 import { CorridorIndex } from './route';
 import type { Shape, ShapeName } from './shape';
 
@@ -75,8 +75,6 @@ export function pruneOrphans(shapes: readonly Shape[]): readonly Shape[] {
  * its own children would break that argument and would have to arrive with a new one.
  */
 export function rerouteAll(shapes: readonly Shape[]): readonly Shape[] {
-  if (!registryHasDependencies()) return shapes;
-
   /*
     The lowest index that depends on each name, which is what makes the repeat sweep free in
     the common case: a second sweep is needed only when a shape CHANGED at an index above one

@@ -59,9 +59,4 @@ export class History {
     this.#undo = [...this.#undo, entry];
     return entry;
   }
-
-  clear(): void {
-    this.#undo = [];
-    this.#redo = [];
-  }
 }

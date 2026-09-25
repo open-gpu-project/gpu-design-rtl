@@ -114,18 +114,6 @@ export function resolveBoxAnchor(r: Rect, id: string): Anchor | null {
   return makeBoxAnchor(r, side, Number(m[2]));
 }
 
-/** Edge midpoints. The discrete siblings of `boxAnchorAt`. */
-export function boxAnchors(r: Rect): readonly Anchor[] {
-  const cx = r.x + r.w / 2;
-  const cy = r.y + r.h / 2;
-  return [
-    { id: 'n', pos: { x: cx, y: r.y }, normal: NORMALS.n },
-    { id: 'e', pos: { x: r.x + r.w, y: cy }, normal: NORMALS.e },
-    { id: 's', pos: { x: cx, y: r.y + r.h }, normal: NORMALS.s },
-    { id: 'w', pos: { x: r.x, y: cy }, normal: NORMALS.w },
-  ];
-}
-
 /**
  * Four visible corner knobs, then four invisible edge grab zones.
  *

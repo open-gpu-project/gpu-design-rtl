@@ -12,13 +12,12 @@ import {
 } from './scene/file';
 import { SceneStore } from './scene/scene.svelte';
 import { readDocument, serializeScene, type SceneDoc } from './scene/serialize';
-import type { ShapeName } from './scene/shape';
 import { TimelineHost } from './timeline/host.svelte';
 import { TimelineRenderer } from './timeline/renderer';
 import { darkTimelineTheme } from './timeline/theme';
 import { TimelineView } from './timeline/view.svelte';
 import { demoTrace } from './trace/fixture';
-import { entityPath, type SignalId, type TraceDoc } from './trace/model';
+import type { SignalId, TraceDoc } from './trace/model';
 import { TraceStore } from './trace/store.svelte';
 import { ToolHost } from './tools/host.svelte';
 import { downloadText, pickTextFile } from './ui/file-transport';
@@ -71,7 +70,6 @@ export class EditorSession {
       shapes: this.scene.shapes,
       selection: this.scene.selection,
       draft: this.scene.draft,
-      activePart: this.host.subPart,
       overlay: (dc) => this.host.drawOverlay(dc),
     }));
 
@@ -216,28 +214,6 @@ export class EditorSession {
   selectSignal(id: SignalId | null): void {
     this.trace.selectedSignal = id;
     if (id !== null) this.scene.clearSelection();
-  }
-
-  clearSelection(): void {
-    this.trace.selectedSignal = null;
-    this.scene.clearSelection();
-  }
-
-  /**
-   * The seam for "selecting a trace selects the block it belongs to".
-   *
-   * A signal name is a fully-qualified entity path (`top.xu_0.primary_bus`) and a shape's
-   * identity is its `name`, so the join is a lookup on the path minus its last segment. It is
-   * deliberately **not** wired up yet: doing it properly needs the diagram to actually contain
-   * blocks named after entities, which is a separate piece of work.
-   *
-   * When it is wired up, note that it is not mutual exclusion -- one click would populate both
-   * selections -- so it belongs here rather than inside `selectSignal`.
-   */
-  signalToShape(signalName: string): ShapeName | null {
-    const path = entityPath(signalName);
-    if (path === '') return null;
-    return this.scene.shapes.find((s) => s.name === path)?.name ?? null;
   }
 
   focusPanel(id: PanelId): void {

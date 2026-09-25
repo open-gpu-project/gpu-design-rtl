@@ -105,8 +105,8 @@ export class TimelineRenderer {
     this.#drawRows(ctx, input, css, device);
     this.#drawLane(ctx, input, css, device);
     this.#drawGutter(ctx, input);
-    this.#drawTimescale(ctx, input, css, device);
-    this.#drawCursor(ctx, input, css, device);
+    this.#drawTimescale(ctx, css, device);
+    this.#drawCursor(ctx, input, css);
 
     css();
   }
@@ -136,8 +136,10 @@ export class TimelineRenderer {
       const selected = input.rows[i] === input.selectedSignal;
       // Stripes span the gutter too: a row is one thing, and a highlight that stopped at the
       // gutter edge would read as two.
-      ctx.fillStyle = selected ? t.rowSelected : i % 2 === 1 ? t.rowOdd : t.rowEven;
-      if (selected || i % 2 === 1) ctx.fillRect(0, y, view.cssW, ROW_H);
+      // Even rows are left as the background.
+      if (!selected && i % 2 === 0) continue;
+      ctx.fillStyle = selected ? t.rowSelected : t.rowOdd;
+      ctx.fillRect(0, y, view.cssW, ROW_H);
     }
 
     // Separators in device space: a 1px line at a fractional y is a two-pixel grey smudge.
@@ -351,12 +353,7 @@ export class TimelineRenderer {
 
   /* ---------------------------------------------------------- the timescale ---- */
 
-  #drawTimescale(
-    ctx: CanvasRenderingContext2D,
-    _input: TimelineRenderInput,
-    css: () => void,
-    device: () => void,
-  ): void {
+  #drawTimescale(ctx: CanvasRenderingContext2D, css: () => void, device: () => void): void {
     const view = this.view;
     const t = this.theme;
     if (view.laneW <= 0) return;
@@ -433,12 +430,7 @@ export class TimelineRenderer {
 
   /* -------------------------------------------------------------- the cursor ---- */
 
-  #drawCursor(
-    ctx: CanvasRenderingContext2D,
-    input: TimelineRenderInput,
-    css: () => void,
-    _device: () => void,
-  ): void {
+  #drawCursor(ctx: CanvasRenderingContext2D, input: TimelineRenderInput, css: () => void): void {
     const view = this.view;
     const t = this.theme;
     if (view.laneW <= 0) return;

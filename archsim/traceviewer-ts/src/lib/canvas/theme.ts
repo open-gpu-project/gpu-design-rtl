@@ -233,21 +233,6 @@ export const CONN_LABEL_MIN_RUN_PX = 44;
 export const ARROW_LEN_PX = 9;
 export const ARROW_HALF_W_PX = 4.5;
 
-/**
- * How far the arrowhead's tip is discounted, in CSS pixels, when asking whether the head has
- * landed inside a block.
- *
- * The tip sits exactly ON the target's outline by construction, and `alignStroke` rounds it by
- * up to a device pixel while the projected block corner is not rounded at all. Without a
- * discount the head would read as overlapping its own target every time, at every zoom.
- *
- * Applied along the arrow's own axis and nowhere else. Deflating the block instead would be
- * the obvious alternative and is wrong: zoomed out far enough a block is two or three device
- * pixels across, which is precisely the case this is here to catch, and a deflated version of
- * it has no area left to test.
- */
-export const ARROW_TIP_TOL_PX = 1.5;
-
 /** Drawn size of the mid-segment knob on a selected connection, in CSS pixels. */
 export const CONN_KNOB_PX = 6;
 
@@ -289,9 +274,3 @@ export const PINCH_K = 0.01;
 
 /** Above this |deltaY| an event is treated as a discrete notch rather than a smooth gesture. */
 export const DISCRETE_DELTA_PX = 40;
-
-/**
- * Pressing an unselected block selects it and immediately starts a move, which is what every
- * other editor does. Set false to require a prior click to select, and pan otherwise.
- */
-export const SELECT_ON_PRESS_BEGINS_MOVE = true;

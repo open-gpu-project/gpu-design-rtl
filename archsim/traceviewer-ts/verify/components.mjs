@@ -89,7 +89,6 @@ const clear = async () => {
       sc.shapes = [];
       sc.setSelection(new Set());
     });
-    sc.history.clear?.();
   });
   await page.waitForTimeout(120);
 };
@@ -598,18 +597,9 @@ const clear = async () => {
     { w: 200, h: 80 },
     { cells: 4, spacing: 32 },
   );
-  const depth = () =>
-    page.evaluate(() => (window.__scene.history.canUndo ? window.__scene.history.undoLabel : null));
-
   const before = await page.evaluate(() =>
     window.__scene.shapes.map((s) => JSON.stringify(s)).join('|'),
   );
-  const entriesBefore = await page.evaluate(() => {
-    let n = 0;
-    // Count by draining a clone is not possible; use the exposed depth if there is one.
-    return window.__scene.history.undoDepth ?? -1;
-  });
-
   /*
     Typing a width a bounded queue cannot have, three times.
 
@@ -666,8 +656,6 @@ const clear = async () => {
     (await page.evaluate(() => window.__scene.shapes.map((s) => JSON.stringify(s)).join('|'))) ===
       before,
   );
-  void entriesBefore;
-  void depth;
 }
 
 // -------------------------------------------------------- interfaces on a parent ----
@@ -756,10 +744,11 @@ const clear = async () => {
     for (const side of ['n', 'e', 's', 'w']) {
       const b = boxes[side];
       const s = { ...base, side, x: b.x, y: b.y, w: b.w, h: b.h };
-      out[side] = ops
-        .anchors(s)
-        .map((a) => [a.pos.x, a.pos.y])
-        .flat();
+      // Both ids. An `in` the parent does not offer resolves to the outward edge.
+      out[side] = ['out', 'in'].flatMap((id) => {
+        const a = ops.resolveAnchor(s, id);
+        return [a.pos.x, a.pos.y];
+      });
     }
     return { out, length: window.__ops('nif').blank('z').length };
   });
@@ -893,19 +882,16 @@ const clear = async () => {
   t.ok('which did move the parent past the other shape', ai > 0, after.join(','));
 
   /*
-    What the panel offers for an interface, now that `channel` has gone.
-
-    Asserted through the rendered rows rather than through the schema, because the schema is
-    where it was deleted FROM -- a check that read the same list twice would pass against a panel
-    still rendering a stale document, which is the one state `applyDocument` refuses.
+    What the panel offers for an interface. Asserted through the rendered rows rather than through
+    the schema: a check that read the schema would pass against a panel still rendering a stale
+    document, which is the one state `applyDocument` refuses.
   */
   await page.evaluate(() =>
     window.__scene.selectOnly(window.__scene.shapes.find((s) => s.kind === 'nif').name),
   );
   await page.waitForTimeout(400);
-  t.ok('an interface offers no channel row', (await row(page, 'channel').count()) === 0);
   t.ok(
-    'and still offers its protocol and its modport',
+    'an interface offers its protocol and its modport',
     JSON.stringify(await enumOptions(page, 'protocol')) === JSON.stringify(['axi3']) &&
       JSON.stringify(await enumOptions(page, 'modport')) === JSON.stringify(['master', 'slave']),
     `${JSON.stringify(await enumOptions(page, 'protocol'))} ${JSON.stringify(await enumOptions(page, 'modport'))}`,
@@ -1332,9 +1318,8 @@ const clear = async () => {
           offset: 32,
           size: [32, 8],
           protocol: 'axi3',
-          // Kept on purpose. Iteration 6.3 removed the `channel` property, and this fixture is
-          // now also a file written before that happened -- see the assertion below.
-          channel: 'aw',
+          // Not a property of any kind -- see the assertion below.
+          unknownKey: 'ignored',
           modport: 'slave',
         },
         {
@@ -1365,7 +1350,7 @@ const clear = async () => {
     return {
       names: back.map((s) => s.name),
       wires: back.filter((s) => s.kind === 'conn').map((s) => `${s.from}->${s.to}`),
-      stale: 'channel' in (back.find((s) => s.kind === 'nif') ?? {}),
+      stale: 'unknownKey' in (back.find((s) => s.kind === 'nif') ?? {}),
       pin: back.find((s) => s.kind === 'nif')?.modport,
     };
   });
@@ -1380,16 +1365,12 @@ const clear = async () => {
     JSON.stringify(r.names),
   );
   /*
-    Backward compatibility for the property iteration 6.3 removed, as an assertion rather than a
-    claim in a commit message.
-
-    `hydrateShape` iterates the SCHEMA and skips any key not in it, so the `channel: 'aw'` above
-    is ignored rather than carried onto the shape or treated as an error. That is also why
-    `SceneDoc.version` stays at 2: a reader of either vintage produces a valid document from a
-    file of either vintage, and refusing an unrecognised number would break the files that still
-    work.
+    An unknown key in a file is ignored. `hydrateShape` iterates the SCHEMA and skips any key not
+    in it, so the key above is neither carried onto the shape nor treated as an error. That is
+    what lets a file keep loading after a property is removed, and why `SceneDoc.version` need
+    not change when one is.
   */
-  t.ok('a file written before the channel key was removed still loads', r.pin === 'slave', r.pin);
+  t.ok('a record carrying a key no kind defines still loads', r.pin === 'slave', r.pin);
   t.ok('and the key is ignored rather than kept on the shape', r.stale === false);
 }
 

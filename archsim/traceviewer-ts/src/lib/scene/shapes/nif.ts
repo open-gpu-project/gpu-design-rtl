@@ -30,7 +30,7 @@ function inwardOn(parent: Shape): boolean {
   return opsFor(parent).interfaceInward?.(parent) ?? false;
 }
 
-/** The anchors this interface presents, which is the single source all three seams read. */
+/** The anchors this interface presents, which is the single source both seams read. */
 function anchorsOf(s: NifShape): readonly Anchor[] {
   return nifAnchors(box(s), s.side, s.inward);
 }
@@ -195,7 +195,7 @@ export const nifOps: ShapeOps<NifShape> = {
     and offering a slider along the edge only invited a wire to attach somewhere the port does
     not mean anything.
 
-    All three seams read `nifAnchors`, so none of them can drift from the others.
+    Both seams read `nifAnchors`, so neither can drift from the other.
   */
   anchorAt(s, p, hc) {
     const r = box(s);
@@ -228,8 +228,6 @@ export const nifOps: ShapeOps<NifShape> = {
     const all = anchorsOf(s);
     return all.find((a) => a.id === id) ?? all[0] ?? null;
   },
-
-  anchors: anchorsOf,
 
   draw(s, dc, flags) {
     const { ctx, theme, dpr } = dc;
@@ -288,9 +286,9 @@ export const nifOps: ShapeOps<NifShape> = {
     const across = vertical ? p1.x - p0.x : p1.y - p0.y;
 
     if (across >= NIF_LABEL_MIN_PX) {
-      ctx.font = NIF_LABEL_FONT;
-      // Cached on the whole-string probe: a fabric carries up to 64 of these, and the label
-      // usually fits, so that probe is the only measurement most frames make per port.
+      // `fitText` assigns the font, and caches the whole-string probe: a fabric carries up to 64
+      // of these, and the label usually fits, so that probe is the only measurement most frames
+      // make per port.
       const text = fitText(ctx, s.label, Math.max(0, along - 2 * NIF_LABEL_PAD_PX), NIF_LABEL_FONT);
       /*
         Nothing at all, rather than a bare ellipsis. The gate above is on the ACROSS extent, so

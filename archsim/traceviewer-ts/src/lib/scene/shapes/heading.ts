@@ -596,9 +596,8 @@ function drawTab(s: Headed, body: Rect, dc: DrawContext, selected: boolean): voi
   ctx.strokeStyle = selected ? theme.shapeStrokeSelected : theme.shapeStroke;
   ctx.stroke();
 
-  ctx.font = TAB_FONT;
-  // The font is handed over as well as assigned, so the whole-string probe is cached. One tab
-  // label per tabbed box per frame, plus one per hit test through `tabMeasurer`.
+  // `fitText` assigns the font, and caches the whole-string probe. One tab label per tabbed box
+  // per frame, plus one per hit test through `tabMeasurer`.
   const text = fitText(ctx, headline(s), tab.textW, TAB_FONT);
   if (text !== '') {
     ctx.fillStyle = theme.shapeLabel;

@@ -19,7 +19,11 @@ import type { CorridorQuery, Shape } from './shape';
 /** How far a route may be nudged off its natural elbow to leave along a face normal. */
 const STUB = GRID;
 
-/** Hard cap on segments out of the router. See the iteration 4 document, decision A. */
+/**
+ * Most segments a route has: the candidates are straight, L and Z, and `collapseRoute` only ever
+ * removes points. The user's rule from iteration 4 -- a third segment only when it buys
+ * something, which the cost function decides -- and 1-2 segments could not bundle at all.
+ */
 export const ROUTE_MAX_SEGMENTS = 3;
 
 /** A run shorter than this is a stub, not a corridor: bundling onto it would buy nothing. */
@@ -236,10 +240,10 @@ export class CorridorIndex implements CorridorQuery {
     return this.#ys.includes(v);
   }
 
-  /** Everything owned by `shapes[0 .. upTo)`. The connect tool routes its ghost against this. */
-  static from(shapes: readonly Shape[], upTo: number = shapes.length): CorridorIndex {
+  /** Everything owned by `shapes`. The connect tool routes its ghost against this. */
+  static from(shapes: readonly Shape[]): CorridorIndex {
     const index = new CorridorIndex();
-    for (let i = 0; i < upTo && i < shapes.length; i++) index.absorb(shapes[i]!);
+    for (const s of shapes) index.absorb(s);
     return index;
   }
 }
@@ -367,40 +371,37 @@ export function routeConnection(
     push([a, { x: a.x, y: b.y }, b], null, 0, 0);
   }
 
-  if (ROUTE_MAX_SEGMENTS >= 3) {
-    const midX = snap((a.x + b.x) / 2);
-    const loX = Math.min(a.x, b.x) - BUNDLE_REACH;
-    const hiX = Math.max(a.x, b.x) + BUNDLE_REACH;
-    for (const m of elbowCandidates(
-      midX,
-      a.x,
-      b.x,
-      na.x,
-      nb?.x ?? null,
-      corridors.rangeX(loX, hiX),
-    )) {
-      push([a, { x: m, y: a.y }, { x: m, y: b.y }, b], 'x', m, midX);
-    }
-    const midY = snap((a.y + b.y) / 2);
-    const loY = Math.min(a.y, b.y) - BUNDLE_REACH;
-    const hiY = Math.max(a.y, b.y) + BUNDLE_REACH;
-    for (const m of elbowCandidates(
-      midY,
-      a.y,
-      b.y,
-      na.y,
-      nb?.y ?? null,
-      corridors.rangeY(loY, hiY),
-    )) {
-      push([a, { x: a.x, y: m }, { x: b.x, y: m }, b], 'y', m, midY);
-    }
+  const midX = snap((a.x + b.x) / 2);
+  const loX = Math.min(a.x, b.x) - BUNDLE_REACH;
+  const hiX = Math.max(a.x, b.x) + BUNDLE_REACH;
+  for (const m of elbowCandidates(
+    midX,
+    a.x,
+    b.x,
+    na.x,
+    nb?.x ?? null,
+    corridors.rangeX(loX, hiX),
+  )) {
+    push([a, { x: m, y: a.y }, { x: m, y: b.y }, b], 'x', m, midX);
+  }
+  const midY = snap((a.y + b.y) / 2);
+  const loY = Math.min(a.y, b.y) - BUNDLE_REACH;
+  const hiY = Math.max(a.y, b.y) + BUNDLE_REACH;
+  for (const m of elbowCandidates(
+    midY,
+    a.y,
+    b.y,
+    na.y,
+    nb?.y ?? null,
+    corridors.rangeY(loY, hiY),
+  )) {
+    push([a, { x: a.x, y: m }, { x: b.x, y: m }, b], 'y', m, midY);
   }
 
   let best = candidates[0]!;
   let bestCost = cost(best, 0, na, nb, corridors);
   for (let i = 1; i < candidates.length; i++) {
     const c = candidates[i]!;
-    if (c.pts.length - 1 > ROUTE_MAX_SEGMENTS) continue;
     const score = cost(c, i, na, nb, corridors);
     if (score < bestCost) {
       best = c;

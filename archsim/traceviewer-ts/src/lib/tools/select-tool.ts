@@ -1,7 +1,7 @@
 import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2';
 import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
-import { DRAG_SLOP_PX, HANDLE_SIZE_PX, SELECT_ON_PRESS_BEGINS_MOVE } from '../canvas/theme';
+import { DRAG_SLOP_PX, HANDLE_SIZE_PX } from '../canvas/theme';
 import type { Vec2 } from '../geom/types';
 import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
@@ -193,15 +193,9 @@ export class SelectTool implements Tool {
       return;
     }
 
-    if (!c.scene.selection.has(hit.shape.name)) {
-      c.scene.selectOnly(hit.shape.name);
-      // The alternative reading of "click and grab to move, as long as an object isn't
-      // selected" is that selecting and moving must be two separate gestures.
-      if (!SELECT_ON_PRESS_BEGINS_MOVE) {
-        c.requestFrame();
-        return;
-      }
-    }
+    // Pressing an unselected shape selects it and starts the move in the same gesture, as every
+    // other editor does. Settled in iteration 1: selecting and moving are not two gestures.
+    if (!c.scene.selection.has(hit.shape.name)) c.scene.selectOnly(hit.shape.name);
 
     this.#drag = {
       kind: 'move',

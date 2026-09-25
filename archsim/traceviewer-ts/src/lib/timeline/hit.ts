@@ -16,7 +16,7 @@ export type TraceHit =
   | { readonly type: 'cursor' }
   | { readonly type: 'timescale'; readonly tick: Tick }
   | { readonly type: 'flag'; readonly signal: SignalId; readonly tick: Tick }
-  | { readonly type: 'row'; readonly signal: SignalId; readonly inGutter: boolean }
+  | { readonly type: 'row'; readonly signal: SignalId }
   | { readonly type: 'empty' };
 
 /**
@@ -49,7 +49,7 @@ export function hitTest(view: TimelineView, store: TraceStore, x: number, y: num
   const signal = store.rows[rowIndex];
   if (signal === undefined) return { type: 'empty' };
 
-  if (x < view.gutterW) return { type: 'row', signal, inGutter: true };
+  if (x < view.gutterW) return { type: 'row', signal };
 
   const track = store.trackOf(signal);
   const sig = store.signalOf(signal);
@@ -60,5 +60,5 @@ export function hitTest(view: TimelineView, store: TraceStore, x: number, y: num
     if (hit !== null) return { type: 'flag', signal, tick: hit.tick };
   }
 
-  return { type: 'row', signal, inGutter: false };
+  return { type: 'row', signal };
 }

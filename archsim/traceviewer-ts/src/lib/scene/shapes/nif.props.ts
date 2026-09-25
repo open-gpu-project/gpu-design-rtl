@@ -27,13 +27,6 @@ const MODPORTS: readonly Modport[] = ['master', 'slave'];
  * `protocol` is the one key here that will mean something outside this editor, once a diagram is
  * checked against RTL. Everything else is geometry or presentation.
  *
- * It carried a `channel` sibling until iteration 6.3, on the theory that a diagram would be drawn
- * one AXI3 channel at a time. Nothing ever drew one. No geometry, no colour and no canvas label
- * depended on it, the only consumer was the compatibility check that has also gone, and five
- * enum values bought one clause of tooltip text -- so it was withdrawn rather than kept against a
- * use that had not appeared in three iterations. An old file's `channel` key is ignored on load;
- * see the note on `hydrateShape`.
- *
  * `position`, `size` and `parent` are absent on purpose. An interface has no position of its own:
  * it has a `side` and an `offset` on a parent, and its box follows from those. Offering an
  * editable `[x, y]` that the next commit overwrites is the read-only-field problem iteration 4.2
@@ -121,7 +114,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'modport',
     title: 'Modport',
-    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. It is the colour of the interface’s border — violet for a master, sky for a slave — which is why selecting one, and turning that border amber, hides it until you deselect. Nothing checks what you join to what: the colours are there so you can see it yourself.',
+    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. It is the colour of the interface’s border — violet for a master, sky for a slave — which is why selecting one, and turning that border amber, hides it until you deselect.',
     mode: 'edit',
     type: { type: 'enum', values: [...MODPORTS] },
     read: (s) => s.modport,

@@ -54,7 +54,7 @@ export interface TraceSignal {
    * The fully-qualified entity path, e.g. `top.xu_0.primary_bus`.
    *
    * This is the join key to the diagram: a shape's identity is its `name` for exactly this
-   * reason (iter-2 §3.1). See `entityPath` and `EditorSession.signalToShape`.
+   * reason (iteration 2), and the owning block is this path minus its last segment.
    */
   readonly name: string;
   readonly doc: string;
@@ -87,14 +87,12 @@ export interface TraceDoc {
   readonly signals: readonly TraceSignal[];
   /** Indexed by `SignalId`, parallel to `signals`. */
   readonly tracks: readonly SignalTrack[];
-  readonly firstTick: Tick;
   readonly lastTick: Tick;
 }
 
 export const EMPTY_TRACE: TraceDoc = {
   signals: [],
   tracks: [],
-  firstTick: 0,
   lastTick: 0,
 };
 
@@ -155,17 +153,6 @@ export function firstEventTick(track: SignalTrack): Tick | null {
 export function lastEventTick(track: SignalTrack): Tick | null {
   const n = track.ticks.length;
   return n > 0 ? track.ticks[n - 1]! : null;
-}
-
-/**
- * The owning entity's path: a signal name minus its last segment.
- *
- * `top.xu_0.primary_bus` -> `top.xu_0`. This is the half of a signal name that can name a block
- * in the diagram; the seam that will use it is `EditorSession.signalToShape`.
- */
-export function entityPath(signalName: string): string {
-  const i = signalName.lastIndexOf('.');
-  return i < 0 ? '' : signalName.slice(0, i);
 }
 
 /** The last segment of a signal name, which is what the gutter shows when space is tight. */

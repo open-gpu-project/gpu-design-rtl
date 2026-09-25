@@ -4,10 +4,6 @@ export function clampNum(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-export function vec(x: number, y: number): Vec2 {
-  return { x, y };
-}
-
 /** Rect spanning two corners, in any order. Always normalized. */
 export function rectFromPoints(a: Vec2, b: Vec2): Rect {
   return {

@@ -188,5 +188,5 @@ export function demoTrace(seed = 0x5eed): TraceDoc {
     push({ name, doc, display: 'value', fields: [] }, entries);
   }
 
-  return { signals, tracks, firstTick: 0, lastTick: LAST_TICK };
+  return { signals, tracks, lastTick: LAST_TICK };
 }

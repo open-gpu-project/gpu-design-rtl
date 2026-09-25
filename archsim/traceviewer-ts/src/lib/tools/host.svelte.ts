@@ -119,11 +119,8 @@ export class ToolHost {
     private readonly scene: SceneStore,
     private readonly view: ViewController,
     private readonly invalidate: () => void,
-    /**
-     * Whether the diagram panel currently owns the keyboard. Defaults to always, so a lone
-     * canvas behaves exactly as it did before docking existed.
-     */
-    private readonly acceptsKeys: () => boolean = () => true,
+    /** Whether the diagram panel currently owns the keyboard. */
+    private readonly acceptsKeys: () => boolean,
   ) {
     this.#ctx = {
       scene,

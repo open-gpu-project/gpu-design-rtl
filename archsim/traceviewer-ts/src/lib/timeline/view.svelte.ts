@@ -74,10 +74,6 @@ export class TimelineView {
     this.ctx = null;
   }
 
-  get ready(): boolean {
-    return this.ctx !== null && this.cssW > 0 && this.cssH > 0;
-  }
-
   /* ------------------------------------------------------------------ geometry ---- */
 
   /** Left edge of the lane area, in CSS px. Everything left of this is the frozen gutter. */
@@ -222,16 +218,6 @@ export class TimelineView {
     // Recentre rather than nudge to the edge: a next/previous jump that lands one pixel inside
     // the viewport leaves no context on the side it came from.
     this.camT = tick - this.visibleTicks / 2;
-    this.clampCamera();
-  }
-
-  /** Scroll vertically so a row is fully visible. */
-  revealRow(index: number): void {
-    if (index < 0 || this.laneH <= 0) return;
-    const top = index * ROW_H;
-    const bottom = top + ROW_H;
-    if (top < this.scrollY) this.scrollY = top;
-    else if (bottom > this.scrollY + this.laneH) this.scrollY = bottom - this.laneH;
     this.clampCamera();
   }
 

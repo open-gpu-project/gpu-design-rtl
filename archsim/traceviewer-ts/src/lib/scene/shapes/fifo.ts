@@ -17,14 +17,7 @@ import type {
   ShapeOps,
   ShapeTooltip,
 } from '../shape';
-import {
-  boxAnchorAt,
-  boxAnchors,
-  boxHandles,
-  drawBoxBody,
-  resizeBox,
-  resolveBoxAnchor,
-} from './box';
+import { boxAnchorAt, boxHandles, drawBoxBody, resizeBox, resolveBoxAnchor } from './box';
 import { dividers, fifoBox, flowIsFree, MAX_CELLS, minFlow } from './fifo-geom';
 import { fifoProps } from './fifo.props';
 import { headingHit, headingTooltip, type DeviceBox } from './heading';
@@ -219,8 +212,6 @@ export const fifoOps: ShapeOps<FifoShape> = {
   anchorAt: (s, p, hc) => boxAnchorAt(fifoBox(s), p, hc),
 
   resolveAnchor: (s, id) => resolveBoxAnchor(fifoBox(s), id),
-
-  anchors: (s) => boxAnchors(fifoBox(s)),
 };
 
 registerShape(fifoOps);

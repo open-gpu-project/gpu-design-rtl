@@ -25,16 +25,11 @@ export const BUFFER = 1024;
 export const MIN_WORLD_W = 2048;
 export const MIN_WORLD_H = 1536;
 
-/**
- * Snap to the nearest multiple of `step`.
- *
- * `step` is a parameter rather than a read of GRID because per-axis snapping is coming: a
- * connection may want to snap along its own routing grid, not a uniform square one.
- */
-export function snap(v: number, step: number = GRID): number {
-  return Math.round(v / step) * step;
+/** Snap to the nearest grid point. */
+export function snap(v: number): number {
+  return Math.round(v / GRID) * GRID;
 }
 
-export function snapPoint(p: Vec2, step: number = GRID): Vec2 {
-  return { x: snap(p.x, step), y: snap(p.y, step) };
+export function snapPoint(p: Vec2): Vec2 {
+  return { x: snap(p.x), y: snap(p.y) };
 }

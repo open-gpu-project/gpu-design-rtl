@@ -76,14 +76,14 @@ export function nifBox(pr: Rect, side: Side, offset: number, length: number, dep
  * along the border instead of away from it. An id that does not name a side cannot go stale
  * when the side changes.
  */
-export const NIF_OUT = 'out';
-export const NIF_IN = 'in';
+const NIF_OUT = 'out';
+const NIF_IN = 'in';
 
 /**
  * The interface's connection points: the centre of its outward edge, and of its inward one.
  *
- * One function behind all three anchor seams -- `anchors`, `anchorAt` and `resolveAnchor` --
- * so they cannot disagree about where a wire lands.
+ * One function behind both anchor seams -- `anchorAt` and `resolveAnchor` -- so they cannot
+ * disagree about where a wire lands.
  *
  * The normals are the shared references out of `NORMALS`, never fresh objects: identity on a
  * normal is a legitimate thing for a caller to test, and two equal-but-distinct vectors would

@@ -3,7 +3,7 @@ import { unionBounds } from './bounds';
 import { expandChildren } from './expand';
 import { History } from './history.svelte';
 import { nextIndexedName } from './names';
-import { opsFor, registryHasDependencies } from './registry';
+import { opsFor } from './registry';
 import { resolveDependencies } from './resolve';
 import type { Shape, ShapeName } from './shape';
 
@@ -209,8 +209,6 @@ export class SceneStore {
    * mid-drag preview, where there is no commit to hang it off.
    */
   #resolveDependencies(): void {
-    if (!registryHasDependencies()) return;
-
     // The identity guard is load-bearing, not an optimisation: `commit` decides whether to push
     // an undo entry by comparing `shapes` against its pre-mutate value, so assigning an
     // equal-but-new array here would make every commit -- including ones that changed nothing --

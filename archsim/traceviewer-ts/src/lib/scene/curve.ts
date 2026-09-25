@@ -1,4 +1,3 @@
-import { distToSegment } from '../geom/math';
 import type { Anchor, Vec2 } from '../geom/types';
 import { GRID } from '../grid';
 import { samePoint } from './route';
@@ -169,14 +168,6 @@ export function flattenCurve(points: readonly Vec2[], steps = FLATTEN_STEPS): re
   return out;
 }
 
-/** Unit tangent leaving the source, or null when there is no curve. */
-export function curveStartDirection(points: readonly Vec2[]): Vec2 | null {
-  const spans = curveSpans(points);
-  if (spans.length === 0) return null;
-  const d = unit(cubicTangent(spans[0]!, 0));
-  return d.x === 0 && d.y === 0 ? null : d;
-}
-
 /** Unit tangent arriving at the target, for the arrowhead. Null when there is no curve. */
 export function curveEndDirection(points: readonly Vec2[]): Vec2 | null {
   const spans = curveSpans(points);
@@ -225,35 +216,6 @@ export function collapseCurve(points: readonly Vec2[]): readonly Vec2[] {
   if (out.length > 1 && samePoint(out[out.length - 1]!, last)) out.pop();
   out.push(last);
   return out.length === points.length ? points : out;
-}
-
-/**
- * The span nearest `p`, and where on it -- what the insert badge points at.
- *
- * Returns the index of the CONTROL-POLYGON span, so inserting at `span` puts the new waypoint
- * at `points[span + 1]`.
- */
-export function nearestSpan(
-  points: readonly Vec2[],
-  p: Vec2,
-): { span: number; at: Vec2; dist: number } | null {
-  if (points.length < 2) return null;
-  const spans = curveSpans(points);
-  if (spans.length === 0) return null;
-
-  let best = { span: 0, at: spans[0]!.p0, dist: Infinity };
-  for (let i = 0; i < spans.length; i++) {
-    let prev = cubicAt(spans[i]!, 0);
-    for (let j = 1; j <= FLATTEN_STEPS; j++) {
-      const q = cubicAt(spans[i]!, j / FLATTEN_STEPS);
-      const d = distToSegment(p, prev, q);
-      if (d < best.dist) {
-        best = { span: i, at: { x: (prev.x + q.x) / 2, y: (prev.y + q.y) / 2 }, dist: d };
-      }
-      prev = q;
-    }
-  }
-  return best;
 }
 
 export function insertWaypoint(points: readonly Vec2[], span: number, at: Vec2): readonly Vec2[] {

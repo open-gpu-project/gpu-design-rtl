@@ -33,7 +33,3 @@ export function registerPanel(d: PanelDescriptor): void {
 export function panelFor(id: PanelId): PanelDescriptor | undefined {
   return registry.get(id);
 }
-
-export function allPanels(): readonly PanelDescriptor[] {
-  return [...registry.values()];
-}

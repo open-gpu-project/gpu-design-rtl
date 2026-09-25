@@ -15,22 +15,19 @@
     isRectilinear,
     moveSegment,
     NO_CORRIDORS,
-    patchEnd,
     patchStart,
     ROUTE_MAX_SEGMENTS,
     routeConnection,
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
-  import { movesWith, pruneOrphans, rerouteAll, resolveDependencies } from './lib/scene/resolve';
+  import { movesWith, rerouteAll } from './lib/scene/resolve';
   import {
     autoWaypoints,
     collapseCurve,
     curveAt,
     curveEndDirection,
-    curveSpans,
     flattenCurve,
   } from './lib/scene/curve';
-  import { arrowBox } from './lib/scene/shapes/conn';
   import { makeFifo } from './lib/scene/shapes/fifo';
   import {
     fitInsetLine,
@@ -40,7 +37,7 @@
     subtitleLines,
   } from './lib/scene/shapes/heading';
   import { copyFragment, readFragment } from './lib/scene/fragment';
-  import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
+  import { nextFreeIndexedName } from './lib/scene/names';
   import { deserializeScene, readDocument, serializeScene } from './lib/scene/serialize';
   import type { Shape } from './lib/scene/shape';
   import { EditorSession, provideSession } from './lib/session.svelte';
@@ -102,7 +99,6 @@
       __host: session.host,
       __trace: session.trace,
       __timeline: session.timeline,
-      __timelineHost: session.timelineHost,
       // Pure, and the one part of the timeline a browser check cannot reach through the DOM.
       __tickTiers: tickTiers,
       /*
@@ -144,7 +140,6 @@
         isRectilinear,
         moveSegment,
         patchStart,
-        patchEnd,
         CorridorIndex,
         NO_CORRIDORS,
         ROUTE_MAX_SEGMENTS,
@@ -158,7 +153,7 @@
         rather than one level per commit -- is indistinguishable from the old behaviour except
         by driving two commits and watching the geometry catch up on the second.
       */
-      __resolve: { rerouteAll, pruneOrphans, resolveDependencies, movesWith },
+      __resolve: { rerouteAll, movesWith },
       __anchor: {
         anchorAt: (s: Shape, p: Vec2, worldPerPx: number) =>
           opsFor(s).anchorAt?.(s, p, { worldPerPx }) ?? null,
@@ -184,7 +179,7 @@
       */
       __fragment: { copyFragment, readFragment },
       /** The two naming rules, so the series behaviour can be asserted without a scene. */
-      __names: { nextFreeIndexedName, uniqueName },
+      __names: { nextFreeIndexedName },
       /** What the marquee's band catches, as a pure function of a rectangle. */
       __bounds: { shapesInRect },
       /*
@@ -215,13 +210,6 @@
         afterwards and know it is measuring the size that would be drawn.
       */
       __insetFit: fitInsetLine,
-      /*
-        Where an arrowhead sits, for the purpose of deciding whether it fits.
-
-        Pure, so the discount that keeps a tip resting on its own target from reading as an
-        overlap can be pinned exactly, rather than inferred from which pixels went missing.
-      */
-      __arrowBox: arrowBox,
       /*
         A queue from two corners, as the creation drag builds it.
 
@@ -269,7 +257,6 @@
         arithmetic, and none of it visible in a pixel diff.
       */
       __curve: {
-        curveSpans,
         flattenCurve,
         curveEndDirection,
         curveAt,

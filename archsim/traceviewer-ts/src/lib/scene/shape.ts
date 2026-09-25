@@ -329,8 +329,6 @@ export interface DrawContext {
   readonly ctx: CanvasRenderingContext2D;
   readonly worldPerPx: number;
   readonly dpr: number;
-  /** Visible world rectangle, for culling. */
-  readonly viewport: Rect;
   readonly theme: Theme;
   /** Switch `ctx` to CSS-pixel space. Call the returned function to restore world space. */
   toScreenSpace(): () => void;
@@ -368,8 +366,6 @@ export interface RenderFlags {
   readonly selected: boolean;
   /** An uncommitted preview: draw it dashed and faint. */
   readonly ghost: boolean;
-  /** Which sub-part is selected, for a kind that has them. Tool state, not document state. */
-  readonly activePart?: number | undefined;
 }
 
 /**
@@ -463,9 +459,6 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * and the second call finds nothing pending, and a connection re-derives from its endpoints.
    */
   reroute?(s: S, deps: ReadonlyMap<ShapeName, Shape>, rc: RouteContext): S;
-
-  /** Points a connection may terminate on. A block exposes its edge midpoints. */
-  anchors?(s: S): readonly Anchor[];
 
   /**
    * Project a world point onto this shape's perimeter, or null when it is farther away than a

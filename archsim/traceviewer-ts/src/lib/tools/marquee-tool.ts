@@ -34,17 +34,6 @@ export class MarqueeTool implements Tool {
   /** Latches past DRAG_SLOP_PX, so a plain click is a click and not a zero-area band. */
   #armed = false;
 
-  /** For `verify/`: the live band in world units, or null. */
-  get band(): Rect | null {
-    return this.#rect();
-  }
-
-  /** For `verify/`: what the band currently covers. */
-  get hitNames(): readonly ShapeName[] {
-    return this.#lastHits;
-  }
-  #lastHits: readonly ShapeName[] = [];
-
   isGesturing(): boolean {
     return this.#band !== null;
   }
@@ -54,7 +43,6 @@ export class MarqueeTool implements Tool {
     // otherwise still be here on the way back.
     this.#band = null;
     this.#armed = false;
-    this.#lastHits = [];
     c.setHint(`Drag to select. Hold ${keys('shift')} to add. Press 1 to move things.`);
   }
 
@@ -98,7 +86,6 @@ export class MarqueeTool implements Tool {
     // A press that never travelled is a click on empty space: clear, unless adding.
     if (!this.#armed) {
       if (!band.additive) c.scene.clearSelection();
-      this.#lastHits = [];
     }
     c.requestFrame();
   }
@@ -161,7 +148,6 @@ export class MarqueeTool implements Tool {
     if (band === null || r === null) return;
 
     const hits = shapesInRect(c.scene.shapes, r).map((s) => s.name);
-    this.#lastHits = hits;
     c.scene.setSelection(band.additive ? new Set([...band.base, ...hits]) : new Set(hits));
   }
 
@@ -170,7 +156,6 @@ export class MarqueeTool implements Tool {
     if (band === null) return;
     this.#band = null;
     this.#armed = false;
-    this.#lastHits = [];
     if (restore) c.scene.setSelection(band.base);
     c.requestFrame();
   }

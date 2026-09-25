@@ -3,7 +3,6 @@ import {
   ANCHOR_DOT_R_PX,
   ARROW_HALF_W_PX,
   ARROW_LEN_PX,
-  ARROW_TIP_TOL_PX,
   CONN_CORNER_R_PX,
   CONN_KNOB_PX,
   CONN_WIDTH_PX,
@@ -12,7 +11,7 @@ import {
   STROKE_HIT_PX,
 } from '../../canvas/theme';
 import { expandRect, pointInRect, rectsIntersect, segmentIntersectsRect } from '../../geom/math';
-import type { Anchor, Rect, Vec2 } from '../../geom/types';
+import type { Anchor, Vec2 } from '../../geom/types';
 import {
   autoWaypoints,
   collapseCurve,
@@ -581,37 +580,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
   tooltip: (s) => ({ title: s.name, lines: s.description !== '' ? [s.description] : [] }),
 };
 
-/**
- * Where the arrowhead sits, in device pixels: the box around the triangle, with the tip
- * discounted by ARROW_TIP_TOL_PX along the arrow's own axis.
- *
- * **No longer what decides whether the head is drawn** -- see `headIsClear`. An axis-aligned
- * box is exact only for an axis-aligned triangle: rotate the head and the corner behind a barb
- * swings out past the tip's own plane, so the box reports an overlap with the very face the
- * arrow is pointing at. Harmless while every route was rectilinear, and not since iteration
- * 6.2, where a straight diagonal is the ordinary shape of a bus link and a glancing arrival at
- * a port is the ordinary way one ends.
- *
- * Kept, exported and checked because it is the honest description of the head's extent, in the
- * same spirit as `nif`'s `anchors` seam: a pure call pins it at a dozen zoom levels faster than
- * one screenshot can be read, and the next thing that wants the head's box should not find a
- * lie waiting for it.
- */
-export function arrowBox(tip: Vec2, dir: Vec2, dpr: number): Rect {
-  const len = ARROW_LEN_PX * dpr;
-  const half = ARROW_HALF_W_PX * dpr;
-  const tol = ARROW_TIP_TOL_PX * dpr;
-  const nx = tip.x - dir.x * tol;
-  const ny = tip.y - dir.y * tol;
-  const bx = tip.x - dir.x * len;
-  const by = tip.y - dir.y * len;
-  const x0 = Math.min(nx, bx - Math.abs(dir.y) * half);
-  const x1 = Math.max(nx, bx + Math.abs(dir.y) * half);
-  const y0 = Math.min(ny, by - Math.abs(dir.x) * half);
-  const y1 = Math.max(ny, by + Math.abs(dir.x) * half);
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
 /** The back of the arrowhead: the midpoint of its base, one head-length behind the tip. */
 function arrowBase(tip: Vec2, dir: Vec2, dpr: number): Vec2 {
   const len = ARROW_LEN_PX * dpr;
@@ -638,9 +606,12 @@ function arrowBase(tip: Vec2, dir: Vec2, dpr: number): Vec2 {
  *
  * So the test is the base point: outside every block means the wedge is in open space with its
  * tip on a border, which is an arrow. Inside one means it is buried, which is not. A point,
- * deliberately, so that nothing has to be deflated -- `ARROW_TIP_TOL_PX` records why shrinking
- * the block is not an option, and unlike the tip, the base never lands on an outline by
- * construction, so it needs no tolerance of its own.
+ * deliberately, so that nothing has to be deflated or discounted. The tip sits exactly ON the
+ * target's outline by construction, and `alignStroke` rounds it by up to a device pixel, so any
+ * test involving the tip needs a tolerance -- and deflating the block to supply one is wrong,
+ * because zoomed out far enough a block is two or three device pixels across, which is
+ * precisely the case this is here to catch, and a deflated version of it has no area left to
+ * test. The base never lands on an outline by construction, so it needs no tolerance at all.
  */
 function headIsClear(s: ConnectionShape, dc: DrawContext, base: Vec2): boolean {
   for (const name of [s.from, s.to]) {

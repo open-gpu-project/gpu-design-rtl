@@ -19,7 +19,6 @@ export interface TimelineTheme {
   readonly gutterText: string;
   readonly gutterTextDim: string;
 
-  readonly rowEven: string;
   readonly rowOdd: string;
   readonly rowSelected: string;
   readonly rowSeparator: string;
@@ -53,7 +52,6 @@ export const darkTimelineTheme: TimelineTheme = {
   gutterText: '#dbe3ef',
   gutterTextDim: '#8a94a6',
 
-  rowEven: 'rgba(0, 0, 0, 0)',
   rowOdd: 'rgba(255, 255, 255, 0.022)',
   // Faint on purpose: it marks the row without competing with the flags drawn on top of it.
   rowSelected: 'rgba(96, 165, 250, 0.12)',

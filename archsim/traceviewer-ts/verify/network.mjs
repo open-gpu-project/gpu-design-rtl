@@ -1,8 +1,7 @@
 import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
 
 /*
-  Iteration 6's curved links: the spline, the waypoint editing on it, and the badge that says
-  two interfaces should not have been joined.
+  Iteration 6's curved links: the spline and the waypoint editing on it.
 
   Almost none of this is visible in a screenshot, which is why it is here as arithmetic. Whether
   the parameterisation cusps, whether the end tangent is really parallel to the last chord (the
@@ -445,22 +444,15 @@ async function connect(a, b) {
   );
 }
 
-// ------------------------------------------- no compatibility checking, and no badge ----
+// ------------------------------------------------------- any two ends may be joined ----
 
 /*
-  Iteration 6.3 withdrew connection compatibility checking entirely, after user testing. What
-  went was the whole subsystem: `conn.diagnose`, the `ShapeOps.diagnose` seam it was the only
-  implementation of, `SceneStore.diagnostics`, `RenderFlags.problems`, the red `!` badge and its
-  popup, and the `channel` property two of the four rules were about.
-
-  So this block asserts an ABSENCE, which is worth stating rather than leaving to the fact that
-  the old assertions are gone. A deletion that leaves a seam behind is how the next iteration
-  reintroduces half of it by accident, and "two masters joined by a bus is simply a bus" is a
-  product decision that deserves to be written down somewhere a change would trip over.
+  Nothing checks what is joined to what: compatibility checking was withdrawn after user testing
+  (iteration 6). "Two masters joined by a bus is simply a bus" is a product decision, and it is
+  written down here so a change that reintroduces a rule trips over it.
 */
 {
   await seed([fabric('A', 80, 60, 320, 56, 1), fabric('B', 80, 360, 320, 56, 1)]);
-  // Two MASTERS, which used to be the loudest of the four rules.
   await setPins('A', [['s', 'master']]);
   await setPins('B', [['n', 'master']]);
 
@@ -468,54 +460,11 @@ async function connect(a, b) {
   const [b] = await pinsOf('B');
   await connect(a, b);
 
-  const gone = await page.evaluate(() => ({
-    seam: window.__ops('conn').diagnose === undefined,
-    store: window.__scene.diagnostics === undefined,
-    geometry:
-      window.__ops('conn').badgeAt === undefined && window.__ops('conn').badgeScreen === undefined,
-  }));
-
-  t.ok('a connection offers no diagnose seam', gone.seam);
-  // The store's `$derived` went with it: nothing recomputes per commit, which is the cost the
-  // check was paying on every edit whether or not anything was joined.
-  t.ok('and the document has no diagnostics to hand out', gone.store);
-  t.ok('and the badge geometry is not exported for anything to hit-test', gone.geometry);
-
   const w = await wires();
   t.ok(
     'two masters joined by a bus is simply a bus',
     w.length === 1 && w[0]?.path === 'curve',
     JSON.stringify(w),
-  );
-
-  /*
-    Nothing is swallowed into a popup any more.
-
-    The badge used to get its OWN pass ahead of the hit test, returning true and absorbing the
-    press -- it could not be a `Handle`, because handles exist only on selected shapes and a
-    warning you have to select the thing to see is no warning. With it gone, a press anywhere
-    near the link reaches the normal hit test. Probed in a ring around the midpoint rather than
-    at the one offset the badge used, because that offset was `badgeAt`'s and `badgeAt` is what
-    was deleted: the claim is about the whole neighbourhood, not about one point.
-  */
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  for (const [dx, dy] of [
-    [0, 0],
-    [14, 0],
-    [-14, 0],
-    [0, 14],
-    [0, -14],
-  ]) {
-    await click(await toScreen(mid.x + dx, mid.y + dy));
-  }
-  t.ok(
-    'and no violations popup can be raised by clicking around the link',
-    (await page.locator('[role="dialog"][aria-label="Connection violations"]').count()) === 0,
-  );
-  // The layer itself is gone, not merely empty: `ViolationsPopover.svelte` was deleted.
-  t.ok(
-    'because the popup layer is not mounted at all',
-    (await page.locator('[role="dialog"]').count()) === 0,
   );
 }
 
@@ -642,9 +591,18 @@ async function connect(a, b) {
     const inward = at({ inward: true });
     // An `e`-side port, same box, to show the id does not carry the side with it.
     const east = at({ side: 'e' });
+    // What a pointer can reach: probe the centre of each edge and keep the distinct ids.
+    const offered = (s) => [
+      ...new Set(
+        [
+          { x: 124, y: 200 },
+          { x: 124, y: 216 },
+        ].map((p) => ops.anchorAt(s, p, { worldPerPx: 1 })?.id),
+      ),
+    ];
     return {
-      plain: ops.anchors(at({})).map((a) => a.id),
-      fabric: ops.anchors(inward).map((a) => a.id),
+      plain: offered(at({})),
+      fabric: offered(inward),
       out: shot(ops.resolveAnchor(at({}), 'out')),
       in: shot(ops.resolveAnchor(inward, 'in')),
       legacy: shot(ops.resolveAnchor(at({}), 'n:16')),
@@ -653,13 +611,7 @@ async function connect(a, b) {
       eastOut: shot(ops.resolveAnchor(east, 'out')),
       shared:
         ops.resolveAnchor(at({}), 'out').normal ===
-        window.__ops('rect').anchors({
-          kind: 'rect',
-          x: 0,
-          y: 0,
-          w: 10,
-          h: 10,
-        })[0].normal,
+        window.__ops('rect').resolveAnchor({ kind: 'rect', x: 0, y: 0, w: 10, h: 10 }, 'n').normal,
     };
   });
 
