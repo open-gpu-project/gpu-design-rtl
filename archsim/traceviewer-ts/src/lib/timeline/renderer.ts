@@ -1,3 +1,4 @@
+import { FrameLoop } from '../canvas/frame-loop';
 import { alignStroke } from '../canvas/pixel';
 import { fitText } from '../canvas/text';
 import { localName, type SignalId, type Tick, type TraceDoc } from '../trace/model';
@@ -42,16 +43,9 @@ function fitSignalName(ctx: CanvasRenderingContext2D, name: string, maxW: number
   return fitText(ctx, localName(name), maxW);
 }
 
-/**
- * The trace panel's render loop.
- *
- * Same structure as `canvas/renderer.ts` and for the same reason: **nothing draws inside an
- * `$effect`**. The effect in `TimelineSurface` reads an explicit dependency list and marks
- * dirty; this does the work, untracked, once per animation frame.
- */
+/** The trace panel's render loop. The frame itself is `FrameLoop`'s; see it for why. */
 export class TimelineRenderer {
-  #dirty = false;
-  #raf = 0;
+  #frames = new FrameLoop(() => this.draw());
 
   constructor(
     private readonly view: TimelineView,
@@ -60,23 +54,12 @@ export class TimelineRenderer {
   ) {}
 
   requestFrame(): void {
-    this.#dirty = true;
-    if (this.#raf !== 0) return;
-    this.#raf = requestAnimationFrame(this.#tick);
+    this.#frames.request();
   }
 
   dispose(): void {
-    if (this.#raf !== 0) cancelAnimationFrame(this.#raf);
-    this.#raf = 0;
-    this.#dirty = false;
+    this.#frames.cancel();
   }
-
-  #tick = (): void => {
-    this.#raf = 0;
-    if (!this.#dirty) return;
-    this.#dirty = false;
-    this.draw();
-  };
 
   draw(): void {
     const view = this.view;

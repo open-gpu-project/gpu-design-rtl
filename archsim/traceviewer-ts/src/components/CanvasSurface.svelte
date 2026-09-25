@@ -1,19 +1,24 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import CanvasTooltip from './CanvasTooltip.svelte';
-  import type { Renderer } from '../lib/canvas/renderer';
-  import type { ViewController } from '../lib/canvas/view.svelte';
-  import type { SceneStore } from '../lib/scene/scene.svelte';
-  import type { ToolHost } from '../lib/tools/host.svelte';
+  import { onMount, type Snippet } from 'svelte';
+  import type { SurfaceHost, SurfaceRenderer } from '../lib/canvas/surface';
+  import type { CanvasViewport } from '../lib/canvas/viewport.svelte';
 
+  /**
+   * One canvas, for either panel: the diagram passes its `ToolHost` and `Renderer`, the trace
+   * panel its `TimelineHost` and `TimelineRenderer`. What differs between them is only what a
+   * frame depends on, which each passes as `track`.
+   */
   interface Props {
-    scene: SceneStore;
-    view: ViewController;
-    host: ToolHost;
-    renderer: Renderer;
+    view: CanvasViewport;
+    host: SurfaceHost;
+    renderer: SurfaceRenderer;
+    /** Reads every reactive value the panel's frame depends on, besides the canvas size. */
+    track: () => void;
+    /** Laid over the canvas, inside the stage. */
+    children?: Snippet;
   }
 
-  const { scene, view, host, renderer }: Props = $props();
+  const { view, host, renderer, track, children }: Props = $props();
 
   let stageEl: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
@@ -127,20 +132,13 @@
   });
 
   /**
-   * Mark dirty only. Drawing inside the effect would make every value the renderer reads a
-   * tracked dependency and flush once per microtask instead of once per frame.
+   * Mark dirty only; the draw happens in the renderer's `FrameLoop`, untracked.
    */
   $effect(() => {
-    void scene.shapes;
-    void scene.selection;
-    void scene.draft;
-    void view.camX;
-    void view.camY;
-    void view.z;
+    track();
     void view.cssW;
     void view.cssH;
     void view.dpr;
-    void host.overlayVersion;
     renderer.requestFrame();
   });
 </script>
@@ -157,7 +155,7 @@
     onpointerleave={() => host.onPointerLeave()}
     oncontextmenu={(e) => e.preventDefault()}
   ></canvas>
-  <CanvasTooltip tip={host.hover} stageW={view.cssW} stageH={view.cssH} />
+  {@render children?.()}
 </div>
 
 <style>

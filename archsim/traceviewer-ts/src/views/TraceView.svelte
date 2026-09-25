@@ -8,13 +8,26 @@
   import SkipForward from '@lucide/svelte/icons/skip-forward';
   import ZoomIn from '@lucide/svelte/icons/zoom-in';
   import ZoomOut from '@lucide/svelte/icons/zoom-out';
-  import TimelineSurface from '../components/TimelineSurface.svelte';
+  import CanvasSurface from '../components/CanvasSurface.svelte';
   import { hint } from '../lib/keys';
   import { useSession } from '../lib/session.svelte';
   import { tip } from '../lib/ui/tooltip.svelte';
 
   const session = useSession();
   const { trace, timeline, timelineHost, timelineRenderer } = session;
+
+  // Everything a timeline frame reads, besides the canvas size the surface tracks itself.
+  const track = (): void => {
+    void trace.doc;
+    void trace.rows;
+    void trace.cursorTick;
+    void trace.selectedSignal;
+    void timeline.camT;
+    void timeline.zT;
+    void timeline.scrollY;
+    void timeline.gutterW;
+    void timelineHost.gestureVersion;
+  };
 
   const btn =
     'flex h-7 w-7 items-center justify-center rounded text-[var(--color-ink-dim)] ' +
@@ -184,6 +197,6 @@
   </div>
 
   <div class="min-h-0 flex-1">
-    <TimelineSurface {trace} view={timeline} host={timelineHost} renderer={timelineRenderer} />
+    <CanvasSurface view={timeline} host={timelineHost} renderer={timelineRenderer} {track} />
   </div>
 </div>

@@ -2,6 +2,7 @@ import { expandRect, rectsIntersect } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
 import { opsFor } from '../scene/registry';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
+import { FrameLoop } from './frame-loop';
 import { DotGrid } from './grid-renderer';
 import { CULL_MARGIN_PX, type Theme } from './theme';
 import type { ViewController } from './view.svelte';
@@ -15,14 +16,9 @@ export interface RenderInput {
   readonly overlay: ((dc: DrawContext) => void) | null;
 }
 
-/**
- * Owns the animation frame. Drawing from inside an `$effect` would make every value the draw
- * reads a tracked dependency, flush once per microtask instead of once per frame, and give no
- * guarantee that layout has settled -- so the effect only marks dirty and this does the work.
- */
+/** The diagram's render loop. The frame itself is `FrameLoop`'s; see it for why. */
 export class Renderer {
-  #dirty = false;
-  #raf = 0;
+  #frames = new FrameLoop(() => this.draw());
   /**
    * Owned here rather than by the grid module, because it caches bitmaps sized to this canvas.
    * `Renderer` is built once per `EditorSession` and outlives pane remounts, which is the lifetime
@@ -37,26 +33,15 @@ export class Renderer {
   ) {}
 
   requestFrame(): void {
-    this.#dirty = true;
-    if (this.#raf !== 0) return;
-    this.#raf = requestAnimationFrame(this.#tick);
+    this.#frames.request();
   }
 
   dispose(): void {
-    if (this.#raf !== 0) cancelAnimationFrame(this.#raf);
-    this.#raf = 0;
-    this.#dirty = false;
+    this.#frames.cancel();
     // Drops cached bitmaps only. This can run against a LIVE renderer -- the dock may mount the
     // new pane before tearing down the old one -- so it must not leave the grid unable to draw.
     this.#grid.dispose();
   }
-
-  #tick = (): void => {
-    this.#raf = 0;
-    if (!this.#dirty) return;
-    this.#dirty = false;
-    this.draw();
-  };
 
   draw(): void {
     const view = this.view;

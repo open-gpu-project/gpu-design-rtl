@@ -10,14 +10,12 @@ import {
   ZT_MAX,
   ZT_MIN,
 } from './theme';
-
-/** Same cap and same reason as the diagram: a 3x bitmap costs 2.25x the fill for no gain. */
-const MAX_DPR = 2;
+import { CanvasViewport } from '../canvas/viewport.svelte';
 
 /**
  * The trace panel's camera.
  *
- * A fork of `ViewController`, not a reuse. The diagram's `z` is a single isotropic scale, and a
+ * A sibling of `ViewController`, not a reuse of it. The diagram's `z` is a single isotropic scale, and a
  * timeline needs the two axes to behave differently: time zooms continuously, rows have a fixed
  * height and only scroll. Forcing both through one scale would mean either unreadable row text
  * when zoomed out on time, or a time axis that cannot zoom independently.
@@ -25,7 +23,7 @@ const MAX_DPR = 2;
  * `zoomAt(anchor, factor)` and `pan(dx, dy)` keep the diagram's exact signatures so that
  * `WheelController` drives this class without modification.
  */
-export class TimelineView {
+export class TimelineView extends CanvasViewport {
   /** The tick at the left edge of the lane area (i.e. just right of the gutter). */
   camT = $state(0);
 
@@ -35,11 +33,6 @@ export class TimelineView {
   /** Vertical scroll of the rows, in CSS pixels. */
   scrollY = $state(0);
 
-  /** Viewport size in CSS pixels. Zero while the pane is a hidden tab or fully collapsed. */
-  cssW = $state(0);
-  cssH = $state(0);
-  dpr = $state(1);
-
   /** Width of the frozen name column. */
   gutterW = $state(GUTTER_W);
 
@@ -48,31 +41,11 @@ export class TimelineView {
   rowCount = $state(0);
 
   /**
-   * Whether an initial zoom-to-fit has happened.
-   *
-   * Plain field, not a rune: it is read once per mount by the surface and never rendered. The
-   * surface cannot fit at construction time because the pane's size is not known until the
-   * first `ResizeObserver` callback, and a pane that starts collapsed never gets one.
+   * Whether the initial zoom-to-fit has happened. It cannot happen at construction, because the
+   * pane's width is unknown until the first resize -- and a pane that starts collapsed never gets
+   * one -- so `syncCanvasSize` does it the first time it has a lane to fit.
    */
-  fitted = false;
-
-  canvas: HTMLCanvasElement | null = null;
-  ctx: CanvasRenderingContext2D | null = null;
-
-  attach(canvas: HTMLCanvasElement): void {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-  }
-
-  /**
-   * Takes the canvas it is detaching, so a late teardown cannot clobber a live attachment.
-   * The dock may run the new pane's `onMount` before the old one's cleanup (iter-2 defect 3).
-   */
-  detach(canvas: HTMLCanvasElement): void {
-    if (this.canvas !== canvas) return;
-    this.canvas = null;
-    this.ctx = null;
-  }
+  #fitted = false;
 
   /* ------------------------------------------------------------------ geometry ---- */
 
@@ -131,29 +104,9 @@ export class TimelineView {
 
   /* ---------------------------------------------------------------- mutations ---- */
 
-  /**
-   * Resize the backing bitmap. Returns false for a zero-sized container -- a hidden tab or a
-   * collapsed splitter -- so the caller can skip rendering rather than build a 0x0 canvas.
-   */
-  syncCanvasSize(cssW: number, cssH: number, rawDpr: number): boolean {
-    if (cssW <= 0 || cssH <= 0) return false;
-    const dpr = Math.min(rawDpr || 1, MAX_DPR);
-    const bw = Math.max(1, Math.round(cssW * dpr));
-    const bh = Math.max(1, Math.round(cssH * dpr));
-
-    this.cssW = cssW;
-    this.cssH = cssH;
-    this.dpr = dpr;
-
-    const canvas = this.canvas;
-    if (canvas !== null) {
-      canvas.style.width = `${cssW}px`;
-      canvas.style.height = `${cssH}px`;
-      // Assigning width/height resets all 2D context state, so only do it on a real change.
-      if (canvas.width !== bw) canvas.width = bw;
-      if (canvas.height !== bh) canvas.height = bh;
-    }
-    this.clampCamera();
+  override syncCanvasSize(cssW: number, cssH: number, rawDpr: number): boolean {
+    if (!super.syncCanvasSize(cssW, cssH, rawDpr)) return false;
+    if (!this.#fitted) this.zoomToFit();
     return true;
   }
 
@@ -200,7 +153,7 @@ export class TimelineView {
 
   zoomToFit(pad = 24): void {
     if (this.laneW <= 0) return;
-    this.fitted = true;
+    this.#fitted = true;
     const span = Math.max(1, this.lastTick);
     const z = clampNum((this.laneW - 2 * pad) / span, ZT_MIN, ZT_MAX);
     this.zT = z;
@@ -229,7 +182,7 @@ export class TimelineView {
    * trace can never yank the view. Rows use a plain edge clamp, because their extent is exact
    * and there is nothing to anchor past.
    */
-  clampCamera(): void {
+  override clampCamera(): void {
     const half = this.visibleTicks / 2;
     this.camT = clampNum(this.camT, -half, Math.max(0, this.lastTick) - half);
     this.scrollY = clampNum(this.scrollY, 0, this.maxScrollY);

@@ -1,17 +1,10 @@
+import { isEditableTarget } from '../canvas/surface';
 import { WheelController } from '../canvas/wheel';
 import type { Vec2 } from '../geom/types';
 import type { SignalId } from '../trace/model';
 import type { TraceStore } from '../trace/store.svelte';
 import { hitTest, type TraceHit } from './hit';
 import type { TimelineView } from './view.svelte';
-
-/** Widened to walk ancestors: the property tree focuses tabindex divs, not just inputs. */
-function isEditableTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  return (
-    t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !== null
-  );
-}
 
 type Drag =
   | { readonly kind: 'pan'; last: Vec2 }
@@ -29,7 +22,7 @@ type Drag =
  *
  * A slimmed `ToolHost` rather than a reuse of it. `ToolContext` is typed to `SceneStore` and
  * `HitResult`, and the tool registry is global -- a timeline tool registered there would appear
- * in the *diagram's* toolbar, because `Toolbar.svelte` renders `host.tools` unconditionally.
+ * in the *diagram's* toolbar, because `Toolbar.svelte` renders every group in `host.toolGroups`.
  * The panel has one mode anyway, so the registry buys nothing here.
  *
  * What is carried over verbatim is the plumbing that iterations 1 and 2 found the hard way: the

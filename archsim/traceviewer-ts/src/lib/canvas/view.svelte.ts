@@ -2,9 +2,7 @@ import { clampNum } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
 import { computeWorldBounds } from '../scene/bounds';
 import { ZOOM_MAX, ZOOM_MIN } from './theme';
-
-/** Hard cap: a 3x bitmap costs 2.25x the fill of a 2x one for no visible gain on hairlines. */
-const MAX_DPR = 2;
+import { CanvasViewport } from './viewport.svelte';
 
 /**
  * The camera. `(camX, camY)` is the world coordinate at the viewport's top-left corner.
@@ -13,39 +11,13 @@ const MAX_DPR = 2;
  * these three numbers, so neither forces layout, and the browser can never clamp a scroll
  * offset behind our back and jump the content.
  */
-export class ViewController {
+export class ViewController extends CanvasViewport {
   camX = $state(0);
   camY = $state(0);
   z = $state(1);
 
-  /** Viewport size in CSS pixels. Zero while the view is in a hidden tab or collapsed pane. */
-  cssW = $state(0);
-  cssH = $state(0);
-  dpr = $state(1);
-
   /** The pannable extent. Set from the scene's content bounds on every commit. */
   world = $state.raw<Rect>(computeWorldBounds(null));
-
-  canvas: HTMLCanvasElement | null = null;
-  ctx: CanvasRenderingContext2D | null = null;
-
-  attach(canvas: HTMLCanvasElement): void {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-  }
-
-  /**
-   * Takes the canvas it is detaching so a late teardown cannot clobber a live attachment.
-   *
-   * The dock re-mounts a pane when it is floated or maximized, and Svelte may run the new
-   * component's `onMount` before the old one's cleanup. An unconditional detach would then
-   * null out the context that was just installed, leaving a permanently blank canvas.
-   */
-  detach(canvas: HTMLCanvasElement): void {
-    if (this.canvas !== canvas) return;
-    this.canvas = null;
-    this.ctx = null;
-  }
 
   get worldPerPx(): number {
     return 1 / this.z;
@@ -65,34 +37,6 @@ export class ViewController {
 
   toScreen(world: Vec2): Vec2 {
     return { x: (world.x - this.camX) * this.z, y: (world.y - this.camY) * this.z };
-  }
-
-  /**
-   * Resize the backing bitmap. Returns false for a zero-sized container -- a hidden tab or a
-   * fully collapsed splitter pane -- so callers can skip rendering instead of producing a 0x0
-   * canvas that has to be rebuilt on the way back.
-   */
-  syncCanvasSize(cssW: number, cssH: number, rawDpr: number): boolean {
-    if (cssW <= 0 || cssH <= 0) return false;
-    const dpr = Math.min(rawDpr || 1, MAX_DPR);
-    const bw = Math.max(1, Math.round(cssW * dpr));
-    const bh = Math.max(1, Math.round(cssH * dpr));
-
-    this.cssW = cssW;
-    this.cssH = cssH;
-    this.dpr = dpr;
-
-    const canvas = this.canvas;
-    if (canvas !== null) {
-      canvas.style.width = `${cssW}px`;
-      canvas.style.height = `${cssH}px`;
-      // Assigning width/height resets all 2D context state, so only do it on a real change.
-      // The renderer sets the transform at the top of every frame regardless.
-      if (canvas.width !== bw) canvas.width = bw;
-      if (canvas.height !== bh) canvas.height = bh;
-    }
-    this.clampCamera();
-    return true;
   }
 
   setWorld(next: Rect): void {
@@ -159,7 +103,7 @@ export class ViewController {
    * even when the whole world fits on screen. Centring the world is an explicit action
    * (`zoomToFit`), not something a constraint should impose.
    */
-  clampCamera(): void {
+  override clampCamera(): void {
     const halfW = this.cssW / this.z / 2;
     const halfH = this.cssH / this.z / 2;
     const w = this.world;

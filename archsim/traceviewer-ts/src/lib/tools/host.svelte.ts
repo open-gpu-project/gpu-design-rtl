@@ -1,4 +1,5 @@
 import { hitTest, type HitResult } from '../canvas/hit';
+import { isEditableTarget } from '../canvas/surface';
 import { HOVER_DELAY_MS, HOVER_SLOP_PX } from '../canvas/theme';
 import type { ViewController } from '../canvas/view.svelte';
 import { WheelController } from '../canvas/wheel';
@@ -19,17 +20,6 @@ import { bringForward, bringToFront, sendBackward, sendToBack } from '../scene/z
 import { buildPointerInfo } from './pointer';
 import { allTools, toolDescriptor, toolForShortcut, toolGroups } from './registry';
 import type { PointerInfo, Tool, ToolContext, ToolId } from './tool';
-
-/**
- * Walks ancestors, not just the immediate target: the property editor focuses wrapper divs and
- * the caret often sits in a child of the contenteditable, so an exact-target test misses both.
- */
-function isEditableTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  return (
-    t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !== null
-  );
-}
 
 type Restack = (shapes: readonly Shape[], ids: ReadonlySet<ShapeName>) => readonly Shape[];
 
