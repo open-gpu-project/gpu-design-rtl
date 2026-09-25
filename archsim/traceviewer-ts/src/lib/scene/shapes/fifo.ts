@@ -36,7 +36,7 @@ import { headingHit, headingTooltip, type DeviceBox } from './heading';
  * creation drag is grid-snapped at both corners, so the dragged extent is always a whole number
  * of cells and the committed box is EXACTLY the dragged box on both axes -- which is what the
  * ghost promised all along. The `round` stays for the callers that are not gestures. It also
- * means a drag yields twice the cells it did before iteration 6.2, over the same length.
+ * means a drag yields twice the cells it would at a two-step pitch, over the same length.
  */
 export function makeFifo(a: Vec2, b: Vec2, name: ShapeName): FifoShape {
   const r = rectFromPoints(a, b);
@@ -122,10 +122,10 @@ export const fifoOps: ShapeOps<FifoShape> = {
       cells: 4,
       /*
         Also the file-load default: a record that omits `spacing` is hydrated from this, so a
-        hand-written queue now draws half as long as it did before iteration 6.2. Deliberate --
-        leniency about missing keys exists for hand-authored input, and what it hands back has
-        to be the current default rather than a frozen one -- but worth knowing before wondering
-        why an old sketch came back shorter.
+        hand-written queue from when the default was two grid steps draws half as long. Deliberate
+        -- leniency about missing keys exists for hand-authored input, and what it hands back has to
+        be the current default rather than a frozen one -- but worth knowing before wondering why an
+        old sketch came back shorter.
       */
       spacing: GRID,
     };

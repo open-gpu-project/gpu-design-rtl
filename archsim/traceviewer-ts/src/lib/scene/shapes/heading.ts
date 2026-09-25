@@ -105,7 +105,7 @@ export function headingHit(s: Headed, body: Rect, p: Vec2, hc: HitContext): bool
  *
  * The property editor is a JSON editor, so a subtitle has always been able to hold a `\n` -- the
  * writer validates with a bare `typeof v === 'string'`, and `serializeScene` round-trips it. What
- * did not happen until iteration 6.3 was DRAWING it: canvas 2D treats every whitespace character
+ * did not happen until iteration 6 was DRAWING it: canvas 2D treats every whitespace character
  * including a newline as a space, so `"AW\nslave"` came out as one long run and was shrunk and
  * ellipsised as if the user had typed a space.
  *
@@ -176,7 +176,7 @@ export function headingTooltip(s: Headed): ShapeTooltip {
  *  - The lines cannot collide or overflow on the way down, because `room` is what is left of the
  *    budget once the label and the leads have been taken out of it.
  *
- * ITERATION 6.3 generalised the subtitle from one line to `n`, and the 0- and 1-line answers are
+ * Generalised from one subtitle line to `n` in iteration 6, with the 0- and 1-line answers
  * unchanged to the last bit -- which is what makes `verify/labels.mjs`'s existing numbers the
  * regression net for the change.
  *
@@ -322,8 +322,8 @@ export function fitInsetLine(
  * Two reasons, and the first is the one a reader sees: lines at different sizes read as ragged,
  * which is the same argument the note above makes for clamping the subtitle below the label. The
  * second is cost -- the probe count stays `fitFontPx`'s five whatever `n` is, where `n` searches
- * would have multiplied it, and a two-line subtitle would then have been a per-frame regression
- * on Safari at exactly the zoom band iteration 6.3 was fixing. With `cachedTextWidth` behind it
+ * would have multiplied it, and a two-line subtitle would then have been a per-frame regression on
+ * Safari at exactly the zoom band the text width cache exists for. With `cachedTextWidth` behind it
  * the measures are `n` on a cold cache and none on a warm one.
  *
  * A line that cuts down to nothing but an ellipsis comes back empty but KEEPS ITS SLOT. Dropping
@@ -511,10 +511,6 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
   /*
     Measured at the font just selected, which is the one it will be drawn at -- the same
     guarantee `fitInsetLine` exists to provide.
-
-    The two plates MEET at `cy` rather than each being centred on its own line, because two
-    plates sized to their own ink leave a sliver of whatever is underneath showing between them --
-    on a FIFO, a stub of divider floating between the label and the subtitle.
   */
   if (plate) {
     /*

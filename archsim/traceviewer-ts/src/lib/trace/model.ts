@@ -25,8 +25,8 @@ export type Tick = number;
  * One positional slot of a traced value: a scalar, enum, string, or container of those.
  *
  * Deliberately a separate type from the property editor's `PropValue`, which it currently
- * happens to match. The scene document is editor state and a trace is simulator input; iter-1
- * §5.4 is explicit that one serializer must not serve both, and letting the two grammars share
+ * happens to match. The scene document is editor state and a trace is simulator input; iteration 1
+ * is explicit that one serializer must not serve both, and letting the two grammars share
  * a name is how that starts.
  */
 export type TraceLeaf = string | number | boolean | readonly TraceLeaf[];
@@ -58,7 +58,7 @@ export interface TraceSignal {
    */
   readonly name: string;
   readonly doc: string;
-  /** `event` draws flags. `value` is modelled but not drawn yet -- see §9 of the iteration doc. */
+  /** `event` draws flags. `value` is modelled but not drawn yet (iteration 3). */
   readonly display: 'event' | 'value';
   /** Wire order, from `x-beve-order`. Empty when the root is a single leaf value. */
   readonly fields: readonly TraceField[];

@@ -27,7 +27,7 @@ const HINT_SELF = 'A connection needs two different blocks.';
  *
  * First, the preview does NOT go through `scene.setDraft`. `draft` is `$state.raw` and the
  * canvas repaint effect reads it, so assigning it per pointermove is a reactive write at input
- * frequency -- exactly the cost iteration 3.2 measured and removed for `host.pointer`. Painting
+ * frequency -- exactly the cost iteration 3 measured and removed for `host.pointer`. Painting
  * from `drawOverlay` instead is visually identical (the overlay runs immediately before the
  * draft would) and touches no signal. It also cannot desync: `commit` nulls `draft` on its way
  * past, which would erase a ghost this tool still believed it owned.

@@ -34,7 +34,7 @@ export function serializeScene(shapes: readonly Shape[]): SceneDoc {
  * endpoint against them -- while the array order in the file is the *z-order*, which says
  * nothing about what depends on what. A connection stored below its blocks (one `Cmd+[` does
  * that) would have had its endpoints refused, kept `blank`'s empty `from`, and been dropped by
- * `normalize` without a word. Iteration 5.2 flagged it as latent; iteration 6 makes the
+ * `normalize` without a word. Iteration 5 flagged it as latent; iteration 6 made the
  * dependency chain three deep -- fabric to interface to connection -- which would have made it
  * ordinary rather than obscure.
  *

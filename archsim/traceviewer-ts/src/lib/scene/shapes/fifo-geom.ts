@@ -35,8 +35,7 @@ export const TAIL_CELLS = 3;
 /**
  * The smallest divider pitch worth drawing. Below this the cells are hairline mush.
  *
- * Half the default pitch since iteration 6.2, where that default became one grid step. It was a
- * quarter of it before, which is the only thing about this constant that changed.
+ * Half the default pitch, which is one grid step.
  */
 export const MIN_SPACING = GRID / 2;
 
@@ -45,11 +44,11 @@ export const MIN_SPACING = GRID / 2;
  *
  * **Relative to the pitch, not a constant, and that is the point.** The rule is "the gap is half
  * a cell": wide enough to read as a break in the run, narrow enough that it does not read as a
- * fifth cell. It was `GRID`, which WAS half a cell while the default pitch was two grid steps --
- * and became exactly one cell when iteration 6.2 halved that default, turning a minimum-size
- * unbounded queue into a uniform run of five and losing the 1-gap-3 shape entirely.
+ * fifth cell. A constant `GRID` would be half a cell at a two-step pitch and a whole cell at the
+ * one-step default, turning a minimum-size unbounded queue into a uniform run of five and losing
+ * the 1-gap-3 shape entirely.
  *
- * At the old default it returns 16, so nothing drawn before this change moves.
+ * At a two-step pitch it returns 16, so queues saved at that pitch draw as they did.
  */
 export function minGap(spacing: number): number {
   return Math.max(MIN_SPACING, Math.round(spacing / 2));
@@ -87,7 +86,7 @@ export function minFlow(s: FifoShape): number {
  *
  * **The whole reason this exists as a function.** While the queue is bounded the extent is
  * `cells * spacing` and the stored `w` (or `h`) is ignored entirely -- so a `cells` writer and a
- * `spacing` writer never have to reach over and recompute a sibling key. Iteration 4.1's rule is
+ * `spacing` writer never have to reach over and recompute a sibling key. Iteration 4's rule is
  * that a writer touching another property becomes order-dependent, since `applyDocument` writes
  * in canonical key order and the alphabetically later key wins; deriving sidesteps that rather
  * than having to reason about it.

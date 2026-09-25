@@ -15,10 +15,10 @@ import { CanvasViewport } from '../canvas/viewport.svelte';
 /**
  * The trace panel's camera.
  *
- * A sibling of `ViewController`, not a reuse of it. The diagram's `z` is a single isotropic scale, and a
- * timeline needs the two axes to behave differently: time zooms continuously, rows have a fixed
- * height and only scroll. Forcing both through one scale would mean either unreadable row text
- * when zoomed out on time, or a time axis that cannot zoom independently.
+ * A sibling of `ViewController`, not a reuse of it. The diagram's `z` is a single isotropic scale,
+ * and a timeline needs the two axes to behave differently: time zooms continuously, rows have a
+ * fixed height and only scroll. Forcing both through one scale would mean either unreadable row
+ * text when zoomed out on time, or a time axis that cannot zoom independently.
  *
  * `zoomAt(anchor, factor)` and `pan(dx, dy)` keep the diagram's exact signatures so that
  * `WheelController` drives this class without modification.
@@ -177,7 +177,7 @@ export class TimelineView extends CanvasViewport {
   /**
    * The only place the camera is constrained.
    *
-   * Time uses the diagram's **centre** constraint (iter-1 §3.2): the middle of the lane must
+   * Time uses the diagram's **centre** constraint (iteration 1): the middle of the lane must
    * stay within the document, so each bound depends on a single document edge and extending the
    * trace can never yank the view. Rows use a plain edge clamp, because their extent is exact
    * and there is nothing to anchor past.

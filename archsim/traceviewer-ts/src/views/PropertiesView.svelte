@@ -363,7 +363,7 @@
             ? recordDoc(signal, event.values[0]!)
             : event.values.map((v) => recordDoc(signal, v));
         // Always a reset: the keys differ from whatever was there, and `set` inheriting a caret
-        // that no longer resolves is iter-2 defect 8.
+        // that no longer resolves is a defect iteration 2 found.
         if (key !== shown) dropCaret();
         classSpec = null;
         push(doc, key !== shown);
@@ -391,7 +391,7 @@
 
         Carrying the selection COUNT in the key is what keeps the caret safe when a multi-selection
         shrinks: the document is an array, and a caret at a path like `/2/...` stops resolving once
-        the list is shorter (iteration 2 defect 8). `shownCount` cannot serve here -- it is
+        the list is shorter (iteration 2). `shownCount` cannot serve here -- it is
         `$state`, and reading state this effect writes is the feedback loop the plain `let`s at the
         top of this file exist to prevent.
 
@@ -651,7 +651,7 @@
   /*
     Height comes from the grip, floored by the text; `max-height` is the passive half of the
     same clamp, for the one case a drag cannot catch -- the pane itself getting shorter
-    afterwards. 5rem is MIN_EDITOR.
+    afterwards. The 80px is MIN_EDITOR.
 
     `scrollbar-gutter: stable` keeps the inner block's width -- and therefore the height it
     reports -- from changing as the scrollbar comes and goes, which is the one way a

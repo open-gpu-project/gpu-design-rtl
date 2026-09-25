@@ -34,8 +34,8 @@ export function pruneOrphans(shapes: readonly Shape[]): readonly Shape[] {
  * Re-derive every dependent's geometry, walking the z-order from the bottom up, and repeat the
  * walk until no shape has read a dependency that later changed underneath it.
  *
- * A left fold, not a map, and that is still the whole design. What changed in iteration 6.2 is
- * that the fold reads back what the shapes it already folded ACTUALLY BECAME -- `byId` is now
+ * A left fold, not a map, and that is still the whole design. Since iteration 6 the fold reads
+ * back what the shapes it already folded ACTUALLY BECAME -- `byId` is now
  * updated in step with the corridor index, which has always worked that way. The dependency
  * graph is deeper than one level (`conn -> nif -> fabric`), and resolving one level per pass is
  * why a wire glued to a port used to lag the fabric the port sits on: live while dragging a

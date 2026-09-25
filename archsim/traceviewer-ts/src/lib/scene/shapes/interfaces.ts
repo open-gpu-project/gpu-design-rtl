@@ -24,10 +24,11 @@ export const MAX_INTERFACES = 64;
  *
  * Growing lays each new interface at its place in the even spread for the new total, and only
  * looks for another slot if that place is already taken -- see `freeOffset` for why the spread
- * alone is not enough once some interfaces have been dragged. Shrinking drops from the END rather than picking by position,
- * because the end of the list is the only choice that is stable under dragging: removing "the
- * rightmost one" would make the interface that vanishes depend on where the user last dragged
- * something.
+ * alone is not enough once some interfaces have been dragged.
+ *
+ * Shrinking drops from the END rather than picking by position, because the end of the list is
+ * the only choice that is stable under dragging: removing "the rightmost one" would make the
+ * interface that vanishes depend on where the user last dragged something.
  */
 export function expandInterfaces(
   parent: ShapeName,
@@ -44,10 +45,10 @@ export function expandInterfaces(
   const spread = spreadOffsets(box, side, n, NIF_LENGTH);
   const out: Shape[] = [...existing];
   /*
-    Each neighbour's OWN length, not the default, and rebuilt as we go so two interfaces minted
-    in one pass cannot be given the same slot. `length` is a saved property: a fabric from a
-    document written before iteration 6.2 carries 48-unit ports, and packing a new 32-unit one
-    against 32-unit assumptions put it through a real neighbour.
+    Each neighbour's OWN length, not the default, and rebuilt as we go so two interfaces minted in
+    one pass cannot be given the same slot. `length` is a saved property: a fabric from a document
+    saved when the default was 48 units carries 48-unit ports, and packing a new 32-unit one against
+    32-unit assumptions put it through a real neighbour.
   */
   const occupied: NifSpan[] = existing
     .filter((s): s is NifShape => s.kind === 'nif' && s.side === side)

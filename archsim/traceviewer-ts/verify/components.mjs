@@ -28,7 +28,7 @@ import {
   records an undo entry that undoes nothing, and no assertion about geometry will ever notice.
 
   Nothing here imports `scene/registry.ts` by URL from inside `page.evaluate`. That is the trap
-  iteration 4.1 wrote down: after an HMR update the app's own copy sits behind a versioned URL, a
+  iteration 4 wrote down: after an HMR update the app's own copy sits behind a versioned URL, a
   bare specifier resolves to a SECOND module instance with an empty registry, and `opsFor` throws
   `no ShapeOps registered` -- an uncaught error, so the suite dies with no summary and takes every
   later suite in the chain with it. `window.__ops` and `window.__doc` reach the live one.
@@ -368,7 +368,7 @@ const clear = async () => {
     EXACTLY on the cursor, on both axes.
 
     It used to be asserted within half a cell on the flow axis, to leave room for `makeFifo`'s
-    rounding. Since iteration 6.2 the pitch is one grid step and a creation drag is grid-snapped
+    rounding. The pitch is now one grid step and a creation drag is grid-snapped
     at both corners, so a dragged extent is always a whole number of cells and the rounding
     cannot fire through any gesture -- which makes the ghost's promise exact, and worth
     asserting as exact. The rounding itself is covered below, by calling `makeFifo` directly
@@ -425,8 +425,8 @@ const clear = async () => {
   );
 
   /*
-    The two defaults themselves, which nothing pinned before iteration 6.2 -- which is precisely
-    why nothing in the suite noticed when they changed. `blank()` is the file-load default as
+    The two defaults themselves, which nothing used to pin -- which is precisely why nothing in
+    the suite noticed when they changed. `blank()` is the file-load default as
     well as the toolbar's, so the two are asserted separately rather than assumed equal.
   */
   const pitch = await page.evaluate(() => {
@@ -692,11 +692,11 @@ const clear = async () => {
     new one cannot simply take its slot in the new even spread: the spread for four and the
     spread for six do not line up, and it lands on top of an old one. Observed as a fourth at
     288 and a sixth at 304, overlapping by 28 of their 32 units -- the exact case this asserts,
-    and reproducible again now that iteration 6.2 has put an interface back to 32 units.
+    and reproducible now that an interface is 32 units.
 
-    Six, which iteration 6.1 had to weaken to five: six 48-unit interfaces needed 288 of this
-    face's 336 and could not be fitted around four already sitting at the four-way spread
-    positions, so `freeOffset` did the documented thing and overlapped. Six 32-unit ones need
+    Six, which had to be weakened to five while the default was 48: six 48-unit interfaces needed
+    288 of this face's 336 and could not be fitted around four already sitting at the four-way
+    spread positions, so `freeOffset` did the documented thing and overlapped. Six 32-unit ones need
     192, and the question is a real one again rather than a face that is simply full.
   */
   const six = await spans(6);
@@ -715,7 +715,7 @@ const clear = async () => {
   );
 
   /*
-    What the 32-unit default is FOR, and the thing item 4 of iteration 6.2 is actually about:
+    What the 32-unit default is FOR:
     an interface's connection point is the centre of an edge, so it sits on a grid dot only
     while the along extent is a multiple of two grid steps. At 48 every anchor was 8 units off
     every dot, and so was every wire leaving one. Asserted on all four sides of a grid-aligned
@@ -773,7 +773,7 @@ const clear = async () => {
 
   /*
     A face of MIXED vintages, on a fabric of its own so that setting the lengths cannot itself
-    manufacture the overlap. This is what every document written before iteration 6.2 becomes
+    manufacture the overlap. This is what a document saved when the default was 48 units becomes
     the moment a port is added to it: `length` is saved per interface, so the ones already
     there are 48 units long and the new ones are 32. `freeOffset` used to test both intervals
     with a single length -- the new one's -- and called an old neighbour clear when it

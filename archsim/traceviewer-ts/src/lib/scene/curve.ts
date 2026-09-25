@@ -12,7 +12,7 @@ import { samePoint } from './route';
  * **`points` is the CONTROL POLYGON, not the drawn path**: the source anchor, the target anchor,
  * and the user's waypoints in between. Two points is a straight line, which is how "try to
  * connect the two interfaces directly" falls out of the general form instead of being a case --
- * and since iteration 6.2 that is the ordinary shape of a link rather than the rare one.
+ * and that is the ordinary shape of a link rather than the rare one.
  *
  * Every function returns its INPUT reference when nothing changed, because `SceneStore.commit`
  * decides whether to record an undo entry by comparing array identity.
@@ -248,8 +248,8 @@ export function moveWaypoint(points: readonly Vec2[], index: number, to: Vec2): 
  * from behind. Both are dot products against the anchor normals, and both being positive is
  * exactly "in front of".
  *
- * Iteration 6.2 moved that threshold from cos(15 degrees) to zero, which inverts which case is
- * the common one: a link runs straight unless a straight line would leave or arrive backwards.
+ * The threshold is zero, not the cos(15 degrees) it once was, which makes straight the common
+ * case: a link runs straight unless a straight line would leave or arrive backwards.
  * The narrow rule it replaces called anything meaningfully off-axis a bow, on the grounds that
  * a bus leaving its own port diagonally does not read as a bus -- true of the 15-degree band it
  * was drawn for, and false of the offset pairs that are most of a real diagram.

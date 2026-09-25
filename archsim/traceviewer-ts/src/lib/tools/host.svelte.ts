@@ -88,7 +88,7 @@ export class ToolHost {
    *
    * A plain field, deliberately. The whole point of the dwell is that a move costs nothing but
    * a `clearTimeout` and two assignments: reading this through a signal would put a
-   * full-document invalidation on every pointermove, which is the cost iteration 3.2 spent a
+   * full-document invalidation on every pointermove, which is the cost iteration 3 spent a
    * whole pass removing.
    */
   #hoverAt: { screen: Vec2; world: Vec2 } | null = null;

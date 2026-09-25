@@ -9,7 +9,7 @@ import { DEV_URL, diagramCanvas, dragOn, open, suite, toCanvas } from './harness
   a writer allocates when nothing changed -- all of it passes a pixel diff either way.
 
   `window.__curve`, `__ops` and `__doc` reach the app's own modules. Importing `scene/registry.ts`
-  by URL from inside `page.evaluate` is the trap iteration 4.1 wrote down; pure modules like
+  by URL from inside `page.evaluate` is the trap iteration 4 wrote down; pure modules like
   `curve.ts` are safe to import that way, and are, where it reads better.
 */
 
@@ -189,10 +189,10 @@ async function connect(a, b) {
     String(r.facing),
   );
   /*
-    Iteration 6.2 inverted which of these is the common case. The rule used to be cos(15
-    degrees) off either normal, which made a bow of anything meaningfully off-axis -- including
-    the offset pair below, which is most of a real diagram. It is now simply "in front of
-    both", so a link runs straight unless a straight line would leave or arrive backwards.
+    Straight is the common case. The rule was once cos(15 degrees) off either normal, which made a
+    bow of anything meaningfully off-axis -- including the offset pair below, which is most of a
+    real diagram. It is now simply "in front of both", so a link runs straight unless a straight
+    line would leave or arrive backwards.
   */
   t.ok(
     'and neither does an offset pair, which runs straight rather than bowing',
@@ -655,7 +655,7 @@ async function connect(a, b) {
 // ------------------------------------------------- the fold settles, in one call ----
 
 /*
-  Iteration 6.2. `rerouteAll` used to build its dependency map ONCE, from the array it was
+  `rerouteAll` used to build its dependency map ONCE, from the array it was
   handed, so a call resolved exactly one level of the graph. The real chain is two deep --
   `conn -> nif -> fabric` -- which is why a wire glued to a port lagged the fabric that port
   sits on: live during the drag for a block-to-block wire, one commit late for this one.
@@ -787,7 +787,7 @@ async function connect(a, b) {
 /*
   A pixel check, because this one is invisible to every other kind.
 
-  Iteration 6.2 made a straight diagonal the ordinary shape of a bus link, and a diagonal
+  A straight diagonal is the ordinary shape of a bus link, and a diagonal
   arrival meets a port at a glancing angle. `headIsClear` used to ask whether the head's BOX
   overlapped the target -- and an axis-aligned box cannot rotate, so the corner behind a barb
   swings past the tip's own plane and reports an overlap with the very face the arrow points
@@ -875,7 +875,7 @@ async function connect(a, b) {
 // ----------------------------------------- dragging a connection by its own body ----
 
 /*
-  The gesture the move set must NOT break, and which nothing covered before iteration 6.2.
+  The gesture the move set must NOT break, and which nothing used to cover.
 
   The first design for "a connection whose ends both moved travels rigidly" lived inside
   `conn.reroute` and compared each end's new anchor against the point it replaced. Dragging a
@@ -948,7 +948,7 @@ async function connect(a, b) {
 // ------------------------------------------------- what a gesture actually moves ----
 
 /*
-  Iteration 6.2, the second half. The select tool used to translate exactly the selection,
+  The select tool once translated exactly the selection,
   which is wrong at both ends: a shape `reroute` will re-glue must not ALSO be moved by hand,
   and a connection whose two endpoints are both moving must be moved rather than patched.
 

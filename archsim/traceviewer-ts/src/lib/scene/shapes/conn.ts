@@ -170,7 +170,7 @@ function appendCurvePath(ctx: CanvasRenderingContext2D, dev: readonly Vec2[]): v
   }
 }
 
-/** Emit the rounded route into the current path. Separated so a future layer can batch routes. */
+/** Emit the rounded route into the current path. */
 function appendRoutePath(ctx: CanvasRenderingContext2D, dev: readonly Vec2[], rDev: number): void {
   ctx.moveTo(dev[0]!.x, dev[0]!.y);
   for (let i = 1; i < dev.length - 1; i++) {
@@ -204,7 +204,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
   /**
    * The bare point bbox. The arrowhead, the stroke, the knobs and the end beads are sized in
    * screen pixels and cannot be expressed here; they are covered by the renderer's own cull
-   * margin, which is 16 CSS px of world at every zoom and so always exceeds them.
+   * margin, `CULL_MARGIN_PX` of world at every zoom, which always exceeds them.
    */
   bounds: (s) => routeBounds(drawnPoints(s)),
 
@@ -524,7 +524,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
 
     if (!flags.ghost && s.label !== '') drawLabel(s, dc, dev);
 
-    // Restore everything touched. `lineJoin` in particular: `rect.ts` strokes with `strokeRect`,
+    // Restore everything touched. `lineJoin` in particular: a box body strokes with `strokeRect`,
     // whose corners honour it, so leaving it round would soften every block drawn after this one.
     ctx.setLineDash([]);
     ctx.lineJoin = 'miter';
@@ -617,10 +617,11 @@ function arrowBase(tip: Vec2, dir: Vec2, dpr: number): Vec2 {
  * the same reason.
  *
  * **The question is where the WEDGE sits, not whether any ink touches it**, and the difference
- * became visible in iteration 6.2. A head arriving at 15 degrees off a port's face genuinely
- * lays a barb across that face -- which is what an arrow meeting a surface at a glancing angle
- * looks like, and not a blob -- while the head's box, which cannot rotate, reports an overlap
- * for the same reason. Testing the box dropped the arrowhead from every bus link in the app.
+ * became visible once straight diagonal links were the norm (iteration 6). A head arriving at 15
+ * degrees off a port's face genuinely lays a barb across that face -- which is what an arrow
+ * meeting a surface at a glancing angle looks like, and not a blob -- while the head's box, which
+ * cannot rotate, reports an overlap for the same reason. Testing the box dropped the arrowhead from
+ * every bus link in the app.
  *
  * So the test is the base point: outside every block means the wedge is in open space with its
  * tip on a border, which is an arrow. Inside one means it is buried, which is not. A point,
@@ -649,8 +650,7 @@ function headIsClear(s: ConnectionShape, dc: DrawContext, base: Vec2): boolean {
 }
 
 /**
- * The label rides the longest run,
- which is the only one reliably long enough to hold text.
+ * The label rides the longest run, which is the only one reliably long enough to hold text.
  *
  * `labelOffset` then nudges it off that run, in CSS pixels, along two axes derived from the run
  * itself: `par` follows the run in stored point order -- source towards target -- and `perp` is

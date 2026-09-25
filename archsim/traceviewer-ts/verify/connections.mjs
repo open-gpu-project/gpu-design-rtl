@@ -799,7 +799,7 @@ t.ok(
 t.ok(
   'and the ghost never touches the reactive draft channel',
   pending.draft === null,
-  'a $state write per pointermove is the cost iteration 3.2 removed',
+  'a $state write per pointermove is the cost iteration 3 removed',
 );
 
 const nBeforeSelf = await page.evaluate(() => window.__scene.shapes.length);
@@ -1366,7 +1366,7 @@ t.ok(
 );
 
 /*
-  ITERATION 5 -- the label's (par, perp) offset, and the wire tooltip.
+  The label's (par, perp) offset, and the wire tooltip (iteration 5).
 
   The offset is measured by intercepting `fillText` and reading back where the label was
   actually drawn, rather than by diffing pixels. Both axes are checked, and both have to be:

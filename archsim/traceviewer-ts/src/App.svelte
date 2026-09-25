@@ -149,9 +149,9 @@
 
         `resolve.ts` imports the registry, so a check cannot import it by URL without getting a
         second, empty copy of that registry (see `__ops`). And without a handle on it the one
-        property iteration 6.2 exists for -- that the array comes back SETTLED, in one call,
-        rather than one level per commit -- is indistinguishable from the old behaviour except
-        by driving two commits and watching the geometry catch up on the second.
+        property it exists for -- that the array comes back SETTLED, in one call, rather than one
+        level per commit -- could only be seen by driving two commits and watching the geometry
+        catch up on the second.
       */
       __resolve: { rerouteAll, movesWith },
       __anchor: {
@@ -191,11 +191,11 @@
       */
       __insetType: insetType,
       /*
-        Iteration 6.3's multi-line subtitles, pure and exported for the same reason `insetType`
-        is: the split rules, the shared size and the baseline quantisation are all arithmetic,
-        and counting lit pixels at a dozen zoom levels would not settle any of them. The
-        baselines in particular have to be checked against the exact integers the one-line code
-        produced, which is the only way a `round` where a `trunc` belongs gets caught.
+        Multi-line subtitles, pure and exported for the same reason `insetType` is: the split rules,
+        the shared size and the baseline quantisation are all arithmetic, and counting lit pixels at
+        a dozen zoom levels would not settle any of them. The baselines in particular have to be
+        checked against the exact integers the one-line code produced, which is the only way a
+        `round` where a `trunc` belongs gets caught.
       */
       __subtitleLines: subtitleLines,
       __insetBaselines: insetBaselines,
@@ -241,7 +241,7 @@
         Exposed because a check that wants to ask "what handles would this shape have" about a
         shape it has not committed -- a FIFO with a different cell count, a queue mid-flip -- has
         no other honest way in. The tempting alternative, `await import('/src/lib/scene/registry.ts')`
-        from inside `page.evaluate`, is the trap iteration 4.1 wrote down: after any HMR update
+        from inside `page.evaluate`, is the trap iteration 4 wrote down: after any HMR update
         the app's own copy is behind a versioned URL, so a bare specifier resolves to a SECOND
         module instance whose registry is empty, and every `opsFor` throws `no ShapeOps
         registered`. That kills the suite with an uncaught error rather than a failed assertion,

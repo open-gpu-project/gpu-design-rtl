@@ -280,7 +280,7 @@ export type Handle = PointHandle | SegmentHandle;
  * `reroute` call returns, so a shape that retained the instance would observe geometry that did
  * not exist when it was built. Query-only makes that impossible to do by accident.
  *
- * Narrower still since iteration 6.2: the index is built and thrown away within a single sweep
+ * Narrower still: the index is built and thrown away within a single sweep
  * of `rerouteAll`, which may sweep more than once. A retained instance would therefore also
  * offer runs drawn by a version of the scene that no longer exists.
  */

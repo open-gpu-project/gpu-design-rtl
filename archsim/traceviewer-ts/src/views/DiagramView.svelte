@@ -21,8 +21,8 @@
   };
 </script>
 
-<!-- Self-contained and sized by its container, so this drops into a pane when the tab strip
-     and split views land. It never assumes it owns the window. -->
+<!-- Self-contained and sized by its container, so any dock pane can hold it. It never assumes
+     it owns the window. -->
 <div class="flex h-full min-h-0 w-full flex-col">
   <Toolbar {scene} {view} {host} />
   <div class="min-h-0 flex-1">

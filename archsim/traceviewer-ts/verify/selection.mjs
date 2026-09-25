@@ -11,7 +11,7 @@ import {
 } from './harness.mjs';
 
 /*
-  Marquee selection and the clipboard, for iteration 5-2.
+  Marquee selection and the clipboard (iteration 5).
 
   Two halves with different needs. The naming and fragment rules are pure functions of a
   document and a name set, so they are driven directly through `window.__fragment` and

@@ -10,13 +10,13 @@ import {
 } from './harness.mjs';
 
 /*
-  Input-path checks for iteration 3.2.
+  Input-path checks.
 
-  Report 2 established that the canvas is BLOCKED, not busy: 6 280ms of a 20s recording sits in
-  `Composite` while script, layout, style and paint together are 140ms, and the main thread idles
-  at 3-13%. So none of these three defects was ever about CPU. They are about how often the
-  document gets dirtied, because the DOM's layer rasterization is queued into the same GPU process
-  the canvas is waiting on -- 20.3Mdev-px of it per frame, for 3.78Mdev-px of actual change.
+  The Safari measurement (iteration 3) established that the canvas is BLOCKED, not busy: 6 280ms of
+  a 20s recording sits in `Composite` while script, layout, style and paint together are 140ms, and
+  the main thread idles at 3-13%. So none of these defects was ever about CPU. They are about how
+  often the document gets dirtied, because the DOM's layer rasterization is queued into the same GPU
+  process the canvas is waiting on -- 20.3Mdev-px of it per frame, for 3.78Mdev-px of actual change.
 
   Kept separate from `grid.mjs` deliberately. That file is a pure-function suite with no
   compositor, no mouse and no timing in it; this one drives a real pointer and has to wait on
@@ -28,7 +28,7 @@ const { browser, page, errors } = await open(DEV_URL);
 await installProbes(page);
 
 /*
-  STEP 4 -- Safari's pinch goes through the rAF accumulator.
+  Safari's pinch goes through the rAF accumulator.
 
   `onGestureChange` used to call `zoomAt` and `onApplied()` synchronously, per event. Safari is
   the only engine that fires these at all, and `#suppressPinchUntil` routes it away from the
@@ -106,12 +106,12 @@ t.ok(
 );
 
 /*
-  STEP 5a -- the pointer readout is sampled at snap granularity.
+  The pointer readout is sampled at snap granularity.
 
   `ToolHost.pointer` is `$state.raw`, which compares by identity, and it was assigned a fresh
-  object on every `pointermove` -- so the status bar re-rendered 60 times a second and report 1
-  measured 48 full-document layouts per 60 moves over the canvas against 0 for 60 moves outside
-  it. The readout only shows the SNAPPED point, which changes once per GRID world pixels.
+  object on every `pointermove` -- so the status bar re-rendered 60 times a second, and the
+  measurement found 48 full-document layouts per 60 moves over the canvas against 0 for 60 moves
+  outside it. The readout only shows the SNAPPED point, which changes once per GRID world pixels.
 
   Counted by identity rather than by layouts: 64 CSS px at z = 1 crosses four 16px snap cells, so
   a correct implementation writes about five times in 32 moves and the old one wrote 32 times.
@@ -155,7 +155,7 @@ t.ok(
 );
 
 /*
-  STEP 5b -- a re-run with nothing selected is a no-op.
+  A re-run with nothing selected is a no-op.
 
   `push(doc, reset)` skips its text-equality guard whenever `reset` is true, and the no-sole-
   selection branch passed `reset: true` unconditionally -- so every re-run with nothing selected
@@ -211,7 +211,7 @@ t.ok(
 await page.evaluate(() => window.__unwatch());
 
 /*
-  ITERATION 5 -- the hover tooltip and the label tab's hit box.
+  The hover tooltip and the label tab's hit box (iteration 5).
 
   Both belong here rather than in `properties.mjs`: they are pointer behaviour, and the tooltip
   in particular has a performance contract as strict as anything else in this file. It must not
@@ -293,10 +293,10 @@ t.ok(
   `document.body`.
 
   Not to be lenient -- the opposite. Over the whole body this reads 2 rather than 0, and both
-  are the status bar's coordinate readout creating its text node on the way in, which is
-  iteration 3.2's business and not this one's. Scoping it to the pane the tooltip actually lives
-  in turns "about 2, which is small" into an exact zero, and an exact zero is an assertion that
-  cannot quietly absorb a regression.
+  are the status bar's coordinate readout creating its text node on the way in, which is the
+  pointer readout's business and not this one's. Scoping it to the pane the tooltip actually
+  lives in turns "about 2, which is small" into an exact zero, and an exact zero is an assertion
+  that cannot quietly absorb a regression.
 */
 const settle = await atWorld(48, 176);
 await page.mouse.move(settle.x, settle.y);
@@ -330,7 +330,7 @@ t.ok(
   String(tabbedTip),
 );
 /*
-  Iteration 6.3. A subtitle may hold several lines, and `ShapeTooltip.lines` is rendered as
+  A subtitle may hold several lines, and `ShapeTooltip.lines` is rendered as
   `<p>` elements -- so a newline left inside one would collapse to a space in HTML and the two
   lines would run together. Split at the source instead, one paragraph per line.
 */
@@ -509,7 +509,7 @@ t.ok(
 );
 
 /*
-  ITERATION 5.3 -- the chrome tooltip.
+  The chrome tooltip (iteration 5).
 
   These exist because the toolbar had NO assertion of any kind before them. Not the tooltips;
   not even that clicking a tool button does anything -- every suite in this repo reaches the
@@ -887,7 +887,7 @@ t.ok(
 
 /*
   The dwell has to be the whole cost. `$state` written per pointermove would put a full document
-  invalidation on every move across the toolbar -- the class of defect iteration 3.2 spent a
+  invalidation on every move across the toolbar -- the class of defect iteration 3 spent a
   pass removing, and the reason `ToolHost` keeps `#hoverAt` as a plain field.
 */
 {

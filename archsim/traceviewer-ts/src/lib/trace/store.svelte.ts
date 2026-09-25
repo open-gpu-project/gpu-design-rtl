@@ -25,7 +25,7 @@ export interface SelectedEvent {
  * The trace document, the row order, and the time cursor.
  *
  * Owned by `EditorSession`, not by the panel: the dock re-mounts a pane's content when it is
- * maximized or floated, so anything living in the view dies with it (iter-2 §3.2).
+ * maximized or floated, so anything living in the view dies with it (iteration 2).
  *
  * Cross-panel selection rules are **not** here -- they live on `EditorSession`, which is the
  * only thing that can see both this and the scene.

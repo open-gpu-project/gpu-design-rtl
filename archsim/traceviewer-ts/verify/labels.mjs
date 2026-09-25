@@ -1,8 +1,8 @@
 import { DEV_URL, installProbes, open, suite } from './harness.mjs';
 
 /*
-  How a block's inset label and subtitle behave as the block gets smaller on screen, for
-  iteration 5-4.
+  How a block's inset label and subtitle behave as the block gets smaller on screen
+  (iteration 5).
 
   Two defects this suite exists for. Type used to be a fixed 13px over a fixed 10px drawn only
   while the block was at least 44 CSS px, so zooming a diagram out blanked every block at once,
@@ -20,11 +20,11 @@ import { DEV_URL, installProbes, open, suite } from './harness.mjs';
   interesting thresholds, because correct arithmetic wired into nothing at all would pass every
   assertion in the first two parts.
 
-  Iteration 6.3 added two more things to this file, and they share the machinery. Subtitles grew
+  Iteration 6 added two more things to this file, and they share the machinery. Subtitles grew
   from one line to `n`, so the `hasSubtitle` boolean below became a line COUNT -- every number in
   this block is the number the boolean produced, which is what makes the whole first part the
-  regression net for that change. And `text.ts` grew a width cache, which is the second half of
-  the Safari fix and the only part of it that scales with shape count, so the last part counts
+  regression net for that change. And `text.ts` grew a width cache, which is the half of the
+  Safari fix that scales with shape count, so the last part counts
   `measureText` calls the way `grid.mjs` counts `rect`.
 */
 
@@ -296,7 +296,7 @@ t.ok(
 /* ------------------------------------------- subtitles of several lines, as pure ---- */
 
 /*
-  Iteration 6.3. The property editor has always accepted a newline in a subtitle and the file
+  The property editor has always accepted a newline in a subtitle and the file
   format has always round-tripped it; canvas 2D draws one as a space, so what the user typed was
   silently collapsed into one over-long run.
 
@@ -503,10 +503,10 @@ t.ok(
     }
 
     /*
-      Cost, not just output. Three lines must cost no more `ctx.font` assignments than one,
-      because the whole reason they share a size is that one binary search answers for all of
-      them -- three independent searches would have tripled the probe count and made a
-      multi-line subtitle a per-frame regression in exactly the zoom band iteration 6.3 fixes.
+      Cost, not just output. Three lines must cost no more `ctx.font` assignments than one, because
+      the whole reason they share a size is that one binary search answers for all of them -- three
+      independent searches would have tripled the probe count and made a multi-line subtitle a
+      per-frame regression in exactly the zoom band the width cache exists for.
     */
     const count = (fn) => {
       window.__textCache.clear();
@@ -853,8 +853,8 @@ t.ok(
 
 /*
   Correct arithmetic wired into nothing at all would pass every assertion in the pure block
-  above, which is the reason this file has a pixel part -- and the reason iteration 6.3 needed
-  one too.
+  above, which is the reason this file has a pixel part -- and the reason multi-line subtitles
+  needed one too.
 
   Three blocks of one height class, differing only in what their subtitle says. `ink` reads the
   lit text pixels inside each, so "the second line is actually drawn" and "the short block still
@@ -942,8 +942,8 @@ t.ok(
 /* ---------------------------------------------- what a frame costs to measure ---- */
 
 /*
-  Iteration 6.3's second Safari fix, and the only part of it that scales with SHAPE COUNT --
-  which is the axis neither triage report varied and the one the user's report added.
+  The half of the Safari fix that scales with SHAPE COUNT -- an axis the grid measurement never
+  varied, and the one the user's report added (iteration 6).
 
   `text.ts` had no cache of any kind. `drawInsetLabel` reaches `measureText` through
   `fitFontPx`'s binary search, and that takes its one-probe fast path only while the label fits

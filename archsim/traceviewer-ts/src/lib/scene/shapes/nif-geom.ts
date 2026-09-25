@@ -194,8 +194,8 @@ export interface NifSpan {
  * Do two interfaces overlap along their shared face?
  *
  * **Both lengths, not one.** `length` is a saved property, so a face can carry ports of two
- * vintages at once -- every document written before iteration 6.2 holds 48-unit ports, and a
- * port added to such a fabric afterwards is 32. Testing both intervals with the NEW port's
+ * vintages at once -- a document saved when the default was 48 units holds 48-unit ports, and a
+ * port added to such a fabric now is 32. Testing both intervals with the NEW port's
  * length declared an old neighbour clear when it overlapped by up to 16 units.
  */
 function overlaps(a: NifSpan, b: NifSpan): boolean {

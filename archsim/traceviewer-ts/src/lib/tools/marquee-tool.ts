@@ -159,10 +159,6 @@ export class MarqueeTool implements Tool {
   }
 }
 
-/*
-  A dashed box, as one filled path: registry icons are drawn `fill="currentColor"` with no
-  stroke, so the dashes have to be eight separate rectangles rather than a stroked outline.
-*/
 registerTool({
   id: 'select',
   label: 'Select',

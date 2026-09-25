@@ -25,7 +25,7 @@ const MODPORTS: readonly Modport[] = ['master', 'slave'];
  *
  * `position`, `size` and `parent` are absent on purpose. An interface has no position of its own:
  * it has a `side` and an `offset` on a parent, and its box follows from those. Offering an
- * editable `[x, y]` that the next commit overwrites is the read-only-field problem iteration 4.2
+ * editable `[x, y]` that the next commit overwrites is the read-only-field problem iteration 4
  * spent a whole pass removing.
  */
 const props: readonly PropDef<NifShape>[] = [

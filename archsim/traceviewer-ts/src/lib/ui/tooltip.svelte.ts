@@ -105,7 +105,7 @@ export function dismissChromeTip(): void {
 }
 
 /**
- * Give an element a tooltip: `{@attach tip('Rectangle (2)')}`.
+ * Give an element a tooltip: `{@attach tip('Rectangle (3)')}`.
  *
  * An attachment rather than a wrapper component, because the wrapper would be a second box in
  * the middle of a flex row -- and because this has to serve a `<span>` in the status bar as

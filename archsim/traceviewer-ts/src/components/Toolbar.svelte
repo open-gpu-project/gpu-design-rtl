@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
     Deep-imported one module per icon, which is what keeps a 7 MB, 1600-icon package down to
-    what is used. Never a `title` prop: iteration 5.3 removed every native tooltip in favour of
+    what is used. Never a `title` prop: iteration 5 removed every native tooltip in favour of
     the `tip()` attachment, and the checks assert no control in this pane carries one.
   */
   import FolderOpen from '@lucide/svelte/icons/folder-open';

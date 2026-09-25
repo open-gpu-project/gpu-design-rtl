@@ -644,10 +644,10 @@ s.ok(
 );
 
 /*
-  ITERATION 5.3 -- this panel's controls are on the same tooltip as the diagram's.
+  This panel's controls are on the same tooltip as the diagram's (iteration 5).
 
-  The trace panel has its own control strip, built from the same icon-button pattern and, until
-  this iteration, the same native `title`. It is checked here rather than in `input.mjs` for the
+  The trace panel has its own control strip, built from the same icon-button pattern and, once,
+  the same native `title`. It is checked here rather than in `input.mjs` for the
   usual reason -- that file is scoped to the diagram pane -- but it is the SAME layer, mounted
   once at the app root, and that is what these two assertions are for. Two layers would be two
   tooltips the moment the pointer crossed panels.

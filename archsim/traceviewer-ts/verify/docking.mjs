@@ -1,8 +1,8 @@
 import { button, drawBlock, health, open, sized, suite, DEV_URL } from './harness.mjs';
 
 /**
- * The dock shell. Iteration 1 shipped the canvas "designed to be hosted in a pane" but never
- * actually hosted it in one, so everything here is exercising that claim for the first time.
+ * The dock shell: the canvas hosted in a pane that is resized, floated, maximized and restored,
+ * and still the right size and painted after each.
  */
 const t = suite('docking (dev)');
 const { browser, page, errors } = await open(DEV_URL);
@@ -37,7 +37,7 @@ t.ok(
 );
 
 /*
-  ITERATION 5.3 -- the tooltip layer outranks a floated pane.
+  The tooltip layer outranks a floated pane (iteration 5).
 
   The layer is mounted at the app root and a floating dock window is not, so which one wins is
   decided by `z-index` alone. Caught here rather than by review: the first version used 100 and

@@ -24,9 +24,9 @@
   with no draw context in sight. Threading the cache through `DrawContext` would have left both
   on the uncached path. (`flagMeasurer` stays uncached on purpose; see its note.)
 
-  WHAT THIS IS FOR. Iteration 6.3, and the Safari defect that stayed after the grid was fixed:
-  interaction got slow in proportion to SHAPE COUNT in the 50-70% zoom band, which is the one
-  axis neither triage report varied. `drawInsetLabel` reaches `measureText` through
+  WHAT THIS IS FOR. The Safari slowdown that stayed after the grid was fixed (iteration 6):
+  interaction got slow in proportion to SHAPE COUNT in the 50-70% zoom band, an axis the grid
+  measurement never varied. `drawInsetLabel` reaches `measureText` through
   `fitFontPx`'s binary search, and `fitFontPx` takes its one-probe fast path only while the label
   fits at the ceiling. For typical block widths that stops being true at z around 0.48, and below
   z around 0.46 the fit bottoms out and falls through to `fitText`'s own probes -- so a box went

@@ -11,8 +11,8 @@ import { MIN_MAJOR_PX, MIN_TICK_PX } from './theme';
  *   become the new minors, rather than every tier changing at once;
  * - `minorAlpha` is anchored to the same `MIN_TICK_PX` the ladder test uses, so the fade
  *   reaches zero exactly at the moment the tier is replaced. A fade that bottomed out above
- *   zero would leave the tier visible at the instant it was swapped, which is the discontinuity
- *   iter-1 bug 9 was about.
+ *   zero would leave the tier visible at the instant it was swapped -- a discontinuity iteration
+ *   1 found in the grid.
  *
  * It differs from the grid in two ways, both forced by the data rather than chosen. The ladder
  * is decimal (1-2-5) because tick counts are read as numbers, not as cells; and **every tier is

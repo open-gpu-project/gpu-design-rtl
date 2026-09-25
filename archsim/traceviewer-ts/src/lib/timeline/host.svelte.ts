@@ -36,7 +36,7 @@ export class TimelineHost {
    * Bumped whenever a gesture ends, however it ends.
    *
    * Anything that defers work while `isGesturing()` needs this: a click that never moves
-   * commits nothing, so no other signal is guaranteed to arrive (iter-2 defect 1).
+   * commits nothing, so no other signal is guaranteed to arrive (iteration 2).
    */
   gestureVersion = $state(0);
 

@@ -21,12 +21,6 @@
     `${round(view.world.x)},${round(view.world.y)} ${round(view.world.w)}x${round(view.world.h)}`,
   );
 
-  /*
-    Through `bounds`, not through a `kind` check. This was the one place left in the app that
-    switched on a shape's kind, and iteration 6 added two more draft-producing tools -- so the
-    switch would have had to grow, silently, every time a kind learned to be drawn. `bounds` is
-    already the per-kind answer to "how big is this", and it is defined for every kind.
-  */
   /**
    * What the selected sub-part is, when there is one.
    *
@@ -44,6 +38,12 @@
     return `${part.noun} ${part.ordinal} / ${part.count} · ${round(part.pos.x)}, ${round(part.pos.y)}`;
   });
 
+  /*
+    Through `bounds`, not through a `kind` check. This was the one place left in the app that
+    switched on a shape's kind, and iteration 6 added two more draft-producing tools -- so the
+    switch would have had to grow, silently, every time a kind learned to be drawn. `bounds` is
+    already the per-kind answer to "how big is this", and it is defined for every kind.
+  */
   const draftLabel = $derived.by(() => {
     const d = scene.draft;
     if (d === null) return null;
