@@ -8,19 +8,23 @@ exist. These are kept so the next change has something to run.
 
 They drive a real browser at `deviceScaleFactor: 2` through Playwright, using the Edge already
 installed on the machine (`channel: 'msedge'`), so no browser download is needed. They assert on
-`getImageData` pixels and on live state exposed in DEV via `window.__scene`, `__view`, `__host`
-and `__workspace`.
+`getImageData` pixels and on live state exposed in DEV through the hooks in the DEV block of
+`App.svelte`, plus `__workspace`. The production build carries none of them, and
+`production.mjs` asserts that.
 
 ```bash
 npm run dev                 # terminal 1, port 5183
 node verify/grid.mjs        # terminal 2
 node verify/input.mjs
+node verify/file.mjs
 node verify/properties.mjs
 node verify/connections.mjs
+node verify/labels.mjs
 node verify/components.mjs
 node verify/network.mjs
 node verify/docking.mjs
 node verify/trace.mjs
+node verify/selection.mjs
 
 npm run build && npm run preview   # port 4183
 node verify/production.mjs
@@ -31,19 +35,24 @@ the top-level README). `production.mjs` is not among them: it needs `vite previe
 port — which also makes it the one suite a green `npm run verify` cannot vouch for, so run it
 whenever the property panel changes.
 
-`grid.mjs` is the odd one out and deliberately so. It asserts on primitive counts and on pixel
-diffs taken from canvases it creates itself, never from the live one — that is
-`{ desynchronized: true }`, and low-latency canvases have a history of returning unflushed
-content. It also never asserts a frame time: canvas rasterization happens after `draw()` returns,
-in Safari's GPU process, so `performance.now()` around a draw measures nothing and this browser
-understates the real magnitude by ~3.5×. Counts here, milliseconds by hand — see
-[history/iter-3-2-measurement.md](../history/iter-3-2-measurement.md).
+Restart `npm run dev` before a run. After a hot reload, a module a check imports by URL can load
+as a second copy with none of the app's state in it; the suites reach the app's own modules
+through `window.__ops`, `__doc` and the other hooks for that reason. Shared helpers — buttons,
+drags, world-to-canvas points, and the in-page op and mutation counters — are in `harness.mjs`.
+
+`grid.mjs` is the odd one out and deliberately so. It checks the dot grid's row strips against a
+per-dot reference renderer defined in the suite, pixel for pixel, in canvases it creates itself
+rather than the live one — that is `{ desynchronized: true }`, and low-latency canvases have a
+history of returning unflushed content. It also never asserts a frame time: canvas rasterization
+happens after `draw()` returns, in Safari's GPU process, so `performance.now()` around a draw
+measures nothing and this browser understates the real magnitude by ~3.5×. It asserts primitive
+counts instead — see [history/iter-3-trace-panel.md](../history/iter-3-trace-panel.md).
 
 ## What is deliberately not covered
 
 - Anything needing real hardware: whether a physical mouse wheel on macOS produces deltas large
   enough to classify as zoom, and whether Safari's `gesturechange` pinch double-applies.
-  Synthetic events cannot settle either (iteration 1, §6.2).
+  Synthetic events cannot settle either (iteration 1).
 - Drag-to-dock onto a _centre_ zone. The gesture works, but hitting the centre chip rather than
   an edge zone is fiddly to script; `docking.mjs` sets the tabbed layout through
   `window.__workspace` instead and tests the `keepAlive` contract that way.

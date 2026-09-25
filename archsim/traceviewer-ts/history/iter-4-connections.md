@@ -1,110 +1,88 @@
 # Iteration 4 — Connections
 
-2026-09-22. Complete, and **extended the same day by
-[iteration 4.1](./iter-4-1-panel-and-endpoints.md)**, which makes a connection's endpoints
-draggable. That adds a fifth row to §2's table of gaps in the shape contract, and grows
-`verify/connections.mjs` from the 64 assertions §9 inventories to 77. The counts here are
-iteration 4's; the current ones are in the README.
+2026-09-22. Complete.
 
-**One row in §3's table is narrower than it reads.**
-[Iteration 4.2](./iter-4-2-read-only-geometry.md) made `source`, `target` and `points`
-read-only in the property panel. `routing` is still exposed and is still the escape hatch —
-deliberately, and it is now the only way back from a pinned route — but the other three are set
-on the canvas, not typed.
+## Scope
 
-Adds a second shape kind and a third tool; changes no existing mutation path.
+A second shape kind, `conn` ([conn.ts](../src/lib/scene/shapes/conn.ts),
+[conn.props.ts](../src/lib/scene/shapes/conn.props.ts)); a pure scoring router
+([route.ts](../src/lib/scene/route.ts)); the dependency pass lifted out of the store into a pure
+module ([resolve.ts](../src/lib/scene/resolve.ts)); sliding perimeter anchors on the block; a
+connect tool ([connect-tool.ts](../src/lib/tools/connect-tool.ts)) and `anchorHitTest`
+([hit.ts](../src/lib/canvas/hit.ts)); an `onPointerLeave` tool hook. Then a canonical property key
+order, a self-sizing documentation footer, draggable endpoints, and a connection's geometry made
+read-only in the panel.
 
-Read [iter-1-canvas-foundation.md](./iter-1-canvas-foundation.md) §5 and
-[iter-2-docking-and-properties.md](./iter-2-docking-and-properties.md) §3 first — the shape
-contract, the property grammar and the naming-is-identity decision all come from there and are
-not repeated here. The performance rules in
-[iter-3-1-render-performance.md](./iter-3-1-render-performance.md) §8 still hold in full; §5.2
-below is written against them.
+- **4, connections** — the kind, the router, anchors, the connect tool, the reroute fold.
+- **4.1, panel and endpoints** — one canonical key order, a documentation footer sized to its text,
+  round endpoint beads with a `rebind` handle role.
+- **4.2, read-only geometry** — `source`, `target` and `points` become `fixed`; `routing` stays
+  editable; the loader gates on a writer, not on editability; two panel defects.
 
----
+Deliberately not changed: the file format. `SceneDoc.version` stayed `2` throughout, because a
+record was always a property bag keyed by `kind` — a new kind is new data in the same format, and a
+moved key is a change to the file's text, not its meaning.
 
-## 1. Scope
+The acceptance bar was iteration 1's: _adding a connection kind should require no change to any
+existing mutation path_. It held — `commit`, `previewShapes`, `replaceShape`, `undo`, `redo` and
+serialization were byte-identical. What the reserved seams did not cover, and had to be added:
 
-**Changed.** A `conn` shape kind ([conn.ts](../src/lib/scene/shapes/conn.ts),
-[conn.props.ts](../src/lib/scene/shapes/conn.props.ts)); a pure router
-([route.ts](../src/lib/scene/route.ts)); the dependency pass lifted out of the store
-([resolve.ts](../src/lib/scene/resolve.ts)); perimeter anchors on the rect
-([rect.ts](../src/lib/scene/shapes/rect.ts)); a connect tool
-([connect-tool.ts](../src/lib/tools/connect-tool.ts)); `anchorHitTest`
-([hit.ts](../src/lib/canvas/hit.ts)); an `onPointerLeave` hook and registry-driven tool
-shortcuts.
+| Gap                          | Why the original shape contract missed it                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anchorAt` / `resolveAnchor` | A fixed list of anchors is enough to _terminate_ on a block but not to _pick_ a point on one; four midpoints cannot say "where I pointed".  |
+| `corridors`                  | Nothing anticipated bundling, which needs to ask a shape which of its runs are worth joining.                                               |
+| `RouteContext` on `reroute`  | `reroute(s, deps)` saw its endpoints but not its neighbours, so it could re-route but never bundle.                                         |
+| `Tool.onPointerLeave`        | No tool had drawn hover-only decoration, so nothing needed to know the pointer had left.                                                    |
+| Handle `role` / `rebind`     | A handle could say where it is and how to hit it, but not that dragging it re-attaches this shape to another — every drag went to `resize`. |
 
-**Deliberately not changed.** The file format — `SceneDoc.version` is still `2`, because a
-record was always a property bag keyed by `kind`, so a new kind is new data in the same format.
-Serialization, the property panel, the JSON Schema generator, `zorder.ts`, the renderer's draw
-loop and every existing tool behaviour are untouched.
+All five are additive and optional: a kind may omit the `ShapeOps` methods, a handle may omit its
+`role`, and `reroute`'s third argument was safe to make required because nothing implemented it yet.
 
-**Verification surface.** `verify/connections.mjs`, 64 assertions. Suite total 158 → 231 across
-six suites. No new dependencies.
+## Decisions that came from the user
 
----
+| Decision                                                                                            | Note                                                                                                                                |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The router may spend a third segment, but only when it buys something                               | The ghost and the common case stay 1–2 segments. A strict 2-segment cap makes bundling impossible rather than merely worse (below). |
+| A hand-edited route is pinned; a later block move patches only its ends                             | `routing` is exposed as a property, so setting it back to `auto` is the escape hatch.                                               |
+| Bundled lines overlap exactly                                                                       | Rejected: offset lanes.                                                                                                             |
+| The anchor dot slides along the edge, grid-snapped                                                  | Rejected: the four fixed midpoints, and a free unsnapped point.                                                                     |
+| Sort the JSON editor's keys alphabetically, editable above generated, `kind` always first           | Taken literally, including that it buries `name` in the middle. A rule the reader can predict beats one person's idea of natural.   |
+| The detail panel must show all its text; the user may enlarge it but not shrink it below that       | Implemented as `max(measured, asked for)`, which turns out to require keeping two numbers.                                          |
+| Give the arrow's ends circular dots, to distinguish them from the square segment handles            | Shape carries the meaning: a square moves a run of the line, a circle moves where the line attaches.                                |
+| `source`, `target` and `points` are read-only — they belong to the canvas; `routing` stays editable | The first pass froze all four as asked, then `routing` was put back once it was clear that made a pinned route unrecoverable.       |
 
-## 2. The acceptance bar this iteration was set against
+The last one is worth recording in its first form. Freezing all four was a defensible reading of
+"the user should not edit these outside the provided UI" — right up to the point where it turned out
+the provided UI can only move `routing` one way. The rule that came out of it is sharper than the
+rule that went in.
 
-iter-1 §5.1 said: _"Adding a connection kind should require no change to any existing mutation
-path. If it does, that is a design bug worth fixing rather than working around."_ That held.
-`commit`, `previewShapes`, `replaceShape`, `undo`, `redo`, `serializeScene` and `deserializeScene`
-are byte-identical.
+## Load-bearing decisions
 
-What the reserved seams did **not** cover, and had to be added:
+### Why the cap is three segments
 
-| Gap                          | Why the original design missed it                                                                                                                                            |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anchorAt` / `resolveAnchor` | `anchors()` returns a fixed list. That is enough to _terminate_ on a block but not to _pick_ a point on one, and the four midpoints cannot express "where the user pointed". |
-| `corridors`                  | Nothing anticipated bundling, which needs to ask a shape which of its runs are worth joining.                                                                                |
-| `RouteContext` on `reroute`  | `reroute(s, deps)` can see its endpoints but not its neighbours, so it could re-route but never bundle.                                                                      |
-| `Tool.onPointerLeave`        | No tool had ever drawn hover-only decoration, so nothing needed to know the pointer had left.                                                                                |
+An L's corner is at `(B.x, A.y)` or `(A.x, B.y)` — **fully determined by its two endpoints**. There
+is no free parameter, so nothing to snap onto a corridor, and two lines can only share a run by
+coincidence. Bundling needs a Z, whose middle coordinate is free.
 
-All four are additive and optional. The first three are `ShapeOps` methods a kind may omit;
-`reroute`'s third argument is safe to make required because nothing implemented it.
+A second argument is independent of bundling: two anchors facing each other with any offset have no
+2-segment route that both leaves along the source normal and arrives into the target face. One end
+is always entered through the back of its block, arrowhead pointing out.
 
----
+The cap is 3, not "as many as it takes". A router that spends segments freely needs obstacle
+avoidance to justify them, which is a much larger algorithm. `ROUTE_MAX_SEGMENTS` is a named
+constant the cost function reads, so raising it is one edit plus new candidate generators.
 
-## 3. Decisions that came from the user
-
-| Decision                                                                | Note                                                                                                                                |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| The router may spend a third segment, but only when it buys something   | The ghost and the common case stay 1–2 segments. §4.1 explains why a strict cap makes bundling impossible rather than merely worse. |
-| A hand-edited route is pinned; a later block move patches only its ends | With `routing` exposed as a property, so setting it back to `auto` is the escape hatch.                                             |
-| Bundled lines overlap exactly                                           | Rejected: offset lanes. §4.4.                                                                                                       |
-| The anchor dot slides along the edge, grid-snapped                      | Rejected: the four fixed midpoints, and a free unsnapped point. §4.3.                                                               |
-
----
-
-## 4. Load-bearing decisions
-
-### 4.1 A 1–2 segment router cannot bundle, so the cap is 3
-
-An L's corner is at `(B.x, A.y)` or `(A.x, B.y)` — **fully determined by its two endpoints**.
-There is no free parameter, so there is nothing to snap onto a corridor, and two lines can only
-ever share a run by coincidence. Bundling needs a Z, whose middle coordinate is free.
-
-The second argument is independent of bundling: two anchors facing each other with any vertical
-offset have no 2-segment route that both leaves along the source normal and arrives into the
-target face. One of the two ends is always entered through the back of the block, with the
-arrowhead pointing out of it.
-
-The cap is 3 and not "as many as it takes". A router that may spend segments freely needs
-obstacle avoidance to justify them, and that is a much larger algorithm than this iteration is.
-
-### 4.2 The router scores candidates rather than following rules
+### The router scores candidates rather than following rules
 
 `routeConnection` generates every straight, L and Z candidate and takes the argmin of a weighted
-cost. That is more machinery than a rule ladder, and the reason is that four requirements —
-short, few segments, leaves along the face normal, bundled onto its neighbours — are in direct
-conflict, and a ladder has to pick a fixed precedence between them. Scoring lets the precedence
-fall out of the weights, which can then be _argued about_ rather than tuned.
+cost. Four requirements — short, few segments, leaves along the face normal, bundled onto its
+neighbours — are in direct conflict, and a rule ladder has to fix a precedence between them. Scoring
+lets the precedence fall out of the weights, which can then be _argued about_ rather than tuned.
 
-The weights are chosen so the resulting behaviour is provable. The key observation is that for
-two fixed endpoints **every L and every in-span Z has identical Manhattan length**, so length
-does not discriminate between them at all and only penalises elbows outside the span. Within the
-span the whole contest is `W_SEGMENT` (2) against `BUNDLE_BONUS` (6) against
-`W_MIDPREF · |m − mid|` (0.25 per cell). Therefore:
+The weights are chosen so the behaviour is provable. For two fixed endpoints **every L and every
+in-span Z has identical Manhattan length**, so length does not discriminate between them and only
+penalises elbows outside the span. Within the span the contest is `W_SEGMENT` (2) against
+`BUNDLE_BONUS` (6) against `W_MIDPREF · |m − mid|` (0.25 per cell):
 
 | Situation                                          | Outcome                                          |        Margin |
 | -------------------------------------------------- | ------------------------------------------------ | ------------: |
@@ -113,236 +91,312 @@ span the whole contest is `W_SEGMENT` (2) against `BUNDLE_BONUS` (6) against
 | A corridor far away, or out of span                | Loses on length — no absurd detours              | 2 × overshoot |
 | Any route violating a face normal                  | Never wins — bundling cannot buy an ugly arrival |  25 or 10 000 |
 
-`BUNDLE_REACH` is derived from that table rather than picked: past `BUNDLE_BONUS / W_MIDPREF`
-cells, a corridor candidate cannot win, so generating it would be waste.
+`BUNDLE_REACH` is derived from that table, not picked: past `BUNDLE_BONUS / W_MIDPREF` cells a
+corridor candidate cannot win, so generating it would be waste.
 
-The normal penalty is **two-tiered**, and that is what makes the head-to-head case work. "Through"
-(10 000) is the line diving into the block it just left or arriving through the far side of its
-target — visibly broken. "Off-axis" (25) is leaving along the face, which is merely ugly. With
-one tier, two anchors facing away from each other have no legal route at all and the router picks
-arbitrarily; with two, it reliably goes _around_.
+The normal penalty is **two-tiered**, which is what makes the head-to-head case work. "Through"
+(10 000) is diving into the block it just left or arriving through the far side of its target —
+visibly broken. "Off-axis" (25) is leaving along the face — merely ugly. With one tier, two anchors
+facing away from each other have no legal route and the router picks arbitrarily; with two, it
+reliably goes _around_.
 
-`W_INDEX` exists so the argmin is a deterministic function of the input rather than of `Set`
-iteration order. Verified by routing the same input twice and comparing element-wise.
+`W_INDEX` makes the argmin a deterministic function of the input rather than of `Set` iteration
+order.
 
-### 4.3 An anchor is an edge and an offset, not a point and not a slot
+### An anchor is an edge and an offset
 
-Stored as `<side>:<offset>` — `e:48` — with the offset grid-snapped at pick time and measured
-from the face's start corner.
+Stored as `<side>:<offset>` — `e:48` — the offset grid-snapped at pick time and measured from the
+face's start corner. Rejected: **the four midpoints**, because every connection on a side stacks
+onto one point. Rejected: **an unsnapped perimeter point**, because anchors off the grid do not line
+up with each other, which quietly undermines bundling at the ends.
 
-Rejected: **the four midpoints**, because every connection on a side stacks onto one point.
-Rejected: **an unsnapped perimeter point**, because anchors that do not land on the grid do not
-line up with each other, which quietly undermines bundling at the ends.
+Two details are load-bearing. The id stores the offset **as authored, clamped only at resolve
+time**, so shrinking a block below an anchor and growing it back puts the connection where the user
+left it. And `anchorAt` collapses to the face midpoint once the cursor is more than `ANCHOR_BAND_PX`
+inside the block: near the outline the nearest face is obvious, but deep inside a pixel of drift
+flips the bead to another side. Collapsing makes "click the middle of the target block" a stable
+gesture rather than a lottery. Anchors now come from `anchorAt` and `resolveAnchor` alone, shared by
+every box-shaped kind through `plain-box.ts`.
 
-Two details are load-bearing. First, the id stores the offset **as authored, clamped only at
-resolve time**, so shrinking a block below an anchor and growing it back puts the connection
-where the user left it rather than where the small version of the block happened to end. Second,
-`anchorAt` collapses to the face midpoint once the cursor is more than `ANCHOR_BAND_PX` inside
-the block: near the outline the nearest face is obvious, but deep inside it is ambiguous and a
-pixel of drift flips the bead to another side. Collapsing makes "click the middle of the target
-block" a stable gesture rather than a lottery.
+### Bundled lines overlap exactly
 
-### 4.4 Bundled lines overlap exactly
-
-Rejected: offset lanes. A lane index has to be stable under insertion _and_ deletion, and with
-the z-order fold (§4.5) the index is position-in-fold — so deleting the lowest line of a bundle
-re-lanes every line above it, which is visible churn on an unrelated delete.
+Rejected: offset lanes. A lane index has to be stable under insertion _and_ deletion, and with the
+z-order fold the index is position-in-fold — so deleting the lowest line of a bundle re-lanes every
+line above it, visible churn on an unrelated delete.
 
 The honest cost: two connections with _identical_ anchor pairs draw identically, and `hitTest`
-returns only the topmost, so the lower one cannot be picked on the canvas. It is still reachable
-by name, by marquee and in the property panel. That is a degenerate authoring choice, and lanes
-are the principled fix if it ever bites.
+returns only the topmost, so the lower one cannot be picked on the canvas. It is still reachable by
+name, by marquee and in the panel. Lanes are the principled fix if it ever bites.
 
-### 4.5 The reroute pass is a left fold over the z-order
+### The reroute fold
 
-`rerouteAll` walks bottom-up accumulating a `CorridorIndex`, so **a connection may bundle only
-onto runs owned by connections below it**. No shape can observe its own output: the pass is
-well-founded, settles in one sweep, and has no order in which two connections can chase each
-other's corridors forever.
+`rerouteAll` walks the z-order bottom-up accumulating a `CorridorIndex`, so **a connection may
+bundle only onto runs owned by connections below it**. No shape observes its own output. As designed
+here the fold was well-founded and settled in one sweep, with no order in which two connections
+could chase each other's corridors forever. The alternative — every connection sees every other — is
+a fixed point with no guarantee of one, and the failure mode is a scene that re-routes differently
+on every commit. The price is that restacking a connection can change its route: visible and
+explainable.
 
-The alternative — every connection sees every other — is a fixed point with no guarantee of one,
-and the failure mode is a scene that re-routes differently on every commit.
+Iteration 6, _The fold reads back what it already folded, and settles_, replaced the single-sweep
+assumption once dependency chains grew two deep (a connection bound to an interface on a fabric);
+the bottom-up corridor rule stands.
 
-The price is that restacking a connection can change its route. That is visible and explainable,
-and it is written into the doc comment so nobody "fixes" it by feeding the fold its own results.
+`CorridorQuery` is an interface of query methods with no array, because the index is mutated _after_
+each `reroute` returns: a shape that retained it would observe geometry that did not exist when it
+was built. It is an interface rather than the class so a bucketed index can replace the linear one
+without touching a shape.
 
-`CorridorQuery` is an interface with four query methods and no array, because the index is
-mutated _after_ each `reroute` returns. A shape that retained the instance would observe geometry
-that did not exist when it was built; query-only makes that impossible to do by accident.
+### The ghost is a plain field, not `scene.draft`
 
-### 4.6 The ghost is a plain field, not `scene.draft`
+The drag-to-create tool previews through `scene.setDraft`; `ConnectTool` deliberately does not.
+`draft` is `$state.raw` and the repaint reads it, so assigning it per `pointermove` is a reactive
+write at input frequency — the cost iteration 3 measured and removed for `host.pointer`. Painting
+from `drawOverlay` is visually identical and touches no signal. The sharper reason:
+`SceneStore.commit()` nulls `draft` on its way past, so any commit landing while a connection is
+pending would erase a ghost the tool still believed it owned. A plain field cannot desync from the
+tool's own state machine. The tool also compares routes before repainting, so with the free end
+snapped the ghost is rebuilt about once per grid cell crossed.
 
-`RectTool` previews through `scene.setDraft`, and `ConnectTool` deliberately does not.
+The ghost and the committed connection are built by the same code — `newConnection` and `autoPoints`
+in conn.ts — so the line cannot jump on the second click.
 
-`draft` is `$state.raw` and the canvas repaint effect reads it, so assigning it per `pointermove`
-is a reactive write at input frequency — the exact cost iteration 3.2 measured and removed for
-`host.pointer`. Painting from `drawOverlay` instead is visually identical (the overlay runs
-immediately before the draft would) and touches no signal.
+### Connections re-route inside the drag preview
 
-There is a second, sharper reason. `SceneStore.commit()` nulls `draft` on its way past. Any
-commit landing while a connection is pending would erase a ghost the tool still believed it
-owned. A plain field cannot desync from the tool's own state machine.
+`previewShapes` deliberately skips history, bounds and the camera, and therefore the dependency
+pass. Without an explicit call every connection would trail a cell behind its block for the whole
+drag. `SelectTool` wraps its preview branches in `rerouteAll`, which returns its input untouched
+when nothing depends on anything. That is why `resolve.ts` is a pure module rather than a private
+store method: the select tool needs the reroute half with no commit to hang it off.
 
-On top of that the tool compares routes before repainting, so with the free end snapped the ghost
-is rebuilt roughly once per grid cell crossed rather than once per move.
+### A dependency pass must return its input by identity
 
-### 4.7 Connections re-route inside the drag preview
+`commit` decides whether to push a history entry by comparing `this.shapes !== before`. So
+`rerouteAll` copies on first write, the store's dependency pass assigns only when the result
+differs, and `ShapeOps.reroute`'s contract _requires_ returning `s` by reference when nothing
+changed. Every function in `route.ts` returns its input reference when nothing changed —
+`collapseRoute` builds into a scratch array and discards it if it matches. `rebind` shares the
+contract for the same reason. A `reroute` that always allocates is a correctness bug, not a slow
+path (see the first defect below).
 
-`previewShapes` deliberately skips history, bounds and the camera — and therefore
-`#resolveDependencies`. Without an explicit call, every connection would trail a cell behind its
-block for the whole drag and snap into place only on release. `SelectTool` now wraps both preview
-branches in `rerouteAll`, which early-returns when no kind has dependencies, so a rect-only scene
-pays one function call.
+### One canonical property key order
 
-This is the one edit to an existing tool, and it is why `resolve.ts` is a pure module rather than
-a private method: the select tool needs the reroute half with no commit to hang it off.
+`propSchema` ([spec.ts](../src/lib/props/spec.ts)) sorts a kind's `props` on the way out, via
+`orderProps`, so `PropSchema.props` is already canonical and every consumer — the panel document,
+the JSON Schema, the saved record, `applyDocument`'s write loop — is unchanged. This supersedes
+iteration 2's statement that declaration order _is_ document order; a kind's array order is now a
+reading convenience. The alternative, a separate display order used only by `projectShape`, would
+have had the panel and the file disagree about a document that is meant to be the same in both.
 
----
+The rank is `kind` → editable → everything else, alphabetical within each group, compared with `<`
+rather than `localeCompare` so a saved file's key order cannot depend on the machine's locale.
+`kind` is pinned by key, not by `mode === 'fixed'`, because `fixed` is a general mode `kind` merely
+happened to be the only instance of.
 
-## 5. Defects this iteration, and what they teach
+Two consequences that are not obvious from the rule. **The write loop runs in this order too**, so
+where two writers interact the alphabetically later key wins. And **changing a property's mode can
+reorder the document** — in the panel, the schema and the saved file; `routing` sorts above
+`points`, `source` and `target` because it is the only one of the four still editable.
 
-### 5.1 The dependency pass would have made every commit undoable
+### The footer's floor is measured, and the user's wish is stored separately
 
-`#resolveDependencies` ended in `this.shapes = current.map(...)`, which allocates unconditionally.
-It had never run, because `registryHasDependencies()` was false until a kind implemented
-`dependsOn`. `commit` decides whether to push a history entry by comparing `this.shapes !== before`.
+Three numbers, not one, in [PropertiesView.svelte](../src/views/PropertiesView.svelte):
 
-So **registering the connection kind would have made every commit in the application push an undo
-entry — including ones that changed nothing, in a scene containing no connections at all.** The
-undo stack would have filled with no-ops and `Cmd+Z` would have appeared to do nothing, in a code
-path with no connection anywhere near it.
+| Name          | What it is                                                        |
+| ------------- | ----------------------------------------------------------------- |
+| `docsContent` | measured — what the text needs at this pane width and font        |
+| `docsWanted`  | stored — the last size the user dragged to                        |
+| `docsHeight`  | `min(max(docsWanted, docsFloor), docsMax)` — what the footer gets |
 
-Three things together fix it: `rerouteAll` copies on first write, `#resolveDependencies` guards
-the assignment with `!==`, and `ShapeOps.reroute`'s contract now _requires_ returning `s` by
-reference when nothing changed. One assertion exists purely to pin it, and it is the most
-important one in the new suite.
+Keeping the wish separate is what stops the floor from **ratcheting**. Clamping the stored number up
+to each new floor would mean one long documentation string permanently enlarged the footer for every
+short one after it; storing it below the floor lets a short doc shrink back while a deliberate
+enlargement survives.
 
-The lesson is narrower than "test your code": a seam that has never executed has never been
-tested either, and the commit that first executes it is the commit that inherits every latent bug
-in it. Scaffolding is not verified by compiling.
+The measurement comes from an inner `.doc` block carrying the footer's padding. A plain block inside
+an `overflow-y: auto` box is laid out at its natural height however short the box is, so the floor
+stays measurable in the case that matters — the text does **not** fit. With the padding on it, its
+`clientHeight` is exactly what the footer needs; left on the footer, the measurement understated it
+by 16px.
 
-### 5.2 Excluding the source block turned a refusal into a silent cancel
+A drag re-bases off `docsHeight` rather than `docsWanted`, so it is 1:1 from the first pixel even
+while the floor overrides the wish; that let a clamping `$effect` be deleted outright.
+`scrollbar-gutter: stable` defends against the one way the measure-then-resize loop could fail to
+settle — a scrollbar appearing, narrowing the column, reflowing the text taller. macOS overlay
+scrollbars take no width, so it is inert there and necessary elsewhere.
 
-The tool originally passed the pending source to `anchorHitTest` as a shape to exclude, so a
-self-connection could not be picked. But a click-click tool has to treat a click on nothing as
-"never mind" — so excluding the source meant clicking it **cancelled the whole gesture** instead
-of refusing, and the explanatory `#finish` check was unreachable.
+### A handle says what dragging it means
 
-Fixed by deleting the exclusion entirely: hit-testing reports what is actually under the cursor,
-and refusing a self-connection belongs in the tool, at the point where it can say why. The ghost
-separately declines to preview a route into the source, so it never advertises something that
-will be refused.
+Moving a connection's end is not a resize. `ShapeOps.resize` is pure in the shape, and nothing pure
+in a connection can answer "which block is under the cursor" — only the tool sees the rest of the
+scene. So the handle record carries a `role` (`HandleRole` in [shape.ts](../src/lib/scene/shape.ts);
+iteration 6 later added a third value):
 
-The lesson: "prevent the bad state by hiding the input" and "explain why the input is bad" are
-different behaviours, and hiding is the one that produces unexplained UI.
+| Role                | The tool's move                                             |
+| ------------------- | ----------------------------------------------------------- |
+| `reshape` (default) | `resize(s, id, p, mods)` — geometry, as before              |
+| `rebind`            | resolve `anchorHitTest` first, then `rebind(s, id, target)` |
 
-### 5.3 Two test defects worth recording, because both would have passed silently
+The alternative was for `SelectTool` to recognise `'end:from'`, putting the first `switch` on a
+kind's private vocabulary into the one file that had stayed generic. A `role` is data; the tool
+routes on it without knowing what `end:to` means.
 
-The first draft of `verify/connections.mjs` hard-coded canvas coordinates. Every commit
-re-derives the world bounds and re-clamps the camera, so a coordinate written before a commit
-points somewhere else after one — which is the rule `verify/README.md` already states. The check
-now derives every screen point from live geometry via `view.toScreen`, and searches for a
-genuinely empty spot rather than assuming a fraction of the viewport is one.
+`rebind` rewrites `from`/`fromAnchor` or `to`/`toAnchor` and nothing else — not `points`, not
+`routing`. The geometry follows because `reroute` already owns it and both callers already run it
+(`SelectTool` over its preview, `commit` over the result); writing a route here too would give the
+two a chance to disagree. Leaving `routing` alone means a hand-drawn route survives its ends being
+moved, which is what `patchStart`/`patchEnd` are for. Two drops are refused by returning `s` **by
+reference**, rendering as the bead simply not following the cursor: over nothing (a connection has
+no representable free end), and over the block at the other end (the router would drive straight
+through it, `normalize` would return null on release, and the drag would silently revert — refusing
+early turns a disappearing gesture into one that visibly does not take).
 
-The second: a cull check injected a hand-made route with `routing: 'manual'`, which `reroute`
-promptly re-anchored to the real blocks — so the camera was parked where the connection no longer
-was, and the check reported a culling bug that did not exist. Assertions against a scene have to
-survive the machinery that owns that scene.
+The beads are the connect tool's bead — same radius, same two colours, both meaning "this is where
+the line attaches"; they can never be on screen together. They are drawn by `connOps.draw`, not by
+the select tool's square-handle overlay, both ends in one path. The **order** of the handle list is
+load-bearing: `hitTest` takes the first match, which is what puts an end bead ahead of the segment
+leaving it.
 
----
+### `fixed` is a claim about authority, not about storage
 
-## 6. Scaffolding left for future iterations
+`mode === 'edit'` had been answering three questions that had the same answer for every property
+that existed:
 
-Do not remove these as dead code.
+| Question                               | Asked by         | Was            | Is             |
+| -------------------------------------- | ---------------- | -------------- | -------------- |
+| May the **user** set this key?         | `applyDocument`  | `edit`         | `edit`         |
+| Does the **file** carry this key?      | `serializeShape` | not `computed` | not `computed` |
+| May the **loader** set it from a file? | `hydrateShape`   | `edit`         | has a `write`  |
 
-- **`rectOps.anchors()`** is still unconsumed. It is the discrete sibling of `anchorAt` and is
-  what a "show all attachment points" affordance, or a non-rectangular kind, would build on.
-- **`appendRoutePath`** is split out of `connOps.draw` so a future renderer layer can batch every
-  unselected connection into one `beginPath`/`stroke`. The layer is not built; the seam is.
-- **`CorridorQuery`** is an interface, not the class, so `CorridorIndex` can be replaced with a
-  bucketed implementation without touching any shape.
-- **`RouteContext`** is a record with one field so more routing inputs can be added additively.
-- **`snap(v, step)`** still takes its step as a parameter. Per-axis routing grids remain unbuilt.
-- **`ROUTE_MAX_SEGMENTS`** is a named constant the cost function reads, so raising the cap is one
-  edit plus new candidate generators.
+A read-only property that is nonetheless real, saved state is the first case where the first and
+third differ. `fixed` now means "another part of the app is in charge of this", not "this does not
+really change" — which is why `kind` and `points` share a mode with nothing else in common. Left on
+`mode === 'edit'`, `hydrateShape` would load every connection in every file as `connOps.blank`:
+unbound, a zero-length route at the origin, exactly what `normalize` discards. A fourth mode was
+rejected: the modes are valuable as a small enumeration a reader holds at once, and what varies is
+not a fourth kind of property but a second question about the same one. `write !== undefined` says
+it directly. A read-only property therefore still needs its `write`; only `computed` properties,
+absent from the file, legitimately have none.
 
----
+### Three of them are one value; `routing` is a choice about that value
 
-## 7. Flagged for future work
+`source`, `target` and `points` are not independent: the first point sits on the anchor `source`
+names and the last on `target`'s. Change one in a tree editor and the other two describe a different
+connection, and every writer would have to defend itself against the other two. The canvas gestures
+cannot produce an inconsistent triple — `rebind` changes a binding and lets `rerouteAll` supply the
+geometry; a segment drag moves the line and pins it in one write.
 
-Ordered by how likely each is to bite.
+`routing` does not say where the connection runs; it says **who is responsible for saying where it
+runs**. It has to stay editable because the canvas moves it only one way: a segment drag sets
+`manual`, and nothing sets `auto` — there is no gesture whose natural meaning is "stop keeping the
+thing I just drew". With `routing` read-only, one stray drag pinned a route for life, and the only
+recovery was to delete and redraw it, losing its label, description and name.
 
-1. **Self-connections are refused outright.** The router does no obstacle avoidance, so a
-   same-block route would cut straight through the block. Supporting them means one dedicated
-   loop case in the router.
-2. **No obstacle avoidance at all.** A route between two distant blocks will happily cross a
-   third. This is the single largest gap, and the reason the segment cap is defensible: the user
-   is expected to hand-route around obstructions, which pins the connection.
-3. **Two connections with identical anchor pairs are indistinguishable** and only the topmost is
-   selectable on the canvas. §4.4.
-4. **Head-to-head anchors facing away** get a route that leaves along the face rather than across
-   it — correct and rectilinear, but not what a person would draw. The fix is a ≥5-segment U.
-5. **A pinned route falls back to a full re-route** when patching its ends would leave it
-   non-rectilinear, which silently discards that edit. It keeps the `manual` flag, so later edits
-   survive.
-6. **`StatusBar`'s draft readout is rect-only.** Harmless — the connect tool never sets a draft —
-   but a connection draft would show no readout if one were ever introduced.
-7. **Corridor insertion is O(n) per run.** Irrelevant below a few thousand corridors; §4.5 notes
-   the drop-in replacement.
+The writers of the three read-only properties keep their validation (`asEndpoint`, `asPointList`,
+`isRectilinear`, `checkEndpoint`). That is not dead code: their input is now a file — hand-written,
+hand-merged, or from a version of the app that no longer exists. A `source` naming a block absent
+from the document makes the connection load unbound and get dropped, rather than load bound to
+nothing and cascade later from somewhere with no context.
 
----
+### A writer must not set a sibling key
 
-## 8. Conventions and gotchas
+The `points` writer used to end with `routing: 'manual'`, so that a hand-typed route would not be
+overwritten on the next block move. It also ran on the load path, so whichever of the pair
+`hydrateShape` applied second decided what a saved file meant (the first panel defect below). The
+key reorder fixed that by coincidence; the coupling was then removed rather than re-ordered.
+`points` is no longer editable, so the loader is its writer's only caller, and the loader has the
+record's own `routing` right there — the writer second-guessing it is exactly the bug. Pinning is
+now the job of the gesture that draws a route, `connOps.resize`, which sets `manual` in the same
+write that moves the segment.
 
-- **A `reroute` that always allocates is a correctness bug, not a slow path.** §5.1. The same
-  applies to anything else `commit` calls: array identity is the history signal.
-- **Every function in `route.ts` returns its input reference when nothing changed.** That is the
-  property the above relies on, and it is why `collapseRoute` builds into a scratch array and
-  then discards it if it matches.
-- **`bounds` must cover everything `draw` paints.** The renderer culls on it. The arrowhead and
-  knobs are sized in _screen_ pixels and cannot be expressed in `bounds`; they are covered by the
-  renderer's existing 16-CSS-px cull margin, which always exceeds them.
-- **A horizontal connection has a zero-height bounding box.** `rectsIntersect` compares
-  inclusively, so this works — but it is worth knowing before anyone "fixes" a degenerate rect.
-- **Restore `lineJoin`.** `connOps.draw` sets it to `'round'`, and `rect.ts` strokes with
-  `strokeRect`, whose corners honour it. Leaving it round softens every block drawn afterwards —
-  a cross-shape rendering bug with no local symptom.
-- **Tool instances are cached for the session.** Any tool holding state across pointer-up must
-  clear it in `onActivate`, `onDeactivate` and `onPointerCancel` (which also fires on window blur
-  and `visibilitychange`). `ConnectTool` funnels all four into one `#reset()`.
-- **`isGesturing()` spanning two clicks disables undo, delete and restack.** That is correct —
-  each would commit underneath a half-built connection — but it makes `Cmd+Z` a dead key, so the
-  tool intercepts it and cancels instead. A tool that blocks a command should provide the
-  cancel path for it.
-- **Tool shortcuts now come from `ToolDescriptor.shortcut`**, not a switch in `ToolHost`. The old
-  switch meant the toolbar could advertise a key that did nothing.
-- **Do not hard-code canvas coordinates in a check.** Restated from iter-3 because this iteration
-  broke it again. §5.3.
+This mattered more than it looked: putting `routing` back in the editable group flipped the two
+keys' order, so under the old forcing the bug would have returned verbatim. Decoupled, the order is
+not load-bearing at all — a better place than having the order right. One behaviour changed: a
+hand-written file listing `points` but omitting `routing` now loads as `auto` and re-routes. That is
+the right reading, and no file the app writes is affected, since both keys are always emitted. The
+rule: if a gesture needs two keys moved together, move them in the gesture.
 
----
+## Defects, and what they teach
 
-## 9. How iteration 4 was verified
+**The dependency pass would have made every commit undoable.** The store's dependency pass ended in
+an unconditional `this.shapes = current.map(...)`. It had never run, because no kind implemented
+`dependsOn` until connections. Registering the kind would have made every commit in the app push an
+undo entry — including no-ops in a scene with no connections — so `Cmd+Z` would appear to do
+nothing, in code paths nowhere near a connection. The identity contract above is the fix, and one
+assertion exists purely to pin it. A seam that has never executed has never been tested; the commit
+that first executes it inherits every latent bug in it.
 
-`npm run check` clean. `npm run verify` is 231 assertions across six suites, all passing;
-`npm run build` plus `verify/production.mjs` (15 assertions) confirms the kind and tool register
-correctly in a production build, where the registries throw on duplicates rather than replacing.
+**Excluding the source block turned a refusal into a silent cancel.** The connect tool passed its
+pending source to `anchorHitTest` as a shape to exclude. But a click-click tool treats a click on
+nothing as "never mind", so clicking the source cancelled the gesture and the explanatory refusal
+was unreachable. Hit-testing now reports what is actually under the cursor, and the tool refuses a
+self-connection where it can say why; the ghost separately declines to preview into the source.
+Hiding the bad input and explaining it are different behaviours, and hiding produces unexplained UI.
 
-`verify/connections.mjs` is 64 assertions in five groups, split by what they need rather than by
-what they cover:
+**Checks that would have passed silently.** One hard-coded canvas coordinates, which every commit
+invalidates by re-deriving bounds and re-clamping the camera; screen points are now derived from
+live geometry. Another injected a hand-made `manual` route, which `reroute` re-anchored to the real
+blocks, so the camera was parked where the connection no longer was and a culling bug was reported
+that did not exist. Assertions against a scene have to survive the machinery that owns it.
 
-| Group  | Needs                                         | Covers                                                                                                                                                                                                                                                                                                                                              |
-| ------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R (18) | nothing — pure functions via `window.__route` | 200 seeded-random routes for rectilinearity, endpoint fidelity, no degenerate points and the segment cap; the L/Z choice; bundling in range and _not_ out of range; determinism; corridor filtering; `collapseRoute` identity; segment moves and end patches; head-to-head                                                                          |
-| A (9)  | `window.__anchor`                             | side and normal, grid snapping, the deep-inside midpoint collapse, out-of-range null, id round trip, corner determinism, clamp-and-restore under resize                                                                                                                                                                                             |
-| S (8)  | the store                                     | the no-op-commit guard, rename propagation, cascade delete restored by one undo, the saved record's keys, format version                                                                                                                                                                                                                            |
-| I (24) | a real pointer                                | the shortcut, hover on and off a perimeter, the pending state, the ghost never touching `draft`, refusal of a self-connection, `Cmd+Z` cancelling, ghost-equals-commit, Escape twice, cancel into open space, live reroute during a drag, segment drag pinning to manual with fixed anchors, a no-op drag committing nothing, and `auto` re-routing |
-| V (5)  | a real frame                                  | zero `save`/`restore`, one stroke and one fill per connection, no canvas state left behind, and the `bounds` cull with both endpoints off screen                                                                                                                                                                                                    |
+**Every saved `auto` connection loaded back as `manual`.** Under declaration order `hydrateShape`
+applied `routing` then `points`, and the `points` writer forced `manual`, so a round trip silently
+pinned every auto route. Nothing caught it: the round-trip assertion was over a scene of blocks. The
+key reorder fixed it by coincidence, so an assertion now hydrates a real connection and checks its
+routing (confirmed by making `orderProps` a no-op and watching it fail). A writer with a side effect
+on another property is order-dependent by construction, and a round trip asserted over one kind is
+not asserted at all.
 
-Two assertions are worth calling out as the ones that would catch a regression nothing else
-would. **"A no-op commit records no history entry"** is §5.1, and it guards code that has nothing
-to do with connections. **"The committed route is the ghost, not a second opinion of it"** is what
-keeps `ConnectTool` and `reroute` sharing one definition of a route; the day they diverge, the
-line will visibly jump on the second click, and this is the only check that would say why.
+**The splitter reported a minimum above its maximum.** `aria-valuemin` was the unclamped floor,
+which exceeds the ceiling where the documentation cannot fit (a short pane, scaled-up fonts). Now
+capped at `docsMax` and pinned by an assertion at a 40px root font. The same check caught the
+footer's CSS cap written as `calc(100% - 5rem)` against a pixel `80` in script — equal only at a
+16px root. Both are `80px`.
 
-The moral, extending the series: compiling is not running, running is not looking, looking at the
-script is not looking at the frame — and a seam that has never executed has never been tested.
+**The beads inherited their line width.** The bead path never set `ctx.lineWidth` and worked only
+because the segment-knob loop above it did. It is set explicitly now, and the rings are re-aligned
+against their own width rather than the thicker route stroke's, which at dpr 2 put them on half
+pixels. The same class of cross-shape leak applies to `lineJoin`: `connOps.draw` sets it round and
+must restore it, or every box stroked afterwards softens.
+
+**A module imported by URL in a check may be a second copy.**
+`await import('/src/lib/scene/registry.ts')` returned an empty registry, because Vite appends `?t=`
+once a module is invalidated and the bare specifier minted a fresh instance. It bites only modules
+with module-level state, and only after an edit during the session — it passes cold and fails later.
+Fixed by exposing `window.__handles(name)` from the DEV block, alongside `__route` and `__anchor`.
+
+**The read-only marking was one selection behind.** `PropertiesView`'s effect pushed the document
+(which renders the tree synchronously, calling `onClassName` for every node) and only then assigned
+`shownSpec`. So classes were computed from the previous selection's schema, and a key that schema
+had never heard of fell to the read-only branch. The first connection after a block showed `routing`
+grey; worse, the first block after a connection showed `position` and `size` grey. It could not
+happen while `rect` was the only kind — being one behind was indistinguishable from being right. The
+fix is `classSpec`, a plain `let` assigned immediately before the push and read by `onClassName`.
+
+**Assigning `shownSpec` before the push makes the effect self-invalidating.** The obvious fix
+type-checks, fixes the marking, and throws
+`TypeError: Cannot read properties of null (reading 'schedule')` out of Svelte's flush on every
+selection change. `validator` is `$derived` from `shownSpec` and the synchronous render reads it, so
+the effect writes a signal and reads it back within one run. What a synchronous render reads must be
+current before the render and must not be `$state`; a plain `let` is how a third-party component
+gets a value the reactivity graph does not know about. It cost a round trip because no dev suite
+failed — `report` printed the page error under 260 passing assertions — so `connections.mjs` now
+ends by asserting nothing threw.
+
+## How it was verified
+
+`verify/connections.mjs`, split by what each group needs rather than what it covers: pure router
+functions via `window.__route` (200 seeded-random routes for rectilinearity, endpoint fidelity and
+the segment cap; bundling in and out of range; determinism; head-to-head), anchors via
+`window.__anchor`, the store (the no-op-commit guard, rename propagation, cascade delete restored by
+one undo, the saved record's keys), real-pointer interaction, real-frame drawing (one stroke and one
+fill per connection, no canvas state left behind, the `bounds` cull), endpoint handles via
+`__handles`, and a read-only group that asserts both the greying and the gate behind it. The
+assertions to keep: **a no-op commit records no history entry**; **the committed route is the ghost,
+not a second opinion of it**; **a property the user cannot type is still one the loader puts back**
+(the only check distinguishing "read-only" from "not loaded"); and **an auto route comes back
+auto**. `verify/production.mjs` confirms registration in a production build and asserts the panel's
+row order against the shipped bundle.
+
+The iteration ended at 261 assertions across six dev suites (connections 91, properties 38), plus 15
+in `verify/production.mjs`.

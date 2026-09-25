@@ -23,10 +23,11 @@ into windows, or collapsed to an edge. Three panels exist so far.
   when the block is too short for all of them. A diagram saves to and opens from a JSON file,
   byte-for-byte the same record `⌘C` writes to the system clipboard — one format, two transports,
   which is why the read pipeline is shared. The transport is a Blob download and an
-  `<input type="file">` rather than the File System Access API, which Safari does not implement. Hovering a block or a wire raises a tooltip — a block's
-  description, a wire's name and description, and in the tabbed modes the subtitle too, since that
-  is the only place it appears, one paragraph per line. Drag a band with the select tool to select several at once, and copy, cut and paste
-  them as a group -- a connection comes along when both of its blocks do, and a pasted copy
+  `<input type="file">` rather than the File System Access API, which Safari does not implement.
+  Hovering a block or a wire raises a tooltip — a block's description, a wire's name and
+  description, and in the tabbed modes the subtitle too, since that is the only place it appears,
+  one paragraph per line. Drag a band with the select tool to select several at once, and copy,
+  cut and paste them as a group -- a connection comes along when both of its blocks do, and a pasted copy
   fills the gaps in its own numbering, so copies of `block0, block2` arrive as `block1, block3`.
 - **Properties** — an editable tree view of the selected block, validated live against a JSON
   Schema generated from that object kind's property declaration, with a footer documenting
@@ -48,11 +49,11 @@ into windows, or collapsed to an edge. Three panels exist so far.
 
 **Selection is global.** Selecting a trace row or a flag clears the block selection and vice
 versa, so the Properties panel always describes one thing. Selecting a flag puts the cursor on
-it; moving the cursor onto a flag of the selected row selects that flag. Trace rows will
-eventually select the matching diagram block — the seam is `EditorSession.signalToShape`.
+it; moving the cursor onto a flag of the selected row selects that flag.
 
 Value-change signals are in the data model but are not drawn yet; they get span lanes later.
-The layout is saved to `localStorage`; `window.__resetLayout()` restores the default.
+The layout is saved to `localStorage`; in a dev build, `window.__resetLayout()` restores the
+default.
 
 ## Running
 
@@ -66,8 +67,9 @@ npm run build      # check, then a static bundle in dist/
 npm run verify     # browser checks, against a running dev server
 ```
 
-`npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 612 assertions across eleven suites. Anything touching
+`npm run check` passing means very little here; see
+[history/conventions.md](history/conventions.md). `npm run verify` is 569 assertions across eleven
+suites, and `verify/production.mjs` adds 16 against the built bundle. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -130,17 +132,21 @@ bounding box plus a buffer, so panning hard-stops rather than running off into e
 
 ```
 src/lib/geom/      Vec2, Rect, and the small amount of geometry everything else shares
-src/lib/canvas/    Camera, renderer, dot grid, hit testing, wheel/trackpad input, text, theme
+src/lib/canvas/    Camera, renderer, dot grid, hit testing, wheel/trackpad input, text, theme,
+                   and what both canvases share: the viewport base, the frame loop, and the
+                   surface contract
 src/lib/scene/     The document: shapes, z-order, bounds, history, serialization
 src/lib/props/     Property declarations, the JSON Schema generator, projection, validation,
                    and the property editor's context menu
-src/lib/tools/     Tool contract, registry, pointer plumbing, and the six tools
+src/lib/tools/     Tool contract, registry, pointer plumbing, and the six tools (three of them
+                   one drag-to-create tool, `create-tool.ts`)
 src/lib/trace/     The trace document: model, queries, the synthetic fixture, and the store
 src/lib/timeline/  The trace panel's canvas: camera, tick ladder, flag layout, renderer, hit
                    testing, input host, and its theme
 src/lib/panels/    Panel registry and one registration file per panel
 src/lib/dock/      Default workspace, and layout persistence with its fallbacks
-src/lib/ui/        Hover tooltips for DOM chrome: one layer, opted into per element
+src/lib/ui/        Hover tooltips for DOM chrome (one layer, opted into per element), and the
+                   file transport: download and file picker
 src/lib/session.svelte.ts   Scene, camera, tool host and renderer -- owned by the app, not a panel
 src/components/    Dock shell, panel host, canvas surface, toolbar, status bar, tooltips
 src/views/         One component per panel: DiagramView, PropertiesView, TraceView
@@ -163,8 +169,10 @@ top-level array, they land in the temporal dead zone and the app dies at load wi
 `Cannot access '…' before initialization`. `fifo-geom.ts` and `nif-geom.ts` are that third
 module; `rect` and `conn` never needed one because their props files ask for nothing back.
 
-A kind that draws an axis-aligned box should delegate to `shapes/box.ts` for its handles, resize
-arithmetic, perimeter anchors and body, to `shapes/heading.ts` for its label, and to
+A kind that is nothing but a headed box carrying interfaces is one `plainBoxOps` call in
+`shapes/plain-box.ts` — that is all `rect` and `fabric` are. Any other kind that draws an
+axis-aligned box should delegate to `shapes/box.ts` for its handles, resize arithmetic, perimeter
+anchors and body, to `shapes/heading.ts` for its label, and to
 `props/common.ts` for the nine properties every box repeats.
 
 ### Adding a property
@@ -195,22 +203,12 @@ Write `src/views/<Name>View.svelte` reading the session from `useSession()`, add
 `src/lib/panels/<name>-panel.ts` calling `registerPanel`, and add the import to
 `src/lib/register.ts`. The dock resolves pane ids through the registry.
 
-Connections landed in iteration 4 and were the test of that claim: no existing mutation path
-changed. What the kind needed beyond the reserved seams was `anchorAt` / `resolveAnchor`, for
-picking a point on a perimeter, and `corridors`, for saying which of its runs other connections
-may bundle onto. Iteration 4.1 added one more, `rebind`, for re-attaching an end to whatever the
-tool found under the cursor — together with a `role` on the handle record, so the pointer tool can
-route a drag without knowing what `end:to` means. Iteration 4.2 then made the three properties
-that say where a connection runs read-only: they are one value, the gestures that change them
-keep them consistent, and a tree editor cannot. `routing` stays editable, because it says who
-maintains the route rather than what it is — and the canvas can only ever pin a route, never
-hand it back.
-
 ### Adding a tool
 
 Write `src/lib/tools/<name>-tool.ts` implementing `Tool`, call `registerTool` at the bottom, and
 add the import to `src/lib/register.ts`. The toolbar renders from the registry, so the button
-appears on its own.
+appears on its own. A tool that creates a shape by dragging out its two corners is not a new file
+at all: it is one `registerCreateTool` call in `tools/create-tool.ts`.
 
 The declaration says which cluster it belongs in (`group`: `tool` for something you do to what is
 already there, `shape` for something that adds) and where it sits inside that cluster (`order`).
@@ -226,87 +224,34 @@ one is changing a test fixture.
 
 ## Iteration history
 
-`history/` records each revision: what was decided and why, what scaffolding was left for the next
-one, and what is flagged as unfinished. Read the latest before making structural changes —
-particularly the conventions section, since several of the defects found so far compile and
-type-check cleanly and only fail at runtime.
+`history/` records each iteration: what was decided, by whom, and why, and what went wrong on
+the way. Two living documents come first, and are the ones to read before a structural change —
+several of the defects found so far compile and type-check cleanly and only fail at runtime.
 
+- [conventions.md](history/conventions.md) — every rule the code relies on that the type checker
+  cannot enforce, grouped by area: verification, measuring Safari, Svelte and reactivity, canvas
+  and text, the document model and commit path, tools and input, panels and the dock, the repo.
+- [open-items.md](history/open-items.md) — everything flagged and not yet done, and the seams
+  that exist for future work, each tagged with the iteration that raised it.
 - [iter-1-canvas-foundation.md](history/iter-1-canvas-foundation.md) — the canvas, camera, grid,
-  tools, undo, and z-order. Nine post-type-check bugs and the seams reserved for connections.
+  tools, undo and z-order, and the post-type-check bugs that set how this project is verified.
 - [iter-2-docking-and-properties.md](history/iter-2-docking-and-properties.md) — the dock shell,
-  the panel registry, and the schema-driven property editor. Why a shape's identity is its
+  the panel registry and the schema-driven property editor. Why a shape's identity is its
   `name`, how the editor round trip avoids a feedback loop, and one upstream dock bug.
-- [iter-3-trace-panel.md](history/iter-3-trace-panel.md) — the trace panel: the data model taken
-  from the real `ARCHTRC` producer, flags, the tick ladder, the time cursor, and global
-  selection. Why the selected flag is derived rather than stored.
+- [iter-3-trace-panel.md](history/iter-3-trace-panel.md) — the trace panel (the data model taken
+  from the real `ARCHTRC` producer, flags, the tick ladder, the time cursor, global selection),
+  and render performance: why the dot grid cost Safari O(area), and the row strips that made it
+  O(perimeter) and pixel-identical.
 - [iter-4-connections.md](history/iter-4-connections.md) — directed rectilinear connections: the
-  scoring router and why it bundles, sliding perimeter anchors, the reroute fold, and the
-  identity guard that stops a dependency pass from making every commit undoable. Its §4.5
-  argues for a single-sweep fold; iteration 6.2 §3.1 reverses that, and says why the argument
-  it was missing now exists.
-- [iter-4-1-panel-and-endpoints.md](history/iter-4-1-panel-and-endpoints.md) — three follow-ups:
-  one canonical property key order, a documentation footer that sizes itself to its text, and
-  draggable connection endpoints. Why the handle record grew a `role`, and the round-trip bug
-  the key order quietly fixed.
-- [iter-4-2-read-only-geometry.md](history/iter-4-2-read-only-geometry.md) — a connection's
-  route and endpoints become read-only in the panel, and `routing` deliberately does not. What
-  `fixed` means once a read-only property is also real saved state, why a writer must not set a
-  sibling key, and two defects in the panel: a read-only marking one selection behind, and the
-  self-invalidating effect that the obvious fix for it produces.
-- [iter-5-2-marquee-and-clipboard.md](history/iter-5-2-marquee-and-clipboard.md) — rubber-band
-  selection and a clipboard whose payload is the file format. Why the band is a tool of its own
-  rather than a gesture on the arrow, why a copy fills the gaps in its own numbering, and the
-  rename ordering bug that wires a pasted connection to one block at both ends.
-- [iter-5-3-chrome-tooltips.md](history/iter-5-3-chrome-tooltips.md) — the toolbar's tooltips
-  never appeared, and could never have been tested. Why Chromium's macOS tooltip is AppKit
-  chrome armed by a faked mouse-enter that a synthetic pointer cannot trigger, why a tooltip
-  rendered next to the toolbar paints underneath the canvas, and the twenty-one `title`
-  attributes that became one layer the suite can see.
-- [iter-5-4-zoomed-out.md](history/iter-5-4-zoomed-out.md) — six more papercuts: shortcut hints
-  in the Mac symbols, a toolbar split into tools and shapes, block text that shrinks with its
-  block rather than vanishing at 44px, an arrowhead that stands down when it would be drawn on
-  top of a block, and then the same text again twice — its padding, and a tall block condensing
-  it. Why a block's height is a budget rather than a gate, why `fillText`'s `maxWidth` is never
-  the answer to text that does not fit, and the one thing a `draw` is now allowed to know about
-  the rest of the scene.
-- [iter-5-ux-polish.md](history/iter-5-ux-polish.md) — five papercuts found by using the app:
-  block subtitles and label tabs, hover tooltips, the trace cursor as a flag, a connection
-  label you can nudge, enum dropdowns, and five minor grid dots instead of four. Why a wider
-  grab target turned a rounding error into a bug, why the second level-of-detail boundary left
-  the reachable zoom range, and a crash that no assertion caught.
-- [iter-3-1-render-performance.md](history/iter-3-1-render-performance.md) — why the canvas gets
-  slower the larger the window, and the four defects behind it. Why `createPattern` is the wrong
-  answer. Supporting measurements in
-  [safari-performance-report-1.md](history/safari-performance-report-1.md) (it is the dot geometry,
-  not the pixels) and
-  [safari-performance-report-2.md](history/safari-performance-report-2.md) (the cost is a step
-  discontinuity at each level-of-detail boundary, paid out of process).
-- [iter-3-2-measurement.md](history/iter-3-2-measurement.md) — **awaiting its sweep.** The dot
-  grid as cached row strips: 31× fewer primitives at the worst zoom, pixel-identical, and flat in
-  canvas area. Safari's pinch folded into the rAF accumulator, and two readouts that dirtied the
-  document at input frequency. Holds the protocol for the one measurement only real Safari can
-  make, and the results sheet it fills in. Iteration 6.3 made `strips` the default on the
-  arithmetic alone and kept all four modes so the sweep is still runnable.
-- [iter-6-components.md](history/iter-6-components.md) — the four component kinds: queues,
-  network interfaces, the fabric that carries them, and curved links between two interfaces with
-  waypoint editing and cross-shape validation. Why an interface is a first-class child shape
-  rather than data nested in its parent, why the reconcile runs in `commit` rather than in
-  `resolve.ts`, and a props file that must never import its own kind.
-- [iter-6-1-refinements.md](history/iter-6-1-refinements.md) — three things iteration 6 specified
-  too loosely: a queue's ghost that drew neither its dividers nor the length it would commit, an
-  interface straddling its parent's border with anchor ids that went stale when it was dragged,
-  and two incompatible styles of hand-written icon. Why a derived extent has to be derived by
-  every writer including the one running mid-gesture, why an anchor id must not name anything that
-  can change under it, and why a semantic colour cannot share a hue with the selection.
-- [iter-6-3-files-and-fitting.md](history/iter-6-3-files-and-fitting.md) — five: a diagram that
-  saves to and opens from a file, the network channel property and the whole connection
-  compatibility subsystem withdrawn, the dot grid's strip cache finally made the default, a text
-  width cache for the shape-count half of the same Safari defect, and subtitles of several lines.
-  Why `⌘S` is a window-capture listener rather than a tool binding, why removing a property needs
-  no migration and no version bump, and why `Math.trunc` rather than `Math.round` places a line.
-- [iter-6-2-fold-and-defaults.md](history/iter-6-2-fold-and-defaults.md) — four more: a wire that
-  lagged the fabric its port was on, links that bowed when a straight line would have done, and
-  two defaults that did not line up with the grid. Why the dependency fold now reads back its own
-  output and settles, why a gesture has to decide what it moves rather than moving the selection,
-  why a constant that is secretly a ratio breaks when the thing it was a ratio of changes, and
-  the arrowhead that an axis-aligned box quietly deleted from every bus link.
+  scoring router and why it bundles, sliding perimeter anchors, the reroute fold, the identity
+  guard that keeps a dependency pass out of the undo history, the canonical key order, draggable
+  endpoints, and what `fixed` means for state the panel shows but the canvas owns.
+- [iter-5-ux-polish.md](history/iter-5-ux-polish.md) — papercuts found by using the app:
+  subtitles and label tabs, hover and toolbar tooltips, marquee selection and the clipboard, and
+  block text that spends a shrinking block's height as a budget instead of vanishing.
+- [iter-6-components.md](history/iter-6-components.md) — queues, network interfaces, fabrics and
+  curved bus links; the dependency fold that settles; saving and opening a diagram; multi-line
+  subtitles; and the text width cache, the shape-count half of the Safari slowdown.
+
+The unabridged notes for each sub-iteration, and the two Safari measurement reports, are in git
+at commit `e56a67d`.

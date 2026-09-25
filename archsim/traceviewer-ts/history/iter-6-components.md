@@ -1,338 +1,556 @@
-# Iteration 6 — FIFOs, network interfaces, fabrics and curved links
+# Iteration 6 — Queues, network interfaces, fabrics, curved links and a diagram file
 
-2026-09-23. Complete. Five commits, `npm run verify` from 381 assertions across eight suites to
-495 across ten, plus `verify/production.mjs`'s 16 against the built bundle.
+2026-09-23 to 2026-09-24. Complete.
 
-Four component kinds after five iterations of two. The diagram could draw blocks and wires; it
-could not draw the machine this repository is about — queues between units, AXI ports on a
-crossbar, and the buses between those ports.
+Four component kinds after five iterations of two. The diagram could draw blocks and wires; it could
+not draw the machine this repository is about — queues between units, AXI ports on a crossbar, and
+the buses between those ports. Using the result then turned up a run of cases where the code
+promised something it did not deliver, and the iteration closed with the first file I/O the editor
+has had.
 
-## 1. Scope
+## Scope
 
 Delivered:
 
 - **`fifo`** — a queue, drawn as a run of cells. Horizontal or vertical, bounded or unbounded.
-- **`nif`** — a network interface: a bus port glued to a parent's border, with a protocol, an
-  AXI3 channel and a modport.
-- **`fabric`** — a box carrying a row of interfaces on its top and bottom borders.
-- **`rect` gains interfaces** too, on all four.
-- **A second path family for `conn`** — a centripetal Catmull-Rom curve, chosen automatically
-  when both ends are interfaces, with waypoint editing.
-- **Cross-shape validation** — a badge and a popup when two interfaces that were joined should
-  not have been.
+- **`nif`** — a network interface: a bus port seated inside its parent's border, with a `protocol`
+  and a `modport`.
+- **`fabric`** — a box carrying a row of interfaces on its top and bottom borders, each with an
+  inward edge as well as an outward one. **`rect` gains interfaces** too, on all four borders.
+- **A second path family for `conn`** — a centripetal Catmull-Rom curve, chosen automatically when
+  both ends are interfaces, with waypoint editing.
+- **Save and open a diagram**, from the toolbar and from `⌘S` / `⌘O`.
+- **Multi-line subtitles**, which the property editor and the file format had always accepted and
+  the canvas silently collapsed into one run.
+- **A text width cache**, the half of the Safari slowdown that scales with shape count (iteration 3,
+  _the Safari measurement_, covers the grid half). The dot grid's row strips became its only
+  renderer once the user confirmed them in Safari.
 
-Plus two pieces of ground-clearing the above walked straight into: the shared box/heading/property
-machinery extracted out of `rect`, and a two-pass document loader.
+Plus the ground-clearing the above walked into: the shared box/heading/property machinery extracted
+out of `rect`, and a two-pass document loader.
 
-Not delivered, and deliberately: obstacle avoidance for curves (§7), and any meaning for
-`protocol` beyond a label.
+Chronology:
 
-## 2. Decisions that came from the user
+- **6.0, components** — the FIFO, the interface, the fabric, curved links, and a compatibility check
+  between joined interfaces.
+- **6.1, refinements** — the queue's creation ghost, the interface as a port inside its parent with
+  `out`/`in` anchors, one icon set from Lucide.
+- **6.2, fold and defaults** — the fold settles, a gesture moves what it moves, links run straight
+  unless that would run backwards, one-step queue cells and two-step interfaces.
+- **6.3, files and fitting** — save/open, the compatibility check and `channel` withdrawn, the text
+  width cache, multi-line subtitles, strips as the only grid renderer.
 
-| Question                        | Decision                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------ |
-| How an interface is represented | A first-class child shape, not data nested in its parent                             |
-| The interface-type field        | Two keys: `protocol` and `channel`, not one fused enum                               |
-| How a FIFO's cells are drawn    | One outline with dividers; `spacing` is the divider **pitch**                        |
-| The curve's interpolation       | Centripetal Catmull-Rom through waypoints                                            |
-| How waypoints are edited        | A `+` badge inserts; click one and press Delete to remove; the status bar reports it |
-| Headings on the new kinds       | The same three `labelMode`s a block has, shared rather than copied                   |
+Not delivered, deliberately: obstacle avoidance for curves, and any meaning for `protocol` beyond a
+label.
 
-## 3. Load-bearing decisions
+## Decisions that came from the user
 
-### 3.1 An interface is a shape, and that buys the whole editor
+| Question                         | Decision                                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| How an interface is represented  | A first-class child shape, not data nested in its parent                                |
+| The interface-type fields        | `protocol` and `modport` (an AXI3 `channel` key existed briefly and was removed)        |
+| How a FIFO's cells are drawn     | One outline with dividers; `spacing` is the divider **pitch**                           |
+| The FIFO drag                    | `cells` follows the drag, so the ghost is exactly the shape that gets committed         |
+| A queue's pitch                  | One grid step, so the dividers land on the dots                                         |
+| An interface's length            | Two grid steps, chosen for where the anchor lands rather than for the box               |
+| The modport marker               | No tick; the **border colour** says master or slave, the inside holds the label         |
+| The curve's interpolation        | Centripetal Catmull-Rom through waypoints                                               |
+| How waypoints are edited         | A `+` badge inserts; click one and press Delete to remove; the status bar reports it    |
+| When a link should bow           | Only when a straight line would leave one port backwards or reach the other from behind |
+| The lagging wire                 | Fix the fold, and fix what a gesture moves; they are different defects                  |
+| Headings on the new kinds        | The same three `labelMode`s a block has, shared rather than copied                      |
+| Lucide delivery                  | `@lucide/svelte` (ISC, no transitive deps), deep-imported one module per icon           |
+| Connection compatibility         | Withdrawn after user testing; two masters joined by a bus is simply a bus               |
+| What a load does to the document | Replaces it, as **one undoable step** labelled `load`                                   |
+| What a save is called            | **The name of the last file opened**, `diagram.json` before any                         |
+| A subtitle too long for its box  | Draw the **largest prefix of lines that fits**, dropping from the bottom                |
+| The grid renderer                | Strips, and only strips, once confirmed in real Safari                                  |
+
+## Load-bearing decisions
+
+### An interface is a shape, and that buys the whole editor
 
 Selection, the property panel, a name a connection can bind to, cascade-deletion through
-`dependsOn`, undo, the clipboard — none of it needed writing. The alternative, a list of tuples
-on the parent, needed all of it: `PropValue` has no object case, so the data would have been a
-`list[tuple[...]]`, and making one of those selectable and editable is a sub-object selection
-model built from scratch.
+`dependsOn`, undo, the clipboard — none of it needed writing. The alternative, a list of tuples on
+the parent, needed all of it: `PropValue` has no object case, so the data would have been a
+`list[tuple[...]]`, and making one of those selectable and editable is a sub-object selection model
+built from scratch. The cost was a handful of new optional seams on `ShapeOps` — the same way
+iteration 4 added `anchorAt`, `corridors` and `rebind`: the contract grows where a real kind needs
+it to.
 
-The cost is four new optional seams. That is the same way iteration 4 added `anchorAt`,
-`corridors` and `rebind` — the contract grows where a real kind needs it to.
+**The reconcile runs in `commit`, not in `resolve.ts`.** `resolve.ts` is a pure function of the
+shape array, and `SelectTool` calls `rerouteAll` directly against a mid-drag preview. Minting a name
+is not pure. `expandChildren` (in `scene/expand.ts`, called from `SceneStore.commit`) keeps that
+module pure, keeps the preview path mint-free, and makes "skipped during a drag, applied on commit"
+a property of the commit path rather than something that happens to be true today.
 
-### 3.2 The reconcile runs in `commit`, not in `resolve.ts`
+**Children are re-seated immediately above their parent on every commit.** Both `hitTest` and
+`anchorHitTest` walk the z-order top-down, so an interface below its parent is unclickable and a
+wire aimed at it attaches to the fabric's body. Appending a new child is right once — then one
+`bringToFront` on the parent buries every interface it owns. Re-seating makes their position a
+consequence of ownership rather than of gesture history, and costs nothing when already right,
+because the pass returns its input by reference.
 
-`resolve.ts` declares itself a pure function of the shape array, and `SelectTool` calls its
-`rerouteAll` directly against a mid-drag preview. Minting a name is not pure. Putting
-`expandChildren` in `SceneStore.commit` keeps that module pure, keeps the preview path
-mint-free, and makes "skipped during a drag, applied on commit" a property of the commit path
-rather than something that merely happens to be true today.
+**The count is authoritative, so an interface cannot be deleted on its own.** `nifOps.deletable`
+returns false. Letting Delete remove one leaves the parent's count saying something the diagram does
+not, and the reconcile would mint it again on the next commit anyway. You change the number on the
+parent.
 
-### 3.3 Children are re-seated above their parent on every commit
+### An interface sits inside its parent
 
-Both `hitTest` and `anchorHitTest` walk the z-order top-down, so an interface below its parent
-is unclickable and a wire aimed at it attaches to the fabric's body instead. Appending a new
-child puts it in the right place once — and then one `bringToFront` on the parent buries every
-interface it owns. Re-seating makes their position a consequence of ownership rather than of
-gesture history, and it costs nothing when it is already right, because the pass returns its
-input by reference.
+The whole box is in the parent's body, its outward edge coincident with the border line. A bus port
+is part of the thing, the way a connector is part of a chip package; a box straddling the border
+read as a pin glued to the outside. Two things follow:
 
-### 3.4 The count is authoritative, so an interface cannot be deleted on its own
+- **The label has somewhere to go.** It is drawn inside, centred, and turned a quarter turn on `e`
+  and `w` so it runs along the border.
+- **"Inward" means something.** The far edge faces the parent's interior, which is where a
+  crossbar's internal routing has to land. A fabric's ports take links on it; a block's do not.
 
-`nifOps.deletable` returns false. The alternative — letting Delete remove one — leaves the
-parent's count saying something the diagram does not, and the reconcile mints it again on the
-next commit anyway. You change the number on the parent.
+`depth` is clamped to the parent, because an over-deep box has nowhere to go but through the far
+border. The trade to accept: `hitTest` is `pointInRect` over the box, so a port eats a depth-deep
+band of the parent's interior for body presses, and `childCovers` in `canvas/hit.ts` punches a
+matching hole in the parent's edge-resize zone. That is right — the port is the thing you want to
+grab there.
 
-### 3.5 A FIFO's length is derived, never stored twice
+### An anchor id must not name something that can change
+
+An interface's two anchors are `'out'` and `'in'`, named by edge rather than by compass point. An id
+that does not name a side cannot go stale when the port is dragged to another border — the defect is
+unrepresentable rather than handled. Everything unrecognised resolves to the outward edge: a legacy
+compass id from an older file, an `in` on a port with no inward edge, plain nonsense. A wire that
+cannot find its end would otherwise vanish. `anchorAt` and `resolveAnchor` are both built from one
+`nifAnchors` in `nif-geom.ts`, so they cannot drift.
+
+### A per-shape seam whose answer belongs to the parent is resolved in `reroute`
+
+`interfaceInward` is asked of the PARENT, like `interfaceSides`, so a `nif` never switches on its
+parent's kind (`plain-box.ts` supplies it for `fabric`). But `anchorAt` and `resolveAnchor` are pure
+functions of one shape and cannot see the parent. So the answer is cached on the child as a
+`computed` field, written by `reroute` — which has the parent — exactly as the box is. This is the
+second field to take that route, after `pending`.
+
+The tax: `inward` must join `reroute`'s unchanged-comparison. A field that participates in the
+returned object but not in the guard makes every commit allocate, `commit` compares by identity, and
+each one records an undo entry that undoes nothing.
+
+### A FIFO's length is derived, never stored twice
 
 `cells * spacing`, read through one function that `bounds`, `draw`, `hitTest`, the handles, the
-anchors and `size`'s own `read` all go through. The obvious alternative has the `cells` writer
-and the `spacing` writer each recompute `w` — and iteration 4.1's rule is that a writer touching
-a sibling key becomes order-dependent, since `applyDocument` writes in canonical key order and
-the alphabetically later key wins. Deriving means there is no ordering to reason about.
+anchors and `size`'s own `read` all go through. The alternative has the `cells` writer and the
+`spacing` writer each recompute `w` — and a writer touching a sibling key is order-dependent, since
+`applyDocument` writes in canonical key order and the alphabetically later key wins. Deriving means
+there is no ordering to reason about. It follows that only the cross axis of a bounded queue can be
+resized, so `handles` returns two knobs rather than eight: a knob on a derived axis is an affordance
+that refuses to work, which is worse than no knob.
 
-It follows that only the cross axis can be resized, so `handles` returns two knobs rather than
-eight. A knob on a derived axis is an affordance that refuses to work, which is worse than no
-knob: the user has to drag it to find out.
+**Every writer of a derived field derives it the same way — including the one that runs during a
+gesture.** The creation ghost originally hard-coded `cells: 4`, so the drag chose the orientation
+and then had no further effect on the flow axis. `makeFifo` derives `cells` from the dragged extent:
+`round`, so the nearest whole queue wins; floored at 1, because `cells: 0` is refused by the schema;
+capped at `MAX_CELLS` (1024), the same ceiling the property writer holds. At a one-step pitch a
+snapped drag cannot produce a fractional count, so the ghost matches the drag exactly.
 
-### 3.6 `path` is a separate field from `routing`
+`MAX_CELLS` is **in the schema as well as the writer**: the writer refuses the commit, but ajv is
+what draws the live annotation, and a value large enough to hang the renderer has to be refused
+before it is committed.
 
-`routing` says who maintains the geometry. `path` says what the geometry is. Folding them into
-one four-valued enum would encode a 2×2 product as a flat list — and `conn.props.ts` already
-argues that distinction the other way round for `routing` itself.
+### A queue's pitch is one grid step, and its minimum gap is a ratio
 
-### 3.7 The connect tool asks both ends, via a seam
+`spacing` defaults to `GRID` (in `makeFifo` and in `blank()`, which is also the file-load default),
+so dividers line up with the dots behind them. `MIN_GAP` could not stay a constant: it was `GRID`,
+which was half a cell at the old two-step default and exactly one cell at the new one, and would
+have turned a minimum-size unbounded queue into a uniform run of five — losing the 1-gap-3 shape
+whose whole job is to say "and so on" without an ellipsis glyph. It is `minGap(spacing)` now, half
+the pitch. **A constant that is secretly a ratio breaks when the thing it was a ratio of changes**;
+nothing declared that `MIN_GAP` was half a cell.
 
-`preferredPath` is asked of both shapes, and `'curve'` is taken only when they agree. That is
-what makes "a plain arrow may still be drawn to an interface" true by construction rather than
-by a rule written down somewhere. The tool never learns what a `nif` is.
+### An interface's length is chosen for where its anchor lands
 
-The family is fixed at the FIRST click, though, and the ghost draws in it while the far end is
-loose. Asking both ends every frame is more correct and reads worse: there is no second shape
-to ask until the cursor lands on one, so the ghost would draw square and then snap to a curve.
-A preview that changes shape under the cursor reads as a bug.
+`NIF_LENGTH` is `GRID * 2` because a connection point is the centre of an edge and `offset` is
+grid-snapped: the centre is on a dot exactly when half the length is a whole number of grid steps.
+At 48 every anchor sat 8 units off every dot, and so did every wire leaving one — the actual
+complaint, which the box's size only mediates. A precondition rather than a guarantee: it also needs
+a grid-aligned parent and no clamp biting, and the prop docs say so.
 
-### 3.8 The phantom endpoints duplicate rather than reflect
+### A saved geometric constant creates documents of two vintages
 
-Which makes the end tangent parallel to the last chord — exactly what `route.ts`'s
-`endDirection` assumes when it orients the arrowhead, and the reason that function is reused
-unchanged for a curve. A reflected phantom would tilt every arrowhead by an amount depending on
-the waypoint before it: a bug with no visible cause.
+`length` is a saved `edit` property, so changing the default changes nothing about existing
+documents — every one keeps its 48-unit ports. That is right, and it made a latent bug reachable:
+packing passed the CONSTANT to `freeOffset`, which tested overlap with one length for both
+intervals, so a new 32-unit port on an old fabric landed through a real neighbour by up to 16 units.
+`occupied` is a list of `NifSpan`s (`{offset, length}`) and the overlap test reads both. Code that
+packs, measures or compares shapes of a saved geometric property reads each one's own value.
 
-The conversion is 0/0 at a duplicated knot and is special-cased rather than floored to an
-epsilon. See §5.4.
+**Growing the count must not stack a new port on an old one.** Raising the count leaves existing
+interfaces alone — they may have been dragged — but the even spreads for four and for six do not
+line up, so a new one taking its slot in the new spread can land on an old one. `freeOffset` tries
+the spread position first and scans for a clear slot only if it is taken, which keeps a fresh row
+spread and a grown row disjoint.
 
-### 3.9 The insert badge is a `HandleRole`, not a new affordance system
+### The shared box machinery takes the body as a parameter
 
-`hit.ts` returns exactly `handle | body | empty`, and handles are the only sub-shape affordance
-there is. Widening `HandleRole` with `'action'` gets hit priority over the line, a
-screen-constant grab radius, a cursor and a drawn knob for free. Inventing a parallel hit pass
-would have got none of them.
+`shapes/box.ts` owns handles, resize, box anchors and the body; `shapes/heading.ts` the label;
+`props/common.ts` the repeated properties. Each takes the body rectangle as a PARAMETER rather than
+reading `x/y/w/h` off the shape, because a FIFO's drawn box is derived and its stored `w` is not the
+answer. Geometry a kind shares between its ops and its props lives in `<kind>-geom.ts`
+(`fifo-geom.ts`, `nif-geom.ts`) — see _Defects_ for why.
 
-The violation badge could NOT be a handle, and the difference is instructive: handles exist only
-on selected shapes, and a badge that appeared only once you had selected the thing it warns you
-about is useless. That one gets its own pass, ahead of the normal hit test.
+**A ghost draws its body, not its text.** `drawBoxBody` once gated both `inner` and the heading
+behind `!flags.ghost`, which is the whole reason a queue's preview was a blank dashed rectangle: the
+dividers are its entire visual identity. `inner` runs unconditionally now; the heading stays
+suppressed. `nif` and `conn` already followed that rule.
 
-### 3.10 The sub-part cursor is derived, not maintained
+### `path` is a separate field from `routing`
 
-It dies for four unrelated reasons — deselection, multi-selection, the shape being deleted, the
-index going stale. Re-checking the three conditions that matter at the point of use covers all
-four without a hook per cause. Undo and redo are the exception: they swap the document with
-nothing to observe, so `ToolHost` clears it there.
+`routing` says who maintains the geometry; `path` (`'ortho' | 'curve'`) says what the geometry is.
+Folding them into one four-valued enum would encode a 2×2 product as a flat list.
 
-It lives on the tool, not in `SceneStore`. `selection` is part of the undo record, and a cursor
-is not document state.
+**The connect tool asks both ends, via a seam.** `preferredPathOf` asks each shape's
+`preferredPath`, and `'curve'` is taken only when both agree. That makes "a plain arrow may still be
+drawn to an interface" true by construction, and the tool never learns what a `nif` is. The family
+is chosen at the first click and the ghost draws in it while the far end is loose — asking every
+frame is more correct and reads worse, because there is no second shape until the cursor lands on
+one, and a preview that changes shape under the cursor reads as a bug.
 
-## 4. Defects found by an adversarial review of the FIFO commit
+### The curve
 
-Seven, none of which `svelte-check` or the 406 assertions in place at the time could see. Worth
-recording because the shape of them is the lesson: four were reference-identity or arithmetic,
-two were pixels, one was a comment.
+**Phantom endpoints duplicate rather than reflect**, which makes the end tangent parallel to the
+last chord — exactly what `route.ts`'s `endDirection` assumes when it orients the arrowhead, so that
+function is reused unchanged. A reflected phantom would tilt every arrowhead by an amount depending
+on the waypoint before it. The centripetal conversion is 0/0 at a duplicated knot and is
+special-cased: the control point goes a third of the way along the chord, which is what it is
+supposed to mean. An epsilon only made the garbage finite.
 
-### 4.1 The flow axis never folded a flip
+**A curve's waypoints are explicit.** The user inserts them with the badge and removes them with
+Delete; nothing else gets an opinion. `collapseCurve` dedupes coincident points, which the
+parameterisation requires because it divides by chord length, and drops nothing else.
 
-`resizeBox` encodes "dragged past the far edge" as a negative extent that `normalize` folds, and
-`fifoBox` folds it by handing the value to `normalizeRect`. `flowExtent` took `Math.abs` first,
-so `normalizeRect` never saw a negative and the box stayed anchored at the DRAGGED edge. Pulling
-the west handle of an unbounded 0..320 queue out to 480 drew it at 480..640 and committed that.
+**A link runs straight unless a straight line would run backwards.** `autoWaypoints` returns no
+waypoints when the chord leaves the front of one port and arrives at the front of the other — both
+dot products against the anchor normals positive — and two on the outward normals when it would not.
+That is the whole rule, replacing an earlier 15-degree alignment threshold that bowed the offset
+facing pairs which are most of a real diagram. The case that wants a bow keeps it without being
+named: two anchors sharing a normal — a loopback, two ports on one face of one parent, two on the
+same face of different parents diagonally apart — make `arrives` exactly `-leaves`, so they can
+never both be positive; two ports facing away bow on two negative terms. A `sameFaceLink` predicate
+was the first draft and was rejected: it reads `side`, which is not the edge a wire attached to,
+needs endpoint shapes at a call site that has only a name, and would teach a tool what a `nif` is.
 
-### 4.2 The minimum length pushed the edge the drag had pinned
+**The bow is capped.** `reach` is a third of the separation, at least two and at most six grid
+steps. Half the separation, uncapped, ballooned two rows of ports 380 units apart into a lens the
+width of the gap.
 
-The floor was applied about the origin, which is the only thing `fifoBox` can see. Shrinking the
-west edge of a 0..200 queue to 96 gave 96..240: the gesture was shrinking and the pinned edge
-grew away from the cursor. The floor moved into `resize`, which is the only place that knows
-which handle moved — XOR'd against the flip, because `normalizeRect` relabels the two when a
-drag crosses over.
+### Waypoint editing reuses the handle system
 
-### 4.3 `size`'s writer allocated when nothing changed
+**The insert badge is a `HandleRole`**, `'action'`, not a new affordance system. `hit.ts` returns
+exactly `handle | body | empty`, and widening the role gets hit priority over the line, a
+screen-constant grab radius, a cursor and a drawn knob for free. The badge is smaller and dimmer
+than a waypoint knob and carries a cross, because two identical squares side by side on one line
+said nothing about which one you drag.
 
-Its `read` goes through the derived box, so for a bounded queue it can never return the width
-that was typed — which means `applyDocument` calls the writer on every subsequent commit, and an
-unconditional `{ ...s }` hands back a content-identical shape with a fresh identity. Three edits
-produced three undo entries that restored a byte-identical scene.
+**The sub-part cursor is derived, not maintained.** It dies for four unrelated reasons —
+deselection, multi-selection, the shape being deleted, the index going stale — and re-checking the
+conditions at the point of use covers all four without a hook per cause. The funnels that swap the
+document with nothing to observe — undo, redo, and a file load — clear it explicitly. It lives on
+the tool, not in `SceneStore`, because `selection` is part of the undo record and a cursor is not
+document state. The seams are named generally (`subPartOf`, `subPart`, `removeSubPart`); a curve is
+the only kind with sub-parts today.
 
-### 4.4 `cells` had a floor but no ceiling
+### The fold reads back what it already folded, and settles
 
-`1000000000` passed the schema and the writer and was committed; the next frame tried to build a
-billion-segment path. Capped at 1024, **in the schema as well as the writer** — ajv is what draws
-the live annotation.
+`rerouteAll` once built its `byId` map from the array it was handed, so a pass resolved exactly one
+level of the graph. The real chain is two deep — `conn → nif → fabric` — so a wire on a port read
+that port as it stood on entry, catching up only on the next commit; a block-to-block wire never
+showed it. A port read from a file was the extreme case: an interface has no saved position, only a
+side and an offset, so it carries `blank()`'s `0,0` until its own `reroute` runs, and its wire drew
+itself to the world origin.
 
-### 4.5 The label plate erased the outline, and missed the descenders
+The fix is `byId.set(next.name, next)` beside `corridors.absorb(next)`. With children re-seated
+above their parents on every commit, the whole chain resolves in one sweep. What ordering cannot
+cover is a connection the user pushed BELOW its own ports with `sendToBack`, so the sweep repeats to
+a fixed point, as `pruneOrphans` already does. This replaces iteration 4's position (iteration 4,
+_The reroute fold_) that the fold is a single pass and must not be fed its own results — whose
+objection was that a fixed point was asserted rather than argued. The argument is now written out in
+`resolve.ts`: a `nif` depends only on a parent with no `reroute` and is final after one sweep; an
+`auto` connection is a function of `(a, b, corridors)` and never reads its own points; a `manual`
+one reads them, but `patchStart`/`patchEnd` return by reference once the ends match; corridors flow
+bottom-up within a sweep and are discarded between sweeps.
 
-A label wider than its box — easy on a FIFO, whose length is fixed by its cell count — punched a
-22-device-pixel hole through both vertical outlines. And the ink around a `middle` baseline is
-asymmetric (0.43 above, 0.52 below), so a plate of height `px * INSET_INK_H` centred on the line
-misses a `y`'s tail.
+- **A fresh `CorridorIndex` per sweep.** Reusing it keeps runs that no longer exist, and
+  `BUNDLE_BONUS` is large enough to route onto a corridor that has gone.
+- **The cap is derived, not picked** — `sweepCap`, the longest chain of `dependsOn` edges in the
+  actual array, on the precedent of `BUNDLE_REACH`. A cycle is a programming error: it throws in DEV
+  and degrades to one sweep in production.
+- **The repeat sweep is skipped in the common case.** A sweep records the lowest index depending on
+  each name and asks for another only when a shape changed ABOVE one of its dependents. Dragging two
+  connected blocks changes only connections, and nothing depends on a connection — one sweep, at the
+  old cost. This matters because `rerouteAll` runs on every `pointermove`.
 
-### 4.6 An extraction orphaned a doc block
+`ShapeOps.reroute`'s contract is now idempotence, `reroute(reroute(s)) === reroute(s)`, not merely
+identity when nothing changed. The invariant is stated no further than it holds: the result is a
+fixed point, but not necessarily what one sweep against fully resolved dependencies would give,
+because `patchStart`/`patchEnd` composed with `collapseRoute` is path-dependent — as it already was
+across a preview and its commit.
 
-`drawInsetLabel`'s rationale — including the repo's most emphasised drawing rule, that
-`fillText`'s fourth argument condenses rather than truncates — ended up attached to `drawPlate`,
-a two-`fillRect` helper inserted between the comment and its function.
+### A gesture moves what it moves, not what is selected
 
-### 4.7 Two defects in the checks themselves
-
-`components.mjs` imported `scene/registry.ts` by URL inside `page.evaluate` — the trap iteration
-4.1 wrote down. After an HMR update the app's copy sits behind a versioned URL, so a bare
-specifier resolves to a second module instance with an empty registry and every `opsFor` throws.
-Uncaught, so the suite dies with no summary and takes every later suite in the chain with it. It
-passed only against a server that had never hot-reloaded.
-
-And one group drew its FIFO at a hard-coded `y + 620`, off the diagram canvas and onto the trace
-panel. It created nothing, silently patched the previous group's queue, and moved the time
-cursor on the way past.
-
-## 5. Defects found while building, and what they teach
-
-### 5.1 A `<kind>.props.ts` must not import from its `<kind>.ts`
-
-The kind file is what `register.ts` imports, so the pair forms a cycle — and because the props
-module consumes the values while it is still evaluating its top-level array, they land in the
-temporal dead zone. The app died at load with `Cannot access 'MIN_SPACING' before
-initialization`. `rect` and `conn` never met this because their props files ask for nothing back.
-
-Geometry now lives in a third module, `<kind>-geom.ts`, the same separation `route.ts` has from
-`conn.ts`. Written into the README's "Adding a shape kind".
-
-### 5.2 A selected parent's handles made its own children ungrabbable
-
-An interface sits exactly where its parent's invisible edge grab zone runs, and handles of a
-selected shape beat any body under them. Selecting a fabric covered every one of its interfaces
-with a resize zone: pressing a port resized the fabric instead, and the port could not be
-grabbed at all until the parent was deselected.
-
-The rule that handles win exists to stop an _unrelated_ shape stealing a resize. A child is not
-unrelated, so a selected shape's handles now yield where its own children lie.
-
-### 5.3 Growing the interface count put a new one on top of an old one
-
-Raising the count leaves the interfaces already placed alone — they may have been dragged. But
-the even spread for four and the spread for six do not line up, so a new one taking its slot in
-the new spread lands on an old one: a fourth at 288 and a sixth at 304, overlapping by 28 of
-their 32 units. `freeOffset` tries the spread position first and scans for a clear slot only if
-it is taken, which keeps a fresh row spread and a grown row disjoint.
-
-### 5.4 The spline's end tangent was garbage, and an epsilon did not fix it
-
-The phantom endpoints make the outer knot spacing exactly zero, so the centripetal conversion is
-0/0 there: numerator and denominator both vanish and floating point returns whatever the rounding
-gives. Clamping the spacing to an epsilon only makes the garbage finite — the measured end
-tangent was nowhere near the last chord, which is precisely what the arrowhead depends on. The
-degenerate case is handled explicitly instead: the control point goes a third of the way along
-the chord, which is what it is supposed to mean.
-
-### 5.5 Inserting a waypoint deleted it in the same gesture
-
-`collapseCurve` dropped any waypoint sitting on the chord between its neighbours, by analogy
-with `route.ts`'s `collapseRoute`. Inserting into a STRAIGHT curve puts the new point exactly on
-the chord by construction — so `normalize` removed it immediately, and clicking the badge did
-nothing except record an undo entry.
-
-A curve's waypoints are explicit: the user inserts them with the badge and removes them with
-Delete. Nothing else gets an opinion. Deduping coincident points is still required, because the
-centripetal parameterisation divides by the chord length.
-
-### 5.6 "A straight line will do" was too weak a test
-
-`leaves > 0 && arrives > 0` passes easily for two ports facing each other but offset across the
-gap, and the straight line they get leaves the port at an angle. A bus drawn leaving its own port
-diagonally does not read as a bus. The test is cos(15°) now, so a genuinely straight shot stays
-exactly straight — two points, no waypoints — and anything meaningfully off-axis bows.
-
-### 5.7 The automatic bow was proportional with no cap
-
-Half the separation, so two rows of ports 380 units apart each pushed a control point 190 out and
-the pair ballooned into a lens the width of the gap. A third, capped at six grid steps.
-
-### 5.8 Two affordances that looked identical
-
-Waypoint knobs and insert badges sat side by side on the same line as the same square, so nothing
-said which one you drag. The badge is smaller, dimmer and has a cross through it — and the cross
-had to be drawn twice before it was legible, because at the first size its arms were 1.4 CSS px.
-
-## 6. Scaffolding left for future iterations
-
-- `protocol` is a one-value enum with a `!==` comparison the compiler calls unreachable. The
-  comparison is widened to `string` on purpose: it will stop being unreachable the moment a
-  second bus standard lands, and deleting it would mean whoever adds one gets no reminder.
-- `channel: 'all'` exists so a diagram drawn at bundle level does not report five violations for
-  one wire. Nothing else reads it yet.
-- `ShapeOps.subPartOf` / `subPart` / `removeSubPart` are named for sub-parts in general rather
-  than for waypoints. A curve is the only kind with any today.
-- `Handle.glyph` has one value. A second kind of `action` handle would want a second.
-
-## 7. Flagged for future work
-
-- **No obstacle avoidance on a curve**, the same gap `route.ts` has. `autoWaypoints` knows about
-  the two anchors and nothing else, so a link between two distant interfaces will run through
-  whatever is between them. The user drags a waypoint, which pins the route — the same bargain
-  the rectilinear router strikes.
-- **A curve's label rides the arc midpoint** with no minimum-length test, unlike the rectilinear
-  branch's `CONN_LABEL_MIN_RUN_PX`. A very short curved link will crowd.
-- **`arrowBox` is an axis-aligned box** whose comment rests on routes being rectilinear. A curve
-  arriving diagonally over-reports, so `headIsClear` suppresses the arrowhead more readily than
-  it should. Rare in practice, because the last control point of an automatic curve sits on the
-  interface normal and the approach is square.
-- **Interfaces do not avoid each other when dragged.** `freeOffset` only applies when the count
-  grows; a user can drag two ports onto the same spot.
-- **An interface's label is drawn only on the `n` and `s` faces**, because a horizontal string on
-  a vertical face would run across the parent it belongs to.
-- **`MAX_CELLS` is a drawing limit, not a hardware one.** A queue deeper than 1024 has to be
-  drawn unbounded.
-
-## 8. Conventions and gotchas
-
-- **A `<kind>.props.ts` must not import from its `<kind>.ts`.** See §5.1. Put anything they share
-  in `<kind>-geom.ts`.
-- **A box kind delegates**: `shapes/box.ts` for handles, resize, anchors and body;
-  `shapes/heading.ts` for the label; `props/common.ts` for the nine repeated properties. Each
-  takes the body rectangle as a PARAMETER rather than reading `x/y/w/h` off the shape, because a
-  FIFO's drawn box is derived and its stored `w` is not the answer.
-- **`theme.shapeFill` is translucent.** An opaque plate the colour of a box body is two fills:
-  `background`, then `shapeFill` over it. One fill composites and looks almost right.
-- **A property writer must return `s` by reference when nothing changed**, not only `reroute` and
-  `rebind`. Any writer whose `read` cannot reproduce what the user typed is called on every
-  commit thereafter, and every allocation is an undo entry that undoes nothing.
-- **Put a numeric ceiling in the SCHEMA, not only in the writer.** The writer refuses the commit;
-  ajv is what tells the user, and a value large enough to hang the renderer has to be refused
-  before it is committed.
-- **Register a new tool AFTER the existing ones.** Digits come from toolbar position, so
-  inserting renumbers every tool below — including the literal `Digit4` other suites press.
-- **Never import `scene/registry.ts` by URL inside `page.evaluate`.** Use `window.__ops` and
-  `window.__doc`. Pure modules like `curve.ts` and `fifo-geom.ts` are safe that way.
-- **Derive positions in a check from the live canvas box.** A hard-coded `y + 620` is on the
-  trace panel.
-- **Adding an `edit` property reorders the document** and fails `verify/production.mjs`, which
-  `npm run verify` does not run. This iteration moved both the block's and the connection's.
-
-## 9. How iteration 6 was verified
+`SelectTool` once translated exactly the selection, which is wrong at both ends. A connection whose
+BOTH endpoints are moving was not moved, so a hand-drawn bus between two ports of one fabric
+deformed as the fabric travelled (`reroute`'s manual branch splices the interior through and slides
+only the ends — right for one end moving, wrong for both). And a port selected together with its own
+parent moved twice — once by `translate`, once by `reroute` re-gluing it — so `Cmd+A` and a drag
+slid every port along its border. `movesWith` in `resolve.ts` answers the right question:
 
 ```
-npm run dev                          # terminal 1, port 5183
-npm run verify                       # 495 assertions across ten suites
-npm run check                        # 504 files, 0 errors
-npm run build && npm run preview     # port 4183
-node verify/production.mjs           # 16 assertions — NOT in `npm run verify`
-npx prettier --check src verify README.md history
+follows   = children, transitively, of anything in the selection    -- moved by reroute
+carried   = has dependencies, has no parent, and every dependency
+            is in the selection or in `follows`                     -- moved bodily
+result    = (selection \ follows) ∪ carried
 ```
 
-Two new suites. `verify/components.mjs` (70) covers the FIFO's derived length, the flip and the
-floor about the pinned edge, the divider layout in both modes, the label plate as pixels, the
-reference-identity contract on every writer, the interface reconcile, z-order re-seating, the
-delete refusal, dragging a port between borders, and the two-pass loader. `verify/network.mjs`
-(44) covers the spline as arithmetic — straightness, cusps, end tangents, the alignment test —
-then which family the tool chooses, the whole waypoint gesture, the violation rules, and the
-badge and its popup.
+A carried connection's ends arrive where its ports arrive, so the patch returns by reference. The
+set is resolved once at pointer-down, so the drag frames and the commit agree. Two consequences
+accepted and recorded: a fabric moved by typing into the property panel still leaves a hand-drawn
+route behind, because only gestures are covered; and a rigid translation can split a bundle that
+patching would have held, which beats patching a route whose ends both moved a thousand units.
 
-Each intermediate commit was typechecked in an isolated worktree, so the history bisects.
+The rejected alternative — rigid translation inside `conn.reroute` when both ends' deltas match — is
+fatally ambiguous: dragging a manual connection by its own body gives both ends exactly the drag, so
+the rule would read the user's gesture as a rigid move and silently undo it. Geometry cannot tell
+"my endpoints moved" from "I was moved"; only the tool knows.
+
+### The modport is a border colour, kept clear of selection
+
+The modport is the port's border colour, and `nifMarkMaster` is violet, because
+`shapeStrokeSelected` is amber and a selected slave must not look like an unselected master. A
+semantic colour must not share a hue with selection. The port's box is an opaque fill: a theme fill
+drawn over a shape rather than over the background must be opaque, or it looks almost right and
+fails exactly where something is drawn behind it (`theme.shapeFill` is translucent, so a FIFO's
+label plate is two fills, `background` then `shapeFill`).
+
+### Icons are components
+
+`ToolDeclaration.icon` is a `LucideIcon`, replacing hand-written path data that came in two
+incompatible styles (some authored as stroke data but drawn under a fill rule, rendering as thin
+slivers). There is one kind of icon, so the mismatch is unrepresentable.
+
+### Connection compatibility checking was built and withdrawn
+
+The first cut judged every link between two interfaces — protocol, AXI3 channel, master against
+slave, outward against inward edge — and marked a violation with a red badge and a popup, through a
+`diagnose` seam on `ShapeOps`. User testing decided against it: a diagram is a drawing of intent,
+and two masters joined by a bus is simply a bus. It was deleted entirely rather than disabled —
+seam, store diagnostics, render flag, badge, popup layer, theme constants, and the `channel`
+property that existed mainly to feed it. `network.mjs` asserts the seam is absent, because a
+deletion that leaves a seam behind is how the next change reintroduces half of it. Removing
+`channel` needed no migration and no version bump: `hydrateShape` iterates the schema, not the
+record, so an old file's key is ignored, and `SceneDoc.version` stays 2 because bumping it would
+tell a v2-only reader to refuse a file it can read. The "insert badge" — the waypoint `+` handle —
+is a different thing and stays.
+
+### One document format, two transports
+
+A saved file is `serializeScene`'s output, `JSON.stringify(doc, null, 2)` plus a trailing newline:
+to the byte what `⌘C` puts on the system clipboard. That is what lets the file loader and the
+clipboard share a read pipeline, and what will make a future `trace` key beside `shapes` additive
+rather than a second format. It does NOT follow that a saved file pastes with `⌘V`: paste reads the
+in-memory clipboard and never the system one, which is focus-gated and async. The formats agree; the
+transports do not cross.
+
+The work splits at the DOM. Nothing under `scene/`, `props/` or `geom/` touches it, which is what
+lets `verify/` drive them as pure calls, so `scene/file.ts` holds the format, `parseSceneDoc` and
+`saveFileName`, and `ui/file-transport.ts` the Blob, object URL and picker. `EditorSession` does the
+load.
+
+**`parseSceneDoc` draws the distinction `deserializeScene` cannot.** `deserializeScene` is lenient
+and answers `[]` both to "not a diagram" and to "an empty diagram". Those need opposite handling:
+loading an unreadable file as empty wipes what the user has open on account of a mis-click, so a
+non-diagram is refused **without committing anything**. The test is `shapes` being an array and
+nothing more — explicitly not `version`, because a reader of either vintage produces a valid
+document from a file of either vintage.
+
+**`readDocument` names the pipeline the clipboard already had.** Deserialize, `normalize`,
+`pruneOrphans` — `deserializeScene` alone would keep a degenerate rect and a connection naming an
+absent block. The clipboard's `readFragment` and the file load both call `readDocument`, which also
+returns a `dropped` count, because a load that silently lost half a diagram is worse than one that
+says so.
+
+**The load goes through `scene.commit('load', …)`**, which buys more than undo: it clears the draft,
+so a half-drawn rect cannot outlive its document; it runs the reconcile, so a fabric recording
+`interfaces: 2` with no `nif` records gets them minted as part of the load; and it resolves
+dependencies against the geometry the wires arrived with. `host.documentReplaced()` runs after it,
+in that order, because the commit re-derives the world bounds `zoomToFit` reads. Loading as a fresh
+document with history cleared was rejected: `⌘Z` back to what you had is worth more than a clean
+undo stack, and it would have meant reaching past `commit`'s private bookkeeping.
+
+**`⌘S` and `⌘O` are on `window`, in the capture phase**, in `App.svelte`. The diagram's key handler
+is wrong for three reasons: it refuses keys unless the diagram pane owns the keyboard, so `⌘S` would
+fall through to Safari's Save Page precisely when the property panel has focus; it refuses editable
+targets; and `CanvasSurface`'s listeners die when the dock remounts the pane. A shortcut for the
+document cannot be owned by one view of it. Capture was measured, not assumed: `svelte-jsoneditor`'s
+editable cell calls `stopPropagation` on every keydown, so a bubble listener never fires with the
+caret in the panel. `⇧⌘S` is left to the browser.
+
+**Transport choices.** One reused `<input type="file">`, not one per open: Safari needs it in the
+document for a programmatic `.click()`, and `cancel` is Safari 16.4+, so per-call elements leak a
+node on every dismissal. The File System Access API was rejected because Safari implements neither
+half. A timestamped save name was rejected because open `xbn.json`, edit, save, get `xbn.json` back
+is what makes the file feel like the document; the accepted cost is `xbn (1).json` accumulating in
+Downloads.
+
+### Multi-line subtitles
+
+**The budget generalises with the zero- and one-line answers bit-identical.**
+`insetType(hCss, subtitleLines: number)` replaces a boolean, and every number the boolean produced
+is a number the count produces, which makes the existing half of `verify/labels.mjs` the regression
+net (a table of pre-change values is pinned in it). `n` lines cost `n` line-heights and `n` leads,
+so the per-line room is `(availH - INSET_INK_H*LABEL_FONT_PX - n*INSET_LEAD_PX) / (n*INSET_INK_H)`,
+the old `room` exactly at `n = 1`. The largest fitting prefix has a closed form, because that
+expression decreases in `n`; a brute-force loop is asserted to agree at every height.
+
+**The prefix rule is the product decision.** Under all-or-nothing, typing a second line would blank
+a subtitle the block was already showing — a feature that deletes text the user can see. Lines drop
+from the bottom, where the reader has the gist; the full text stays on hover and in the panel.
+Capping at two lines was rejected: it ignores what the user typed, and the height budget already
+bounds the cost.
+
+**One shared size, chosen by the widest line** — one `fitFontPx` over a measurer that maxes across
+the lines. Lines at different sizes read as ragged, and `n` searches would multiply the probe count
+in exactly the zoom band the cache fixes. A line that cuts down to nothing but an ellipsis comes
+back empty but **keeps its slot**, or the text below it would jump as the box zoomed past its width.
+
+**`insetBaselines` uses `Math.trunc`, not `Math.round`.** The one-line code placed baselines at
+`cy ∓ Math.floor(gap * dpr / 2)`, a symmetric floor of the magnitude; `trunc` of a signed offset is
+the same floor, and `round` is off by one device pixel wherever `gap * dpr` is odd — every size a
+shrunk label takes. Plate boundaries go at the midpoint of consecutive baselines rather than hugging
+each line's ink, which would leave a sliver (on a FIFO, a stub of divider) between plates; at one
+line that midpoint is `cy` exactly.
+
+### The text width cache
+
+The grid explains the zoom band of the Safari slowdown; it does not explain "more than twenty
+shapes", because the grid's cost is independent of shape count. Labels are. `drawInsetLabel` reaches
+`measureText` through `fitFontPx`'s binary search, whose one-probe fast path holds only while the
+label fits at the ceiling — for typical blocks, until about `z = 0.48`, after which the fit falls
+through to `fitText`'s own probes, and `insetType` switches the subtitle on in the same band. A box
+went from about one measurement a frame to ten or sixteen, at integer sizes that change every frame
+during a pinch.
+
+`cachedTextWidth` in `canvas/text.ts` is a module-level `Map<fontShorthand, Map<string, number>>`.
+Module-level because a text advance is a pure function of `(shorthand, string)` — the dpr is inside
+the shorthand and the theme decides colour, not metrics — and because it must be reachable from
+callers with no `DrawContext`: `tabRect` runs from `hitTest` through `HitContext.measure`. Measured:
+24 two-line boxes at `z = 0.61` cost 26 `measureText` calls cold and **zero** on every repeat frame.
+`flagMeasurer` in the timeline is deliberately not cached, its key space being unbounded.
+
+- **`cachedTextWidth` assigns the font; `measureAt` does not.** Several subtitle lines are measured
+  at one size, so the assignment hoists out of the loop; three lines cost the same four font sets as
+  one. `cachedTextWidth` still assigns unconditionally, hit or miss, so promises like
+  `fitInsetLine`'s "leaves `ctx.font` at the size it chose" survive.
+- **The cap is global**, 4096 entries across the whole table, then dropped wholesale. Per-font is
+  not a bound: one string at eleven sizes is eleven entries in eleven maps. An LRU would pay a touch
+  on every hit to optimise a case that does not arise — the live key space is in the hundreds.
+- **Three obvious clears are wrong** and the source says so: not per frame (not surviving between
+  frames is the defect), not on a dpr change (the dpr is in the key), not on a theme change. The one
+  that would be needed, on `document.fonts.ready`, does not apply: every font stack is system fonts.
+
+## Defects, and what they teach
+
+**A `<kind>.props.ts` must not import its `<kind>.ts`.** The kind file is what `register.ts`
+imports, so the pair forms a cycle, and the props module consumes the values while still evaluating
+its top-level array — temporal dead zone. The app died at load with
+`Cannot access 'MIN_SPACING' before initialization`. Anything the two share lives in
+`<kind>-geom.ts`.
+
+**Every bus link lost its arrowhead because the head's axis-aligned box was tested.** `headIsClear`
+asked whether the head's BOX overlapped either endpoint's block. An axis-aligned box is exact only
+for an axis-aligned triangle: rotate the head and the corner behind a barb swings past the tip's
+plane, so the box overlaps the very face the arrow points at. Rectilinear routes always arrived
+square, so this never showed; straight bus links made a glancing arrival the ordinary case. What
+makes a blob is the wedge sitting inside a block, so the test is now the head's base point — a
+point, so nothing needs deflating and no tolerance is needed. Found only with pixels: the geometry
+was right and the decision was wrong.
+
+**A check can be weakened by a change it never mentions.** Lengthening interfaces to 48 made six of
+them not fit a 336-unit face, so an interface-packing group was relaxed to five; when the length
+became 32 the relaxation outlived its reason until someone noticed, and the group is back to six. A
+check relaxed to accommodate a constant should name the constant. Its companion lesson: a check
+asserting "a free slot is found" must stay clear of the case where there is none, or it asserts
+something the code explicitly refuses to promise.
+
+**A property writer must return `s` by reference when nothing changed.** `size`'s `read` on a
+bounded queue goes through the derived box, so it can never return the width that was typed — which
+means `applyDocument` calls the writer on every later commit, and an unconditional `{ ...s }`
+produced three undo entries that restored a byte-identical scene. Any writer whose `read` cannot
+reproduce what the user typed has this exposure; `reroute` has the same one.
+
+**Resize folds a flip before anything takes an absolute value.** `resizeBox` encodes "dragged past
+the far edge" as a negative extent that `normalizeRect` folds; the FIFO's flow extent took
+`Math.abs` first, so the box stayed anchored at the dragged edge. And a minimum length applied about
+the origin grew the edge the drag had pinned — the floor belongs in `resize`, the only place that
+knows which handle moved, XOR'd against the flip.
+
+**A selected parent's handles made its own children ungrabbable.** An interface sits where its
+parent's edge grab zone runs, and a selected shape's handles beat any body under them, so pressing a
+port resized the fabric. The rule that handles win exists to stop an unrelated shape stealing a
+resize; a child is not unrelated, so a selected shape's handles yield where its own children lie.
+
+**Inserting a waypoint deleted it in the same gesture.** `collapseCurve` dropped any waypoint on the
+chord between its neighbours, by analogy with `collapseRoute` — and inserting into a straight curve
+puts the new point exactly on the chord. Clicking the badge recorded an undo entry and nothing else.
+An analogy between two families is not a reason to share a normalisation.
+
+**A decoration nothing asserts on can be wrong for a whole iteration.** The modport tick's two
+branches computed the same endpoints in opposite order, so master and slave differed only in colour
+despite two comments saying it pointed out or in.
+
+**A label plate wider than its box erased the outline, and missed the descenders.** Ink around a
+`middle` baseline is asymmetric (0.43 above, 0.52 below), so a plate centred on the line misses a
+`y`'s tail. `fitText` bounds width alone: anything drawn inside a box also needs a floor on the
+box's projected depth, or it overflows when zoomed out.
+
+**An extraction orphans a doc block.** `drawInsetLabel`'s rationale — including the rule that
+`fillText`'s fourth argument condenses rather than truncates — ended up above a helper inserted
+between comment and function; later a `theme.ts` comment sat twenty-five lines above its constant.
+Moving code between a comment and its subject is invisible to every tool.
+
+**The checks had their own defects.** `components.mjs` imported `scene/registry.ts` by URL inside
+`page.evaluate`, which after an HMR update resolves to a second module instance with an empty
+registry; uncaught, it killed the suite and every later one. A group drew at a hard-coded `y + 620`,
+off the diagram and onto the trace panel. A group tested "on the border" against a box's midpoint,
+passing for the wrong reason until the geometry changed. And after the grid's default flipped, every
+`finally` in `grid.mjs` restored the old mode, so the suite would have stayed green testing a
+renderer that no longer shipped.
+
+**A bubble-phase `⌘S` never fired from the property panel.** Found by a check that dwelt on the hard
+case rather than the easy one, then diagnosed with a four-phase probe.
+
+**A per-map cache cap was not a cap.** The table reached 5052 entries against a stated bound of 4096
+— one string at many sizes spreads across many inner maps.
+
+**`CanvasTooltip` keyed `{#each}` on each line's text.** Latent until subtitles split on newlines;
+`"AW\nAW"` is a duplicate-key crash. Keyed on the index, which is correct because the tooltip is
+rebuilt per hover.
+
+## How it was verified
+
+Two new suites arrived with the components, `components.mjs` and `network.mjs`, and `file.mjs` with
+save/open. Coverage is arithmetic where the thing is arithmetic — the spline's straightness, cusps
+and end tangents, the bow rule through `window.__curve`, the subtitle budget's closed form against a
+loop — and pixels where only pixels can see it: dividers lit in a held-open creation ghost, bright
+ink inside a port and none past its outward edge, a probe just off an arrow's axis where only a barb
+puts ink. The fold is asserted as `__resolve.rerouteAll(shapes) === shapes` by reference on a
+committed scene, which is the fixed-point property, the no-spurious-undo property and a cycle
+detector at once; a seeded document with a wire bound to a port proves the origin defect gone. File
+coverage: save writes exactly what `__dump` projects, a load is one step labelled `load` and one
+`⌘Z` restores the previous document byte-identically, a non-diagram leaves document and history
+untouched, a fabric loaded without interfaces gets them minted by the load, and `⌘S` saves with the
+caret in the property editor with the browser dialog suppressed. Checks were written to fail against
+the commit before them; the few that could not say so. The Safari timing itself is not assertable —
+rasterisation happens in Safari's GPU process after `draw()` returns — so the checks count
+measurements and the milliseconds were confirmed by hand. Manual passes on a Retina display at fit,
+100% and 200% covered port hairlines, rotated `e`/`w` labels, loopbacks, and icon weight.
+
+The iteration ended at 612 assertions across eleven dev suites, plus 17 in `verify/production.mjs`
+against the built bundle.
