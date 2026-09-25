@@ -40,8 +40,9 @@
 
 <style>
   /*
-    `contain: strict` needs an explicit size, and the dock's `.sv-dock__content` is a flex item
-    whose height flexbox resolves -- so 100% is definite here. `overflow: hidden` is the belt to
+    The canvas stage inside a panel is `contain: strict`, which needs an explicit size, and the
+    dock's `.sv-dock__content` is a flex item whose height flexbox resolves -- so 100% is definite
+    here. `overflow: hidden` is the belt to
     the braces in app.css: nothing in this app scrolls except a panel's own inner content.
   */
   .panel-host {
