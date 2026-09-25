@@ -524,7 +524,7 @@ t.ok(
       return md.apply(this, a);
     };
     const count = (fn) => {
-      window.__textCache('clear');
+      window.__textCache.clear();
       fonts = 0;
       measures = 0;
       fn();
@@ -998,23 +998,27 @@ t.ok(
       const g = document.createElement('canvas').getContext('2d');
       const fit = window.__insetFit;
 
-      window.__textCache('clear');
+      window.__textCache.clear();
       const firstFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
       const repeatFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
 
-      // Two sizes of one string must not collide: the size is inside the cache key.
-      window.__textCache('clear');
-      g.font = `16px ${FAMILY}`;
-      const small = g.measureText('REGFILE').width;
-      g.font = `26px ${FAMILY}`;
-      const big = g.measureText('REGFILE').width;
+      // Two sizes of one string must not collide: the size is inside the cache key. Through the
+      // cache, both ways round, so a key that dropped the size would hand back the first width.
+      window.__textCache.clear();
+      const width = window.__textCache.width;
+      const sizes = count(() => {
+        width(g, `16px ${FAMILY}`, 'REGFILE');
+        width(g, `26px ${FAMILY}`, 'REGFILE');
+      });
+      const small = width(g, `16px ${FAMILY}`, 'REGFILE');
+      const big = width(g, `26px ${FAMILY}`, 'REGFILE');
 
       // The cap is a leak guard: the key space only grows unboundedly through editing.
-      window.__textCache('clear');
+      window.__textCache.clear();
       for (let i = 0; i < 5200; i++) fit(g, `name_${i}`, 26, 16, 80);
-      const bounded = window.__textCache().size;
+      const bounded = window.__textCache.size();
 
-      return { firstFit, repeatFit, small, big, bounded };
+      return { firstFit, repeatFit, sizes, small, big, bounded };
     } finally {
       P.measureText = md;
     }
@@ -1027,8 +1031,8 @@ t.ok(
   );
   t.ok(
     'two sizes of one string do not collide',
-    cost.small > 0 && cost.big > cost.small,
-    JSON.stringify({ small: cost.small, big: cost.big }),
+    cost.sizes === 2 && cost.small > 0 && cost.big > cost.small,
+    JSON.stringify({ measured: cost.sizes, small: cost.small, big: cost.big }),
   );
   t.ok('and the cache is bounded', cost.bounded <= 4096, String(cost.bounded));
 }
@@ -1076,7 +1080,7 @@ t.ok(
       return measures;
     };
     try {
-      window.__textCache('clear');
+      window.__textCache.clear();
       const cold = frame();
       const warm = frame();
       const again = frame();

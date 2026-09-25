@@ -53,8 +53,6 @@ const widths = new Map<string, Map<string, number>>();
 
 /** Entries across every inner map, so the cap below is a bound on the whole table. */
 let entries = 0;
-let hits = 0;
-let misses = 0;
 
 /**
  * Entries kept before the table is dropped wholesale.
@@ -114,11 +112,7 @@ export function cachedTextWidth(ctx: CanvasRenderingContext2D, font: string, tex
 function measureAt(ctx: CanvasRenderingContext2D, font: string, text: string): number {
   const byText = widths.get(font);
   const known = byText?.get(text);
-  if (known !== undefined) {
-    hits++;
-    return known;
-  }
-  misses++;
+  if (known !== undefined) return known;
   const w = ctx.measureText(text).width;
   if (entries >= CACHE_CAP) {
     widths.clear();
@@ -135,24 +129,15 @@ function measureAt(ctx: CanvasRenderingContext2D, font: string, text: string): n
   return w;
 }
 
-/**
- * How the cache is doing. Exposed on `window` un-gated, for the same reason `__gridMode` is: the
- * thing being measured has to be the thing that ships.
- */
-export function textCacheStats(): { size: number; fonts: number; hits: number; misses: number } {
-  return { size: entries, fonts: widths.size, hits, misses };
-}
-
-export function resetTextCacheStats(): void {
-  hits = 0;
-  misses = 0;
+/** Entries across the whole table. For checks that bound it; nothing in the app calls this. */
+export function textCacheSize(): number {
+  return entries;
 }
 
 /** Drops every entry. For checks that need a cold cache; nothing in the app calls this. */
 export function clearTextCache(): void {
   widths.clear();
   entries = 0;
-  resetTextCacheStats();
 }
 
 /* ------------------------------------------------------------------- the fitters ---- */

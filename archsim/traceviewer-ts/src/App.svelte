@@ -1,16 +1,8 @@
 <script lang="ts">
   import ChromeTooltip from './components/ChromeTooltip.svelte';
   import WorkspaceShell from './components/WorkspaceShell.svelte';
-  import {
-    DotGrid,
-    getGridMode,
-    getGridTiers,
-    setGridMode,
-    setGridTiers,
-    type GridMode,
-    type GridTiers,
-  } from './lib/canvas/grid-renderer';
-  import { clearTextCache, resetTextCacheStats, textCacheStats } from './lib/canvas/text';
+  import { DotGrid } from './lib/canvas/grid-renderer';
+  import { cachedTextWidth, clearTextCache, textCacheSize } from './lib/canvas/text';
   import { darkTheme } from './lib/canvas/theme';
   import { keys } from './lib/keys';
   import { clearWorkspace } from './lib/dock/layout';
@@ -102,45 +94,6 @@
     return () => window.removeEventListener('keydown', onKey, true);
   });
 
-  /*
-    Iteration 3.2 measurement scaffolding, and deliberately NOT inside the DEV block below: the
-    grid defect lives in Safari's GPU process, the sweep that measures it has to run against the
-    build that ships, and gating the switch behind a different build mode than the one under test
-    is the class of mistake both triage reports kept catching. Call with no argument to read the
-    mode, with one to set it and repaint. Comes out when 3.2 picks a winner.
-  */
-  Object.assign(window, {
-    __gridMode: (mode?: GridMode): GridMode => {
-      if (mode !== undefined) {
-        setGridMode(mode);
-        session.renderer.requestFrame();
-      }
-      return getGridMode();
-    },
-    __gridTiers: (tiers?: GridTiers): GridTiers => {
-      if (tiers !== undefined) {
-        setGridTiers(tiers);
-        session.renderer.requestFrame();
-      }
-      return getGridTiers();
-    },
-    /*
-      The text width cache's counters, beside `__gridMode` and NOT inside the DEV block below,
-      for exactly the same reason: iteration 6.3's second Safari fix is a cache, "is the cache
-      working" is a number rather than an impression, and the number has to come from the build
-      that ships.
-
-      `misses` should be 0 across a repeat frame at a resting zoom. During a pinch it should be
-      bounded by the lines drawn times the whole device sizes the sweep crossed -- NOT by the box
-      count, which is the shape of the claim.
-    */
-    __textCache: (reset?: 'reset' | 'clear'): ReturnType<typeof textCacheStats> => {
-      if (reset === 'clear') clearTextCache();
-      else if (reset === 'reset') resetTextCacheStats();
-      return textCacheStats();
-    },
-  });
-
   if (import.meta.env.DEV) {
     Object.assign(window, {
       __session: session,
@@ -153,8 +106,8 @@
       // Pure, and the one part of the timeline a browser check cannot reach through the DOM.
       __tickTiers: tickTiers,
       /*
-        The grid as a pure function of a context it is handed, so a browser check can render each
-        `GridMode` into its own canvas and diff them against each other.
+        The grid as a pure function of a context it is handed, so a browser check can render it
+        into its own canvas and diff it against a per-dot reference.
 
         Reading back from the live canvas instead would not do: it is created
         `{ desynchronized: true }`, and low-latency canvases have a history of returning unflushed
@@ -175,6 +128,11 @@
         /** For checks that need to hold one across renders, i.e. that test cache HITS. */
         DotGrid,
       },
+      /*
+        The text width cache, so a check can start from a cold one and bound its size. Through
+        the app's own module instance, since the cache is module state.
+      */
+      __textCache: { clear: clearTextCache, size: textCacheSize, width: cachedTextWidth },
       /*
         The router as a pure function, for the same reason as `__grid`: routing is the part of
         connections most likely to be subtly wrong in a way a screenshot will not show, and a

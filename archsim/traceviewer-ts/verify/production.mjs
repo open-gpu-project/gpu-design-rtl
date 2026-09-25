@@ -8,24 +8,19 @@ import { open, suite, PREVIEW_URL } from './harness.mjs';
 const t = suite('production bundle');
 const { browser, page, errors } = await open(PREVIEW_URL, { clearStorage: false });
 
-/*
-  The shipped grid mode, read off the BUILT bundle.
-
-  `__gridMode` is deliberately not behind `import.meta.env.DEV`, and this is the only suite that
-  can prove it: a dev-only handle would read `'strips'` here and be absent in production, which is
-  precisely the class of mistake the two Safari triage reports kept catching.
-*/
-t.ok(
-  'the production build ships the strip cache, and still exposes the handle to check it',
-  (await page.evaluate(() => window.__gridMode?.())) === 'strips',
-  String(await page.evaluate(() => window.__gridMode?.())),
-);
 page.on('console', (m) => {
   if (m.type() === 'error') errors.push('console: ' + m.text());
 });
 
 t.ok('loads cleanly', errors.length === 0, errors.slice(0, 3).join(' | '));
-t.ok('DEV hooks are stripped', await page.evaluate(() => window.__scene === undefined));
+/*
+  Every `window.__*` handle is a DEV hook, so the built bundle must carry none. Svelte's own
+  `__svelte` version marker is the one global of that shape the framework itself sets.
+*/
+const leaked = await page.evaluate(() =>
+  Object.getOwnPropertyNames(window).filter((k) => k.startsWith('__') && k !== '__svelte'),
+);
+t.ok('DEV hooks are stripped', leaked.length === 0, leaked.join(','));
 t.ok('dock rendered', (await page.locator('.sv-dock').count()) > 0);
 const builtPanels = (
   await page.evaluate(() =>

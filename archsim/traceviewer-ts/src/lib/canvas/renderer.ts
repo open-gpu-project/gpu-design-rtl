@@ -76,7 +76,7 @@ export class Renderer {
     // is `{ alpha: false }` and is never cleared, a partially covered column would retain a
     // fraction of the previous frame's dot colour every frame -- a 1px smear down the right edge
     // that builds up over a sustained pan. Filling the bitmap outright also removes one of the
-    // frame's two transform switches, and hands `drawDotGrid` the space it resets to anyway.
+    // frame's two transform switches, and hands `DotGrid` the space it resets to anyway.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
