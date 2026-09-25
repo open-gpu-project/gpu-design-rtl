@@ -217,14 +217,13 @@ t.ok(
 );
 
 /*
-  Dependency order is established by `copyFragment`, not repaired by `readFragment`, because
-  reordering raw records would mean knowing which keys of a bag hold names -- exactly the
-  kind-specific knowledge the `renameRef` route exists to avoid.
+  A copy keeps its z-order, even when a block has been brought in front of its own wire.
 
-  So the guarantee under test is that a copy taken from an inverted z-order still emits its
-  blocks first. `bringToFront` on a block puts it after the wires, and `deserializeScene` is
-  single-pass: a wire whose endpoint has not been built yet loses its `source`/`target` write
-  and is then dropped as degenerate, with nothing raised anywhere.
+  The loader is two-pass -- every block is built before any connection resolves its endpoints --
+  so a wire ahead of its blocks in the document is fine, and reordering the copy to put blocks
+  first would only restack what was pasted. So the guarantee under test is both halves: the
+  document comes out in the order it was selected in, and it still reads back whole, with the
+  wire on the blocks it named.
 */
 const ordered = await page.evaluate(() => {
   const rect = (name, x) => ({
@@ -260,13 +259,23 @@ const ordered = await page.evaluate(() => {
   const doc = window.__fragment.copyFragment(inverted, new Set(inverted.map((x) => x.name)));
   const kinds = doc === null ? [] : doc.shapes.map((x) => x.kind);
   const back = doc === null ? [] : window.__fragment.readFragment(doc, new Set());
-  return { loaded: loaded.length, kinds, back: back.map((x) => x.kind) };
+  const wire = back.find((x) => x.kind === 'conn');
+  return {
+    loaded: loaded.length,
+    selected: inverted.map((x) => x.name),
+    copied: doc === null ? [] : doc.shapes.map((x) => x.name),
+    kinds,
+    back: back.map((x) => x.name),
+    ends: wire === undefined ? null : [wire.from, wire.to],
+  };
 });
 t.ok(
-  'a copy taken from an inverted z-order still emits its blocks before its wires',
+  'a copy taken from an inverted z-order keeps that order, and reads back with the wire attached',
   ordered.loaded === 3 &&
-    ordered.kinds.indexOf('conn') === ordered.kinds.length - 1 &&
-    ordered.back.filter((k) => k === 'conn').length === 1,
+    ordered.kinds[0] === 'conn' &&
+    JSON.stringify(ordered.copied) === JSON.stringify(ordered.selected) &&
+    JSON.stringify(ordered.back) === JSON.stringify(ordered.selected) &&
+    JSON.stringify(ordered.ends) === JSON.stringify(['a', 'b']),
   JSON.stringify(ordered),
 );
 

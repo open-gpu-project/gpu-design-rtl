@@ -39,7 +39,7 @@
     insetType,
     subtitleLines,
   } from './lib/scene/shapes/heading';
-  import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
+  import { copyFragment, readFragment } from './lib/scene/fragment';
   import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
   import { deserializeScene, readDocument, serializeScene } from './lib/scene/serialize';
   import type { Shape } from './lib/scene/shape';
@@ -182,7 +182,7 @@
         drive against a hand-built document: the rename rules it implements are invisible on
         screen right up until a pasted wire is attached to the wrong block.
       */
-      __fragment: { copyFragment, readFragment, dependencyOrder, translateAll },
+      __fragment: { copyFragment, readFragment },
       /** The two naming rules, so the series behaviour can be asserted without a scene. */
       __names: { nextFreeIndexedName, uniqueName },
       /** What the marquee's band catches, as a pure function of a rectangle. */

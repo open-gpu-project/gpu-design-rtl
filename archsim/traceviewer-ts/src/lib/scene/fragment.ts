@@ -19,52 +19,6 @@ import type { Shape, ShapeName } from './shape';
  */
 
 /**
- * Stable order in which every shape follows everything in the fragment it depends on.
- *
- * This was written because `deserializeScene` used to be single-pass, which made the ORDER of a
- * fragment load-bearing: a connection whose endpoint had not been built yet failed
- * `checkEndpoint`, lost its `source`/`target` write, and was dropped as degenerate. Iteration 6
- * made that loader two-pass, so the file path no longer needs this.
- *
- * It is still needed for the CLIPBOARD, which does not go through that loader:
- * `readFragment` builds shapes one at a time so it can mint names as it goes, and a pasted
- * connection ahead of its blocks would hit exactly the old failure. Blocks normally sit below
- * their wires so the z-order already satisfies this -- but `bringToFront` on a block, or
- * `sendToBack` on a wire, inverts it, and nothing in `zorder.ts` maintains the invariant.
- *
- * Kahn's algorithm with the original index as the tie-break, so the fragment's z-order survives
- * wherever the dependencies permit. Returns the input by reference when nothing had to move,
- * the convention every function in `resolve.ts` follows.
- */
-export function dependencyOrder(shapes: readonly Shape[]): readonly Shape[] {
-  const present = new Set(shapes.map((s) => s.name));
-  const pending = shapes.map((s) => ({
-    shape: s,
-    // Only dependencies inside the fragment can constrain the order within it.
-    waiting: new Set(
-      (opsFor(s).dependsOn?.(s) ?? []).filter((d) => present.has(d) && d !== s.name),
-    ),
-  }));
-
-  const out: Shape[] = [];
-  const placed = new Set<ShapeName>();
-  while (out.length < shapes.length) {
-    const next = pending.find((e) => !placed.has(e.shape.name) && e.waiting.size === 0);
-    // A dependency cycle cannot be ordered. It should be impossible -- `conn` refuses to attach
-    // both ends to one block -- so emit the rest as-is rather than looping forever.
-    if (next === undefined) {
-      for (const e of pending) if (!placed.has(e.shape.name)) out.push(e.shape);
-      break;
-    }
-    out.push(next.shape);
-    placed.add(next.shape.name);
-    for (const e of pending) e.waiting.delete(next.shape.name);
-  }
-
-  return out.every((s, i) => s === shapes[i]) ? shapes : out;
-}
-
-/**
  * The selected shapes as a self-contained document, or null when nothing whole is selected.
  *
  * `pruneOrphans` over the filtered sub-array is what implements "a connection comes along only
@@ -78,9 +32,10 @@ export function copyFragment(
 ): SceneDoc | null {
   const keep = pruneOrphans(shapes.filter((s) => ids.has(s.name)));
   if (keep.length === 0) return null;
-  // Safe over a sub-array: the only property that reads its `PropContext` is the computed
-  // `zIndex`, and `serializeShape` skips computed keys.
-  return serializeScene(dependencyOrder(keep));
+  // In z-order, as selected: the loader is two-pass, so a wire may precede its blocks. Safe over a
+  // sub-array: the only property that reads its `PropContext` is the computed `zIndex`, and
+  // `serializeShape` skips computed keys.
+  return serializeScene(keep);
 }
 
 /**
