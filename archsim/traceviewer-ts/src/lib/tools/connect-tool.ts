@@ -18,7 +18,7 @@ const HINT_SELF = 'A connection needs two different blocks.';
 /**
  * Click once on a block's perimeter, click again on another block's: a directed arrow.
  *
- * Two things here deliberately diverge from `RectTool`, which is otherwise the template.
+ * Two things here deliberately diverge from `CreateTool`, which is otherwise the template.
  *
  * First, the preview does NOT go through `scene.setDraft`. `draft` is `$state.raw` and the
  * canvas repaint effect reads it, so assigning it per pointermove is a reactive write at input
@@ -37,8 +37,6 @@ function asPoint(t: Anchor | Vec2): Vec2 {
 }
 
 export class ConnectTool implements Tool {
-  readonly id = 'connect';
-  readonly label = 'Connection';
   readonly defaultCursor = 'crosshair';
 
   /** Set by the first click. Non-null means a connection is pending. */

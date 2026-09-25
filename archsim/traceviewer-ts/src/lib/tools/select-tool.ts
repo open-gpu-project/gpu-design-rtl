@@ -7,8 +7,9 @@ import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
 import { movesWith, rerouteAll } from '../scene/resolve';
+import { samePoint } from '../scene/route';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
-import { registerTool } from './registry';
+import { pressTo, registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
 
 type Drag =
@@ -66,14 +67,7 @@ function fingerprint(s: Shape): string {
   return JSON.stringify(serializeShape(opsFor(s).props, s, NO_CONTEXT));
 }
 
-/** Exact equality: both points came from the same snapped pointer, so no tolerance is wanted. */
-function samePos(a: Vec2, b: Vec2): boolean {
-  return a.x === b.x && a.y === b.y;
-}
-
 export class SelectTool implements Tool {
-  readonly id = 'pointer';
-  readonly label = 'Pointer';
   readonly defaultCursor = 'grab';
 
   #drag: Drag | null = null;
@@ -99,7 +93,7 @@ export class SelectTool implements Tool {
   }
 
   onActivate(c: ToolContext): void {
-    c.setHint('Drag to pan. Press 3 to draw a block.');
+    c.setHint(`Drag to pan.${pressTo('rect', 'draw a block')}`);
   }
 
   onDeactivate(c: ToolContext): void {
@@ -142,7 +136,7 @@ export class SelectTool implements Tool {
           const madeOps = opsFor(made);
           const knob = madeOps
             .handles(made)
-            .find((h) => madeOps.subPartOf?.(made, h.id) !== null && samePos(h.pos, p.snapped));
+            .find((h) => madeOps.subPartOf?.(made, h.id) !== null && samePoint(h.pos, p.snapped));
           if (knob !== undefined) {
             this.#setSubPart(c, {
               shape: made.name,

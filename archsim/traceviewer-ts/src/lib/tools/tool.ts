@@ -41,9 +41,8 @@ export interface ToolContext {
   requestFrame(): void;
 }
 
+/** A tool's behaviour. Its id, label and icon are its `ToolDeclaration`'s, in `registry.ts`. */
 export interface Tool {
-  readonly id: ToolId;
-  readonly label: string;
   readonly defaultCursor: string;
 
   onActivate?(c: ToolContext): void;

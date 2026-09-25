@@ -6,7 +6,7 @@ import { rectFromPoints } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
 import { shapesInRect } from '../scene/bounds';
 import type { DrawContext, ShapeName } from '../scene/shape';
-import { registerTool } from './registry';
+import { pressTo, registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
 
 interface Band {
@@ -26,8 +26,6 @@ interface Band {
  * cannot have it without taking it away.
  */
 export class MarqueeTool implements Tool {
-  readonly id = 'select';
-  readonly label = 'Select';
   readonly defaultCursor = 'crosshair';
 
   #band: Band | null = null;
@@ -43,7 +41,7 @@ export class MarqueeTool implements Tool {
     // otherwise still be here on the way back.
     this.#band = null;
     this.#armed = false;
-    c.setHint(`Drag to select. Hold ${keys('shift')} to add. Press 1 to move things.`);
+    c.setHint(`Drag to select. Hold ${keys('shift')} to add.${pressTo('pointer', 'move things')}`);
   }
 
   onDeactivate(c: ToolContext): void {

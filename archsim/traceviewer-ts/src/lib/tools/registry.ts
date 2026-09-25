@@ -132,6 +132,17 @@ export function toolGroups(): readonly (readonly ToolDescriptor[])[] {
   return grouped;
 }
 
+/** The digit that selects `id`, or null past the ninth tool. For hints that name another tool. */
+export function shortcutFor(id: ToolId): string | null {
+  return toolDescriptor(id).shortcut ?? null;
+}
+
+/** ` Press 3 to draw a block.`, or nothing when the tool has no digit to name. */
+export function pressTo(id: ToolId, what: string): string {
+  const key = shortcutFor(id);
+  return key === null ? '' : ` Press ${key} to ${what}.`;
+}
+
 export function toolDescriptor(id: ToolId): ToolDescriptor {
   const d = build().find((t) => t.id === id);
   if (d === undefined) throw new Error(`no tool registered with id: ${id}`);

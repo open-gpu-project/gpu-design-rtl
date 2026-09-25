@@ -48,9 +48,12 @@ export interface Headed extends ShapeBase {
   readonly description: string;
 }
 
-/** A block in the architecture diagram. */
-export interface RectShape extends Headed {
-  readonly kind: 'rect';
+/** The kinds that are nothing but a box with interfaces on it. See `shapes/plain-box.ts`. */
+export type PlainBoxKind = 'rect' | 'fabric';
+
+/** A box with a heading, carrying network interfaces on the borders its kind offers. */
+export interface PlainBoxShape<K extends PlainBoxKind = PlainBoxKind> extends Headed {
+  readonly kind: K;
   readonly x: number;
   readonly y: number;
   readonly w: number;
@@ -59,6 +62,9 @@ export interface RectShape extends Headed {
   readonly interfaces: number;
 }
 
+/** A block in the architecture diagram. */
+export type RectShape = PlainBoxShape<'rect'>;
+
 /**
  * A switch fabric: a box that carries a row of network interfaces.
  *
@@ -66,15 +72,7 @@ export interface RectShape extends Headed {
  * bottom borders, because a fabric is drawn between the things it connects, and a port on its
  * left or right edge would read as belonging to the neighbour rather than to the fabric.
  */
-export interface FabricShape extends Headed {
-  readonly kind: 'fabric';
-  readonly x: number;
-  readonly y: number;
-  readonly w: number;
-  readonly h: number;
-  /** How many network interfaces sit on its border. Reconciled into `nif` children. */
-  readonly interfaces: number;
-}
+export type FabricShape = PlainBoxShape<'fabric'>;
 
 /** Which end of a bus this interface is. SystemVerilog modport convention. */
 export type Modport = 'master' | 'slave';

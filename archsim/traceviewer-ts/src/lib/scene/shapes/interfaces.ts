@@ -4,12 +4,11 @@ import { makeNif } from './nif';
 import { freeOffset, NIF_LENGTH, spreadOffsets, type NifSpan } from './nif-geom';
 
 /**
- * The `expand` and `interfaceSides` halves of a kind that carries network interfaces.
+ * The `expand` half of a kind that carries network interfaces: how a count becomes children,
+ * and in particular what happens when the count goes DOWN.
  *
- * Shared by `fabric` and `rect`, which differ only in which borders they offer. Written once
- * here rather than twice because the reconcile rules -- how a count becomes children, and in
- * particular what happens when the count goes DOWN -- are the sort of thing that drifts the
- * moment there are two copies.
+ * Called from `plainBoxOps`, which is how both `rect` and `fabric` reach it. Kept apart from
+ * that file because these reconcile rules are about interfaces, not about boxes.
  */
 
 /** The most interfaces one parent may carry. A guard against a typo, not a design limit. */
