@@ -1,4 +1,4 @@
-import { drawBlock, health, open, sized, suite, DEV_URL } from './harness.mjs';
+import { button, drawBlock, health, open, sized, suite, DEV_URL } from './harness.mjs';
 
 /**
  * The dock shell. Iteration 1 shipped the canvas "designed to be hosted in a pane" but never
@@ -47,7 +47,7 @@ t.ok(
   the change that would silently re-break this, and a hardcoded `10001` would still pass.
 */
 {
-  const btn = page.locator('[data-panel-id="diagram"] button[aria-label="Zoom to fit"]').first();
+  const btn = button(page, 'Zoom to fit');
   const box = await btn.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
   await page.waitForTimeout(750);

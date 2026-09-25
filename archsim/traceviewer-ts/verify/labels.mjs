@@ -1,4 +1,4 @@
-import { DEV_URL, open, suite } from './harness.mjs';
+import { DEV_URL, installProbes, open, suite } from './harness.mjs';
 
 /*
   How a block's inset label and subtitle behave as the block gets smaller on screen, for
@@ -30,6 +30,7 @@ import { DEV_URL, open, suite } from './harness.mjs';
 
 const t = suite('labels');
 const { browser, page, errors } = await open(DEV_URL);
+await installProbes(page);
 
 /* ------------------------------------------------------ the height budget, as pure ---- */
 
@@ -507,40 +508,16 @@ t.ok(
       them -- three independent searches would have tripled the probe count and made a
       multi-line subtitle a per-frame regression in exactly the zoom band iteration 6.3 fixes.
     */
-    const P = CanvasRenderingContext2D.prototype;
-    const fd = Object.getOwnPropertyDescriptor(P, 'font');
-    const md = P.measureText;
-    let fonts = 0;
-    let measures = 0;
-    Object.defineProperty(P, 'font', {
-      ...fd,
-      set(v) {
-        fonts++;
-        fd.set.call(this, v);
-      },
-    });
-    P.measureText = function (...a) {
-      measures++;
-      return md.apply(this, a);
-    };
     const count = (fn) => {
       window.__textCache.clear();
-      fonts = 0;
-      measures = 0;
-      fn();
-      return { fonts, measures };
+      const { font, measureText } = window.__count(['font', 'measureText'], fn).counts;
+      return { fonts: font, measures: measureText };
     };
-    let cost;
-    try {
-      cost = {
-        // A width the text does not fit at, so the binary search really runs.
-        oneLine: count(() => many(g, ['WWWWWWWWWW'], 26, 16, 70)),
-        threeLines: count(() => many(g, ['WWWWWWWWWW', 'WWWWWWWWW', 'WWWWWWWW'], 26, 16, 70)),
-      };
-    } finally {
-      Object.defineProperty(P, 'font', fd);
-      P.measureText = md;
-    }
+    const cost = {
+      // A width the text does not fit at, so the binary search really runs.
+      oneLine: count(() => many(g, ['WWWWWWWWWW'], 26, 16, 70)),
+      threeLines: count(() => many(g, ['WWWWWWWWWW', 'WWWWWWWWW', 'WWWWWWWW'], 26, 16, 70)),
+    };
 
     return { widest, pair, drift, cost };
   });
@@ -979,49 +956,33 @@ t.ok(
 */
 {
   const cost = await page.evaluate(() => {
-    const P = CanvasRenderingContext2D.prototype;
-    const md = P.measureText;
-    let measures = 0;
-    P.measureText = function (...a) {
-      measures++;
-      return md.apply(this, a);
-    };
+    const count = (fn) => window.__count(['measureText'], fn).counts.measureText;
 
-    const count = (fn) => {
-      measures = 0;
-      fn();
-      return measures;
-    };
+    const FAMILY = 'ui-sans-serif, system-ui, sans-serif';
+    const g = document.createElement('canvas').getContext('2d');
+    const fit = window.__insetFit;
 
-    try {
-      const FAMILY = 'ui-sans-serif, system-ui, sans-serif';
-      const g = document.createElement('canvas').getContext('2d');
-      const fit = window.__insetFit;
+    window.__textCache.clear();
+    const firstFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
+    const repeatFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
 
-      window.__textCache.clear();
-      const firstFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
-      const repeatFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
+    // Two sizes of one string must not collide: the size is inside the cache key. Through the
+    // cache, both ways round, so a key that dropped the size would hand back the first width.
+    window.__textCache.clear();
+    const width = window.__textCache.width;
+    const sizes = count(() => {
+      width(g, `16px ${FAMILY}`, 'REGFILE');
+      width(g, `26px ${FAMILY}`, 'REGFILE');
+    });
+    const small = width(g, `16px ${FAMILY}`, 'REGFILE');
+    const big = width(g, `26px ${FAMILY}`, 'REGFILE');
 
-      // Two sizes of one string must not collide: the size is inside the cache key. Through the
-      // cache, both ways round, so a key that dropped the size would hand back the first width.
-      window.__textCache.clear();
-      const width = window.__textCache.width;
-      const sizes = count(() => {
-        width(g, `16px ${FAMILY}`, 'REGFILE');
-        width(g, `26px ${FAMILY}`, 'REGFILE');
-      });
-      const small = width(g, `16px ${FAMILY}`, 'REGFILE');
-      const big = width(g, `26px ${FAMILY}`, 'REGFILE');
+    // The cap is a leak guard: the key space only grows unboundedly through editing.
+    window.__textCache.clear();
+    for (let i = 0; i < 5200; i++) fit(g, `name_${i}`, 26, 16, 80);
+    const bounded = window.__textCache.size();
 
-      // The cap is a leak guard: the key space only grows unboundedly through editing.
-      window.__textCache.clear();
-      for (let i = 0; i < 5200; i++) fit(g, `name_${i}`, 26, 16, 80);
-      const bounded = window.__textCache.size();
-
-      return { firstFit, repeatFit, sizes, small, big, bounded };
-    } finally {
-      P.measureText = md;
-    }
+    return { firstFit, repeatFit, sizes, small, big, bounded };
   });
 
   t.ok(
@@ -1066,31 +1027,16 @@ t.ok(
     const v = window.__view;
     v.zoomTo(0.61, v.viewportCenter);
 
-    const P = CanvasRenderingContext2D.prototype;
-    const md = P.measureText;
-    let measures = 0;
-    P.measureText = function (...a) {
-      measures++;
-      return md.apply(this, a);
-    };
     const r = window.__session.renderer;
-    const frame = () => {
-      measures = 0;
-      r.draw();
-      return measures;
-    };
-    try {
-      window.__textCache.clear();
-      const cold = frame();
-      const warm = frame();
-      const again = frame();
-      // One integer device size away, so a handful of lines re-measure and no more.
-      v.zoomTo(0.63, v.viewportCenter);
-      const nudged = frame();
-      return { cold, warm, again, nudged, boxes: sc.shapes.length };
-    } finally {
-      P.measureText = md;
-    }
+    const frame = () => window.__count(['measureText'], () => r.draw()).counts.measureText;
+    window.__textCache.clear();
+    const cold = frame();
+    const warm = frame();
+    const again = frame();
+    // One integer device size away, so a handful of lines re-measure and no more.
+    v.zoomTo(0.63, v.viewportCenter);
+    const nudged = frame();
+    return { cold, warm, again, nudged, boxes: sc.shapes.length };
   });
 
   t.ok('the perf scene really is 24 boxes', frames.boxes === 24, String(frames.boxes));

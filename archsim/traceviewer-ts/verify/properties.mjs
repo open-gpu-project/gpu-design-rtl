@@ -137,8 +137,8 @@ t.ok('a canvas drag moves the block', s.shapes[0].x !== 128);
 t.ok('the panel follows the drag', shown.includes(String(s.shapes[0].x)), shown);
 t.ok('the whole drag is still one history entry', /move/i.test(s.label ?? ''));
 
-const rt = await page.evaluate(async () => {
-  const mod = await import('/src/lib/scene/serialize.ts');
+const rt = await page.evaluate(() => {
+  const mod = window.__doc;
   const doc = window.__dump();
   const again = mod.serializeScene(mod.deserializeScene(doc));
   const dup = mod.deserializeScene({
@@ -453,11 +453,11 @@ t.ok(
   JSON.stringify(T.keys),
 );
 
-// Imported by URL, like the round-trip check above: `serialize.ts` holds no module-level state,
-// so a second instance of it is the same function.
+// Through `window.__doc`, like the round-trip check above, never by URL: `serialize.ts` imports
+// the registry, and after a hot reload a URL import gets a second copy of it with nothing in it.
 const load = (rec) =>
-  page.evaluate(async (r) => {
-    const mod = await import('/src/lib/scene/serialize.ts');
+  page.evaluate((r) => {
+    const mod = window.__doc;
     return mod
       .deserializeScene({ version: 2, shapes: [r] })
       .map((s) => ({ subtitle: s.subtitle, labelMode: s.labelMode, label: s.label }));

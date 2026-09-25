@@ -101,6 +101,104 @@ export const emptySpot = (box) => ({
   y: box.y + box.height - 60,
 });
 
+/** A toolbar or chrome button, by its `aria-label`, inside one panel. */
+export const button = (page, label, panel = 'diagram') =>
+  page.locator(`[data-panel-id="${panel}"] button[aria-label="${label}"]`).first();
+
+/** A world point, as canvas-relative CSS pixels -- what `drawBlock` and `dragOn` take. */
+export const toCanvas = (page, x, y) =>
+  page.evaluate(
+    ([a, b]) => {
+      const p = window.__view.toScreen({ x: a, y: b });
+      return { x: p.x, y: p.y };
+    },
+    [x, y],
+  );
+
+/** Press, move, release, in canvas-relative CSS pixels against the canvas `box`. */
+export async function dragOn(page, box, from, to, { steps = 8, settle = 160 } = {}) {
+  await page.mouse.move(box.x + from.x, box.y + from.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + to.x, box.y + to.y, { steps });
+  await page.mouse.up();
+  await page.waitForTimeout(settle);
+}
+
+/** The scene's names, and its kinds, in z-order. */
+export const shapeNames = (page) => page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+export const shapeKinds = (page) => page.evaluate(() => window.__scene.shapes.map((s) => s.kind));
+
+/**
+ * In-page probes, for checks that count what the page did rather than time it.
+ *
+ * `__count(members, fn)` runs `fn` with each named `CanvasRenderingContext2D` member wrapped in
+ * a counter -- a method, or the setter of an accessor such as `font` -- and returns
+ * `{ counts, result }`. The prototype is restored however `fn` exits.
+ *
+ * `__watch(target, options)` starts counting DOM mutation records under a selector or element,
+ * `__mutations(reset)` reads the count, and `__unwatch()` reads it and disconnects.
+ *
+ * Installed as an init script as well as on the current document, so a check that reloads keeps
+ * them.
+ */
+export async function installProbes(page) {
+  const probes = () => {
+    window.__count = (members, fn) => {
+      const P = CanvasRenderingContext2D.prototype;
+      const counts = Object.fromEntries(members.map((m) => [m, 0]));
+      const saved = members.map((m) => [m, Object.getOwnPropertyDescriptor(P, m)]);
+      for (const [m, d] of saved) {
+        const wrapped =
+          d.set !== undefined
+            ? {
+                set(v) {
+                  counts[m]++;
+                  d.set.call(this, v);
+                },
+              }
+            : {
+                value(...a) {
+                  counts[m]++;
+                  return d.value.apply(this, a);
+                },
+              };
+        Object.defineProperty(P, m, { ...d, ...wrapped });
+      }
+      try {
+        const result = fn();
+        return { counts: { ...counts }, result };
+      } finally {
+        for (const [m, d] of saved) Object.defineProperty(P, m, d);
+      }
+    };
+
+    let observer = null;
+    let seen = 0;
+    window.__watch = (target, options) => {
+      observer?.disconnect();
+      seen = 0;
+      const el = typeof target === 'string' ? document.querySelector(target) : target;
+      observer = new MutationObserver((records) => {
+        seen += records.length;
+      });
+      observer.observe(el, options);
+    };
+    window.__mutations = (reset = false) => {
+      const n = seen;
+      if (reset) seen = 0;
+      return n;
+    };
+    window.__unwatch = () => {
+      const n = seen;
+      observer?.disconnect();
+      observer = null;
+      return n;
+    };
+  };
+  await page.addInitScript(probes);
+  await page.evaluate(probes);
+}
+
 /** Draw a block with the rect tool, in canvas-relative CSS pixels. */
 export async function drawBlock(page, x1, y1, x2, y2) {
   const box = await diagramCanvas(page).boundingBox();

@@ -1,4 +1,15 @@
-import { DEV_URL, diagramCanvas, enumOptions, open, row, suite } from './harness.mjs';
+import {
+  DEV_URL,
+  diagramCanvas,
+  dragOn as dragOnCanvas,
+  enumOptions,
+  open,
+  row,
+  shapeKinds,
+  shapeNames,
+  suite,
+  toCanvas,
+} from './harness.mjs';
 
 /*
   Iteration 6's component kinds: the FIFO, the fabric, and the network interfaces a fabric or a
@@ -41,13 +52,7 @@ const slot = (col, row) => ({
 });
 const within = (p) => p.x > 0 && p.y > 0 && p.x < box.width - 40 && p.y < box.height - 40;
 
-async function dragOn(from, to) {
-  await page.mouse.move(box.x + from.x, box.y + from.y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForTimeout(160);
-}
+const dragOn = (from, to) => dragOnCanvas(page, box, from, to);
 
 /** Draw with a shape tool, then push a property patch onto whatever it made. */
 async function draw(digit, kind, at, size, patch = {}) {
@@ -79,8 +84,8 @@ async function patchShape(name, patch) {
 
 const shape = (name) =>
   page.evaluate((n) => window.__scene.shapes.find((s) => s.name === n) ?? null, name);
-const kinds = () => page.evaluate(() => window.__scene.shapes.map((s) => s.kind));
-const names = () => page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+const kinds = () => shapeKinds(page);
+const names = () => shapeNames(page);
 const nifs = () => page.evaluate(() => window.__scene.shapes.filter((s) => s.kind === 'nif'));
 const clear = async () => {
   await page.evaluate(() => {
@@ -1113,14 +1118,7 @@ const clear = async () => {
   const geom = await shape(fab);
   const pin = (await nifs())[0].name;
 
-  const toScreen = (x, y) =>
-    page.evaluate(
-      ([a, b2]) => {
-        const p = window.__view.toScreen({ x: a, y: b2 });
-        return { x: p.x, y: p.y };
-      },
-      [x, y],
-    );
+  const toScreen = (x, y) => toCanvas(page, x, y);
   const centreOf = async (n) => {
     const s = await shape(n);
     return toScreen(s.x + s.w / 2, s.y + s.h / 2);

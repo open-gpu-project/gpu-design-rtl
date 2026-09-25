@@ -1,4 +1,4 @@
-import { open, suite, PREVIEW_URL } from './harness.mjs';
+import { button, drawBlock, open, suite, PREVIEW_URL } from './harness.mjs';
 
 /**
  * The built bundle, against `vite preview`. The DEV-only `window.__*` hooks are gone here, so
@@ -59,14 +59,8 @@ const sc = await page.evaluate(() => ({
 t.ok('no page scrollbar', sc.page);
 t.ok('no dock pane scrollbar', sc.panes);
 
-const box = await page.locator('[data-panel-id="diagram"] canvas').boundingBox();
-await page.mouse.move(box.x + 120, box.y + 120);
-await page.keyboard.press('Digit3');
-await page.mouse.move(box.x + 120, box.y + 120);
-await page.mouse.down();
-await page.mouse.move(box.x + 320, box.y + 260, { steps: 6 });
-await page.mouse.up();
-await page.waitForTimeout(600);
+await drawBlock(page, 120, 120, 320, 260);
+await page.waitForTimeout(250);
 
 const keys = await page.evaluate(() =>
   [...document.querySelectorAll('[data-path]')]
@@ -132,7 +126,7 @@ t.ok(
   exactly the kind of thing that can be reachable in dev and tree-shaken or mis-ordered in a
   production chunk. Driven purely through the DOM: there are no `window.__*` hooks here.
 */
-const prodBtn = page.locator('[data-panel-id="diagram"] button[aria-label="Select"]');
+const prodBtn = button(page, 'Select');
 const prodBox = await prodBtn.boundingBox();
 await page.mouse.move(prodBox.x + prodBox.width / 2, prodBox.y + prodBox.height / 2, { steps: 4 });
 await page.waitForTimeout(700);

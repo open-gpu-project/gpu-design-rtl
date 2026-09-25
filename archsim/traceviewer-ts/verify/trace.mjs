@@ -1,4 +1,4 @@
-import { DEV_URL, open, suite } from './harness.mjs';
+import { button, DEV_URL, open, suite } from './harness.mjs';
 
 /**
  * Browser checks for the trace panel.
@@ -653,7 +653,7 @@ s.ok(
   tooltips the moment the pointer crossed panels.
 */
 {
-  const btn = page.locator('[data-panel-id="trace"] button[aria-label="Next event"]').first();
+  const btn = button(page, 'Next event', 'trace');
   const box = await btn.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
   await page.waitForTimeout(700);

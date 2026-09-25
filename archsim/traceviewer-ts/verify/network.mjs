@@ -1,4 +1,4 @@
-import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
+import { DEV_URL, diagramCanvas, dragOn, open, suite, toCanvas } from './harness.mjs';
 
 /*
   Iteration 6's curved links: the spline and the waypoint editing on it.
@@ -19,14 +19,7 @@ const { browser, page, errors } = await open(DEV_URL);
 const canvas = diagramCanvas(page);
 const box = await canvas.boundingBox();
 
-const toScreen = (x, y) =>
-  page.evaluate(
-    ([a, b]) => {
-      const p = window.__view.toScreen({ x: a, y: b });
-      return { x: p.x, y: p.y };
-    },
-    [x, y],
-  );
+const toScreen = (x, y) => toCanvas(page, x, y);
 
 async function click(at) {
   await page.mouse.move(box.x + at.x, box.y + at.y);
@@ -35,13 +28,7 @@ async function click(at) {
   await page.waitForTimeout(140);
 }
 
-async function drag(from, to) {
-  await page.mouse.move(box.x + from.x, box.y + from.y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 10 });
-  await page.mouse.up();
-  await page.waitForTimeout(220);
-}
+const drag = (from, to) => dragOn(page, box, from, to, { steps: 10, settle: 220 });
 
 /** Load a document straight in, so every coordinate in a check is one the check chose. */
 async function seed(shapes) {

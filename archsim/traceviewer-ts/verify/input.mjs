@@ -1,4 +1,13 @@
-import { DEV_URL, diagramCanvas, drawBlock, emptySpot, open, suite } from './harness.mjs';
+import {
+  button,
+  DEV_URL,
+  diagramCanvas,
+  drawBlock,
+  emptySpot,
+  installProbes,
+  open,
+  suite,
+} from './harness.mjs';
 
 /*
   Input-path checks for iteration 3.2.
@@ -16,6 +25,7 @@ import { DEV_URL, diagramCanvas, drawBlock, emptySpot, open, suite } from './har
 
 const t = suite('input');
 const { browser, page, errors } = await open(DEV_URL);
+await installProbes(page);
 
 /*
   STEP 4 -- Safari's pinch goes through the rAF accumulator.
@@ -163,32 +173,26 @@ await drawBlock(page, 140, 130, 280, 230);
 await page.keyboard.press('Digit1');
 await page.waitForTimeout(150);
 const spot = emptySpot(box);
-await page.evaluate(() => {
-  window.__mut = 0;
-  const el = document.querySelector('[data-panel-id="properties"]');
-  window.__mo = new MutationObserver((recs) => {
-    window.__mut += recs.length;
-  });
-  window.__mo.observe(el, {
+await page.evaluate(() =>
+  window.__watch('[data-panel-id="properties"]', {
     childList: true,
     subtree: true,
     characterData: true,
     attributes: true,
-  });
-});
+  }),
+);
 
 await page.mouse.click(spot.x, spot.y);
 await page.waitForTimeout(600);
-const firstDeselect = await page.evaluate(() => {
-  const n = window.__mut;
-  window.__mut = 0;
-  return { n, sel: window.__scene.selection.size };
-});
+const firstDeselect = await page.evaluate(() => ({
+  n: window.__mutations(true),
+  sel: window.__scene.selection.size,
+}));
 
 await page.mouse.click(spot.x + 8, spot.y + 8);
 await page.waitForTimeout(600);
 const repeat = await page.evaluate(() => ({
-  n: window.__mut,
+  n: window.__mutations(),
   sel: window.__scene.selection.size,
   gv: window.__host.gestureVersion,
 }));
@@ -204,7 +208,7 @@ t.ok(
   JSON.stringify(repeat),
 );
 
-await page.evaluate(() => window.__mo.disconnect());
+await page.evaluate(() => window.__unwatch());
 
 /*
   ITERATION 5 -- the hover tooltip and the label tab's hit box.
@@ -297,27 +301,15 @@ t.ok(
 const settle = await atWorld(48, 176);
 await page.mouse.move(settle.x, settle.y);
 await page.waitForTimeout(250);
-await page.evaluate(() => {
-  window.__mut = 0;
-  window.__mo = new MutationObserver((rs) => {
-    window.__mut += rs.length;
-  });
-  window.__mo.observe(document.querySelector('[data-panel-id="diagram"]'), {
-    subtree: true,
-    childList: true,
-    attributes: true,
-  });
-});
+await page.evaluate(() =>
+  window.__watch('[data-panel-id="diagram"]', { subtree: true, childList: true, attributes: true }),
+);
 // Started from where the pointer already is, so the teardown of the previous tooltip -- which
 // is a mutation, and a wanted one -- lands before the counter rather than inside it.
 const sweepTo = await atWorld(600, 176);
 await page.mouse.move(sweepTo.x, sweepTo.y, { steps: 40 });
 await page.waitForTimeout(120);
-const sweepMut = await page.evaluate(() => {
-  const n = window.__mut;
-  window.__mo.disconnect();
-  return n;
-});
+const sweepMut = await page.evaluate(() => window.__unwatch());
 t.ok(
   'sweeping the pointer across the canvas mutates the pane not at all: the dwell is the cost',
   sweepMut === 0,
@@ -547,8 +539,7 @@ const chromeTip = () =>
     return el === null ? null : el.textContent.trim();
   });
 
-const toolBtn = (label) =>
-  page.locator(`[data-panel-id="diagram"] button[aria-label="${label}"]`).first();
+const toolBtn = (label) => button(page, label);
 
 /** Rest the pointer on a control and let the dwell run out. */
 async function dwellOn(label) {
@@ -910,18 +901,13 @@ t.ok(
   */
   await page.mouse.move(first.x, first.y + first.height / 2, { steps: 4 });
   await page.waitForTimeout(150);
-  await page.evaluate(() => {
-    window.__sweep = 0;
-    window.__sweepObs = new MutationObserver((r) => (window.__sweep += r.length));
-    window.__sweepObs.observe(document.body, { attributes: true, childList: true, subtree: true });
-  });
+  await page.evaluate(() =>
+    window.__watch(document.body, { attributes: true, childList: true, subtree: true }),
+  );
   // Fast enough that no dwell completes: this measures the cost of moving, not of showing.
   await page.mouse.move(last.x + last.width, last.y + last.height / 2, { steps: 40 });
   await page.waitForTimeout(120);
-  const sweep = await page.evaluate(() => {
-    window.__sweepObs.disconnect();
-    return window.__sweep;
-  });
+  const sweep = await page.evaluate(() => window.__unwatch());
   t.ok(
     'sweeping the toolbar mutates the document not at all: the dwell is the cost',
     sweep === 0,

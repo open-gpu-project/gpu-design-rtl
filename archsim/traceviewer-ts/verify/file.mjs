@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import {
+  button,
   DEV_URL,
   diagramCanvas,
   drawBlock,
@@ -27,8 +28,7 @@ import {
 const t = suite('file');
 const { browser, page, errors } = await open(DEV_URL);
 
-const chromeBtn = (label) =>
-  page.locator(`[data-panel-id="diagram"] button[aria-label="${label}"]`).first();
+const chromeBtn = (label) => button(page, label);
 
 /** Run `trigger`, catch the download it causes, and read it back off disk. */
 async function saveVia(trigger) {

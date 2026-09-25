@@ -403,8 +403,8 @@ t.ok('adding a kind needs no file-format version bump', S.version === 2, `versio
   job, in `connOps.resize`, not a side effect of restoring points off disk. This assertion is
   what notices if it comes back.
 */
-const roundTrip = await page.evaluate(async () => {
-  const mod = await import('/src/lib/scene/serialize.ts');
+const roundTrip = await page.evaluate(() => {
+  const mod = window.__doc;
   const doc = window.__dump();
   const back = mod.deserializeScene(doc);
   return {
@@ -643,10 +643,10 @@ t.ok('and passes an edit that touches only an editable key', gate.clean === 'lab
 /*
   The other half of `fixed`: read-only to the user, not to the loader. `hydrateShape` gates on
   having a writer rather than on being editable, and if it did not, every connection in every
-  saved file would come back as whatever `makeConnection` blanks to.
+  saved file would come back as whatever `connOps.blank` gives.
 */
-const restored = await page.evaluate(async () => {
-  const mod = await import('/src/lib/scene/serialize.ts');
+const restored = await page.evaluate(() => {
+  const mod = window.__doc;
   const doc = window.__dump();
   const record = doc.shapes.find((r) => r.kind === 'conn');
   const c = mod.deserializeScene(doc).find((x) => x.kind === 'conn');

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
+import { DEV_URL, diagramCanvas, installProbes, open, suite } from './harness.mjs';
 
 /*
   Dot-grid checks.
@@ -33,6 +33,7 @@ import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
 
 const t = suite('grid');
 const { browser, page, errors } = await open(DEV_URL);
+await installProbes(page);
 
 const DEV_W = 3092;
 const DEV_H = 1222;
@@ -102,8 +103,8 @@ await page.evaluate(async () => {
 /**
  * Render the reference and the grid into this script's own canvases and diff them.
  *
- * Counters are installed on the prototype around the grid's draw only, and zeroed after the
- * background fill, so neither the background nor the reference lands in the numbers.
+ * Counted around the grid's draw only, so neither the background fill nor the reference lands in
+ * the numbers.
  */
 const render = (z, { w = DEV_W, h = DEV_H, dpr = DPR, camX = CAM_X, camY = CAM_Y } = {}) =>
   page.evaluate(
@@ -134,21 +135,10 @@ const render = (z, { w = DEV_W, h = DEV_H, dpr = DPR, camX = CAM_X, camY = CAM_Y
       window.__refGrid(rc, camX, camY, z, dpr, g.theme);
       const ref = rc.getImageData(0, 0, w, h).data;
 
-      const P = CanvasRenderingContext2D.prototype;
-      const orig = { rect: P.rect, fillRect: P.fillRect, drawImage: P.drawImage };
-      const n = { rect: 0, fillRect: 0, drawImage: 0 };
       const gc = surface();
-      for (const k of Object.keys(orig)) {
-        P[k] = function (...a) {
-          n[k]++;
-          return orig[k].apply(this, a);
-        };
-      }
-      try {
-        g.draw(gc, camX, camY, z, dpr, g.theme);
-      } finally {
-        for (const k of Object.keys(orig)) P[k] = orig[k];
-      }
+      const n = window.__count(['rect', 'fillRect', 'drawImage'], () =>
+        g.draw(gc, camX, camY, z, dpr, g.theme),
+      ).counts;
       const px = gc.getImageData(0, 0, w, h).data;
 
       let maxDelta = 0;
@@ -283,29 +273,15 @@ const reuse = await page.evaluate(
     c.width = w;
     c.height = h;
     const cx = c.getContext('2d');
-    const P = CanvasRenderingContext2D.prototype;
-    const orig = { rect: P.rect, drawImage: P.drawImage };
-    const n = { rect: 0, drawImage: 0 };
-    for (const k of Object.keys(orig)) {
-      P[k] = function (...a) {
-        n[k]++;
-        return orig[k].apply(this, a);
-      };
-    }
-    const pass = (cX, cY) => {
-      for (const k of Object.keys(n)) n[k] = 0;
-      grid.draw(cx, cX, cY, 0.512, dpr, g.theme);
-      return { ...n };
+    const pass = (cX, cY) =>
+      window.__count(['rect', 'drawImage'], () => grid.draw(cx, cX, cY, 0.512, dpr, g.theme))
+        .counts;
+    return {
+      cold: pass(camX, camY),
+      sameCam: pass(camX, camY),
+      vertical: pass(camX, camY + 37.5),
+      horizontal: pass(camX + 37.5, camY),
     };
-    try {
-      const cold = pass(camX, camY);
-      const sameCam = pass(camX, camY);
-      const vertical = pass(camX, camY + 37.5);
-      const horizontal = pass(camX + 37.5, camY);
-      return { cold, sameCam, vertical, horizontal };
-    } finally {
-      for (const k of Object.keys(orig)) P[k] = orig[k];
-    }
   },
   { w: DEV_W, h: DEV_H, dpr: DPR, camX: CAM_X, camY: CAM_Y },
 );

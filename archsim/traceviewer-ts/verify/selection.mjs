@@ -5,6 +5,8 @@ import {
   drawConnection,
   marqueeSelect,
   open,
+  shapeKinds,
+  shapeNames,
   suite,
 } from './harness.mjs';
 
@@ -26,9 +28,9 @@ const t = suite('selection');
 const { browser, page, errors } = await open(DEV_URL);
 
 const fit = () => page.evaluate(() => window.__host.zoomToFit());
-const names = () => page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+const names = () => shapeNames(page);
 const selection = () => page.evaluate(() => [...window.__scene.selection].sort());
-const kinds = () => page.evaluate(() => window.__scene.shapes.map((s) => s.kind));
+const kinds = () => shapeKinds(page);
 /**
  * A band in canvas CSS pixels around the rect at each of `indices`, padded by 8 screen px.
  *
