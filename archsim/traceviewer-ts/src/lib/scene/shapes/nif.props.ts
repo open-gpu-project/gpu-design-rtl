@@ -1,22 +1,18 @@
-import { descriptionProp, kindProp, labelProp, nameProp, zIndexProp } from '../../props/common';
+import {
+  asIntPair,
+  bad,
+  descriptionProp,
+  kindProp,
+  labelProp,
+  nameProp,
+  zIndexProp,
+} from '../../props/common';
 import { propSchema, type PropDef, type PropSchema, type WriteResult } from '../../props/spec';
 import type { Modport, NifShape } from '../shape';
 import { GRID } from '../../grid';
 import { MIN_NIF_LENGTH, NIF_DEPTH, NIF_LENGTH } from './nif-geom';
 
 type Write = WriteResult<NifShape>;
-
-function bad(error: string): Write {
-  return { ok: false, error };
-}
-
-function asIntPair(v: unknown): [number, number] | null {
-  if (!Array.isArray(v) || v.length !== 2) return null;
-  const [a, b] = v;
-  if (typeof a !== 'number' || typeof b !== 'number') return null;
-  if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
-  return [a, b];
-}
 
 const SIDE_VALUES = ['n', 'e', 's', 'w'] as const;
 const MODPORTS: readonly Modport[] = ['master', 'slave'];

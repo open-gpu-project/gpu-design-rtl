@@ -1,4 +1,7 @@
 import {
+  asInt,
+  asIntPair,
+  bad,
   descriptionProp,
   kindProp,
   labelModeProp,
@@ -14,22 +17,6 @@ import type { FifoShape } from '../shape';
 import { fifoBox, flowIsFree, MAX_CELLS, MIN_SPACING } from './fifo-geom';
 
 type Write = WriteResult<FifoShape>;
-
-function bad(error: string): Write {
-  return { ok: false, error };
-}
-
-function asInt(v: unknown): number | null {
-  return typeof v === 'number' && Number.isInteger(v) ? v : null;
-}
-
-function asIntPair(v: unknown): [number, number] | null {
-  if (!Array.isArray(v) || v.length !== 2) return null;
-  const [a, b] = v;
-  if (typeof a !== 'number' || typeof b !== 'number') return null;
-  if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
-  return [a, b];
-}
 
 /**
  * The FIFO's properties.

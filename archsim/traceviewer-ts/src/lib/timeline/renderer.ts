@@ -1,6 +1,7 @@
 import { FrameLoop } from '../canvas/frame-loop';
 import { alignStroke } from '../canvas/pixel';
 import { fitText } from '../canvas/text';
+import { MONO, SANS } from '../canvas/theme';
 import { localName, type SignalId, type Tick, type TraceDoc } from '../trace/model';
 import type { SelectedEvent } from '../trace/store.svelte';
 import { cursorFlagBox, cursorMeasurer, flagMeasurer, visibleFlags, type FlagBox } from './layout';
@@ -23,9 +24,6 @@ export interface TimelineRenderInput {
   readonly selectedSignal: SignalId | null;
   readonly selectedEvent: SelectedEvent | null;
 }
-
-const FONT = 'ui-sans-serif, system-ui, sans-serif';
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 /**
  * Drop leading path segments until the name fits, so the informative tail survives.
@@ -294,7 +292,7 @@ export class TimelineRenderer {
     ctx.rect(0, view.laneTop, view.laneX, view.laneH);
     ctx.clip();
 
-    ctx.font = `11px ${FONT}`;
+    ctx.font = `11px ${SANS}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
@@ -316,7 +314,7 @@ export class TimelineRenderer {
     // Header corner, then the border, so the border sits above both.
     ctx.fillStyle = t.gutterBg;
     ctx.fillRect(0, 0, view.laneX, TIMESCALE_H);
-    ctx.font = `10px ${FONT}`;
+    ctx.font = `10px ${SANS}`;
     ctx.fillStyle = t.gutterTextDim;
     ctx.textBaseline = 'middle';
     ctx.fillText('Signal', 10, TIMESCALE_H / 2 + 0.5);

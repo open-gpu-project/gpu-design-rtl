@@ -1,6 +1,16 @@
 import { CONN_LABEL_OFFSET_MAX } from '../../canvas/theme';
 import type { Vec2 } from '../../geom/types';
 import {
+  asIntPair,
+  asString,
+  bad,
+  descriptionProp,
+  kindProp,
+  labelProp,
+  nameProp,
+  zIndexProp,
+} from '../../props/common';
+import {
   propSchema,
   type PropContext,
   type PropDef,
@@ -13,23 +23,6 @@ import { collapseRoute, isRectilinear } from '../route';
 import type { ConnectionShape, Shape } from '../shape';
 
 type Write = WriteResult<ConnectionShape>;
-
-function bad(error: string): Write {
-  return { ok: false, error };
-}
-
-function asString(v: unknown): string | null {
-  return typeof v === 'string' ? v : null;
-}
-
-/** A tuple of exactly two integers. The twin of `rect.props.ts`'s, for `labelOffset`. */
-function asIntPair(v: unknown): [number, number] | null {
-  if (!Array.isArray(v) || v.length !== 2) return null;
-  const [a, b] = v;
-  if (typeof a !== 'number' || typeof b !== 'number') return null;
-  if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
-  return [a, b];
-}
 
 /** A `[block, anchor]` pair. Both halves are text; neither may be empty. */
 function asEndpoint(v: unknown): [string, string] | null {
@@ -102,43 +95,15 @@ function checkEndpoint(
  * keyed by `kind`, so a new kind is new data in the same format, not a new format.
  */
 const props: readonly PropDef<ConnectionShape>[] = [
-  {
-    key: 'kind',
-    title: 'Kind',
-    doc: 'Which type of object this is. Selects how it is drawn and which properties it has. Fixed when the object is created.',
-    mode: 'fixed',
-    type: { type: 'enum', values: ['conn'] },
-    read: () => 'conn',
-  },
-  {
-    key: 'name',
-    title: 'Name',
-    doc: 'Internal identifier for this connection. Must be unique across the diagram — connections and blocks share one namespace — and cannot be empty.',
-    mode: 'edit',
-    type: { type: 'string', minLength: 1 },
-    read: (s) => s.name,
-    write: (s, v, ctx): Write => {
-      const name = asString(v);
-      if (name === null) return bad('Name must be text.');
-      if (name === '')
-        return bad('Name cannot be empty — it is how this connection is identified.');
-      const clash = ctx.shapes.some((o, i) => i !== ctx.index && o.name === name);
-      if (clash) return bad(`Another object is already named “${name}”.`);
-      return { ok: true, shape: { ...s, name } };
-    },
-  },
-  {
-    key: 'label',
-    title: 'Label',
-    doc: 'Text drawn beside the line on the canvas — a bus width, a protocol name. Purely cosmetic and empty by default; unlike a block, a connection with no label draws no text rather than falling back to its name.',
-    mode: 'edit',
-    type: { type: 'string' },
-    read: (s) => s.label,
-    write: (s, v): Write => {
-      const label = asString(v);
-      return label === null ? bad('Label must be text.') : { ok: true, shape: { ...s, label } };
-    },
-  },
+  kindProp('conn'),
+  nameProp(
+    'connection',
+    'Internal identifier for this connection. Must be unique across the diagram — connections and blocks share one namespace — and cannot be empty.',
+  ),
+  labelProp(
+    'connection',
+    'Text drawn beside the line on the canvas — a bus width, a protocol name. Purely cosmetic and empty by default; unlike a block, a connection with no label draws no text rather than falling back to its name.',
+  ),
   {
     key: 'source',
     title: 'Source',
@@ -292,28 +257,13 @@ const props: readonly PropDef<ConnectionShape>[] = [
       return { ok: true, shape: { ...s, labelOffset: [p[0], p[1]] } };
     },
   },
-  {
-    key: 'description',
-    title: 'Description',
-    doc: 'Free-text note describing what this connection carries. Not drawn on the canvas — it appears as a tooltip when you hover the wire, under the connection’s name, so it can be as long as it needs to be without crowding the diagram.',
-    mode: 'edit',
-    type: { type: 'string' },
-    read: (s) => s.description,
-    write: (s, v): Write => {
-      const description = asString(v);
-      return description === null
-        ? bad('Description must be text.')
-        : { ok: true, shape: { ...s, description } };
-    },
-  },
-  {
-    key: 'zIndex',
-    title: 'Draw order',
-    doc: 'Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored. For a connection this also decides which other connections it may bundle onto: it can only join the route of something below it in the stack.',
-    mode: 'computed',
-    type: { type: 'integer', minimum: 0 },
-    read: (_s, ctx: PropContext) => ctx.index,
-  },
+  descriptionProp(
+    'what this connection carries',
+    'Free-text note describing what this connection carries. Not drawn on the canvas — it appears as a tooltip when you hover the wire, under the connection’s name, so it can be as long as it needs to be without crowding the diagram.',
+  ),
+  zIndexProp(
+    'Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored. For a connection this also decides which other connections it may bundle onto: it can only join the route of something below it in the stack.',
+  ),
 ];
 
 export const connProps: PropSchema<ConnectionShape> = propSchema({

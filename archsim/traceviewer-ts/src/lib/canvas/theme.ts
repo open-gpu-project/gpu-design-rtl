@@ -77,6 +77,16 @@ export const darkTheme: Theme = {
   marqueeFill: 'rgba(251, 191, 36, 0.10)',
 };
 
+/* -------------------------------------------------------------------------- type ---- */
+
+/**
+ * The two font families every canvas draws in, the diagram's and the trace panel's alike. Sizes
+ * are per use; the families are not. System fonts only, which is why the text width cache has no
+ * font-load event to clear on (`canvas/text.ts`).
+ */
+export const SANS = 'ui-sans-serif, system-ui, sans-serif';
+export const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 /* ---------------------------------------------------------------- interaction constants ---- */
 
 /** Grab radius for any handle, in CSS pixels. Constant on screen at every zoom. */
@@ -179,7 +189,7 @@ export const TAB_INSET_PX = 4;
  */
 export const TAB_MIN_W_PX = 32;
 
-export const TAB_FONT = `${TAB_FONT_PX}px ui-sans-serif, system-ui, sans-serif`;
+export const TAB_FONT = `${TAB_FONT_PX}px ${SANS}`;
 
 /** Per-character width estimate for a tab label with no canvas to measure against. */
 export const TAB_EST_CHAR_PX = 5.6;
@@ -194,7 +204,7 @@ export const TAB_EST_CHAR_PX = 5.6;
  * glyphs taller than the box holding them -- the same shrink budget `insetType` applies to a
  * block's heading.
  */
-export const NIF_LABEL_FONT = '10px ui-sans-serif, system-ui, sans-serif';
+export const NIF_LABEL_FONT = `10px ${SANS}`;
 export const NIF_LABEL_PAD_PX = 3;
 export const NIF_LABEL_MIN_PX = 11;
 

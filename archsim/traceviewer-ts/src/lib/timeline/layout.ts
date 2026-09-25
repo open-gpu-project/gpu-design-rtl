@@ -13,6 +13,7 @@ import {
   CURSOR_FLAG_PAD_X,
   CURSOR_FLAG_TOP,
   CURSOR_FONT,
+  FLAG_EST_CHAR_PX,
   FLAG_FONT,
   FLAG_MAX_W,
   FLAG_MIN_PX,
@@ -22,9 +23,15 @@ import {
 import { formatTick } from './ticks';
 import type { TimelineView } from './view.svelte';
 
-/** Measures flag labels. Falls back to an estimate when there is no context to measure with. */
+/**
+ * Measures flag labels. Falls back to an estimate when there is no context to measure with.
+ *
+ * Deliberately NOT through the text width cache. Flag labels are record values -- an unbounded
+ * key space that changes as the cursor scrolls through a trace -- so caching them would churn
+ * the table and evict the diagram's entries, which are the ones that repeat every frame.
+ */
 export function flagMeasurer(ctx: CanvasRenderingContext2D | null): (s: string) => number {
-  if (ctx === null) return (s) => s.length * 6.2;
+  if (ctx === null) return (s) => s.length * FLAG_EST_CHAR_PX;
   ctx.font = FLAG_FONT;
   return (s) => ctx.measureText(s).width;
 }

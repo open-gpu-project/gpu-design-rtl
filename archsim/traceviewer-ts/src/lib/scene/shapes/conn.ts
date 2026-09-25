@@ -8,6 +8,7 @@ import {
   CONN_WIDTH_PX,
   CONN_LABEL_MIN_RUN_PX,
   CONN_WIDTH_SEL_PX,
+  SANS,
   STROKE_HIT_PX,
 } from '../../canvas/theme';
 import { expandRect, pointInRect, rectsIntersect, segmentIntersectsRect } from '../../geom/math';
@@ -73,41 +74,68 @@ function drawnPoints(s: ConnectionShape): readonly Vec2[] {
 }
 
 /** Resolve one end against the block it is bound to. Null when the block cannot carry anchors. */
-function anchorOf(block: Shape | undefined, id: string): Anchor | null {
+export function anchorOf(block: Shape | undefined, id: string): Anchor | null {
   if (block === undefined) return null;
   return opsFor(block).resolveAnchor?.(block, id) ?? null;
 }
 
+/** The family a shape asks for at its end of a link. A missing shape asks for nothing. */
+export function preferredPathOf(s: Shape | undefined): PathStyle {
+  return s === undefined ? 'ortho' : (opsFor(s).preferredPath?.(s) ?? 'ortho');
+}
+
 /**
- * Build a connection from two live anchors.
- *
- * Exported so `ConnectTool` and `reroute` share one definition of what the route should be. If
- * they each computed it, the line would visibly jump between the ghost and the committed shape
- * the first time the two implementations drifted apart.
+ * The family of a link between two shapes: a curve only when BOTH ends ask for one. That is what
+ * makes "a plain arrow may still be drawn to a network interface" true by construction -- draw
+ * from a block to an interface and you get a square arrow, because only one end asked.
  */
-export function makeConnection(
-  name: ShapeName,
-  from: ShapeName,
+export function pathBetween(a: Shape | undefined, b: Shape | undefined): PathStyle {
+  return preferredPathOf(a) === 'curve' && preferredPathOf(b) === 'curve' ? 'curve' : 'ortho';
+}
+
+/**
+ * The automatic route from `a` to `b` in `path`'s family.
+ *
+ * The one definition, shared by the connect tool's ghost, its commit and `reroute`. If they each
+ * computed it, the line would visibly jump between the ghost and the committed shape the first
+ * time two implementations drifted apart.
+ *
+ * `b` may be a bare point: the ghost's free end. A curve needs a normal at the far end to bow
+ * away from and a point has none, so a curve to one runs straight until it lands on something.
+ */
+export function autoPoints(
+  path: PathStyle,
   a: Anchor,
-  to: ShapeName,
-  b: Anchor,
+  b: Anchor | Vec2,
   corridors: CorridorQuery,
-  path: PathStyle = 'ortho',
-): ConnectionShape {
+): readonly Vec2[] {
+  if (path !== 'curve') return routeConnection(a, b, corridors);
+  return 'normal' in b ? [a.pos, ...autoWaypoints(a, b), b.pos] : [a.pos, b];
+}
+
+/** A connection with this geometry, and every other field at its default. */
+export function newConnection(g: {
+  readonly name: ShapeName;
+  readonly from: ShapeName;
+  readonly fromAnchor: string;
+  readonly to: ShapeName;
+  readonly toAnchor: string;
+  readonly path: PathStyle;
+  readonly points: readonly Vec2[];
+}): ConnectionShape {
   return {
     kind: 'conn',
-    name,
+    name: g.name,
     label: '',
     labelOffset: [0, 0],
     description: '',
-    from,
-    fromAnchor: a.id,
-    to,
-    toAnchor: b.id,
+    from: g.from,
+    fromAnchor: g.fromAnchor,
+    to: g.to,
+    toAnchor: g.toAnchor,
     routing: 'auto',
-    path,
-    points:
-      path === 'curve' ? [a.pos, ...autoWaypoints(a, b), b.pos] : routeConnection(a, b, corridors),
+    path: g.path,
+    points: g.points,
   };
 }
 
@@ -159,23 +187,18 @@ export const connOps: ShapeOps<ConnectionShape> = {
 
   /** Unbound and degenerate. `normalize` drops it, which is what an incomplete import deserves. */
   blank(name) {
-    return {
-      kind: 'conn',
+    return newConnection({
       name,
-      label: '',
-      labelOffset: [0, 0],
-      description: '',
       from: '',
       fromAnchor: 'e',
       to: '',
       toAnchor: 'w',
-      routing: 'auto',
       path: 'ortho',
       points: [
         { x: 0, y: 0 },
         { x: 0, y: 0 },
       ],
-    };
+    });
   },
 
   /**
@@ -346,8 +369,8 @@ export const connOps: ShapeOps<ConnectionShape> = {
    *
    * Deliberately does not touch `points`: `reroute` owns the geometry, and running it is
    * already the caller's job on both the preview and the commit. Writing a route here as well
-   * would give the two a chance to disagree, which is the same mistake `makeConnection` exists
-   * to prevent between the tool and the router.
+   * would give the two a chance to disagree, which is the same mistake `autoPoints` exists to
+   * prevent between the tool and the router.
    *
    * `routing` is left alone too. A hand-drawn route survives its ends being moved -- that is
    * exactly the case `patchStart` / `patchEnd` were written for.
@@ -530,8 +553,8 @@ export const connOps: ShapeOps<ConnectionShape> = {
     const b = anchorOf(deps.get(s.to), s.toAnchor);
     if (a === null || b === null) return s;
 
-    if (isCurve(s)) {
-      if (s.routing === 'manual') {
+    if (s.routing === 'manual') {
+      if (isCurve(s)) {
         /*
           Only the two ends move. A curve's interior points are the user's waypoints and mean the
           same thing wherever the anchors go -- unlike a rectilinear route, whose interior is a
@@ -545,11 +568,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
         const patched = [a.pos, ...s.points.slice(1, -1), b.pos];
         return samePoints(patched, s.points) ? s : { ...s, points: patched };
       }
-      const auto = [a.pos, ...autoWaypoints(a, b), b.pos];
-      return samePoints(auto, s.points) ? s : { ...s, points: auto };
-    }
-
-    if (s.routing === 'manual') {
       const patched = patchEnd(patchStart(s.points, a.pos), b.pos);
       if (patched.length >= 2 && isRectilinear(patched)) {
         return samePoints(patched, s.points) ? s : { ...s, points: patched };
@@ -559,7 +577,7 @@ export const connOps: ShapeOps<ConnectionShape> = {
       // permanently, and silently demoting them to 'auto' would lose every later edit too.
     }
 
-    const points = routeConnection(a, b, rc.corridors);
+    const points = autoPoints(s.path, a, b, rc.corridors);
     return samePoints(points, s.points) ? s : { ...s, points };
   },
 
@@ -696,7 +714,7 @@ function drawLabel(s: ConnectionShape, dc: DrawContext, dev: readonly Vec2[]): v
 /** The label and the plate under it, at a device-space point. */
 function drawLabelPlate(s: ConnectionShape, dc: DrawContext, cx: number, cy: number): void {
   const { ctx, dpr, theme } = dc;
-  ctx.font = `${Math.round(11 * dpr)}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.font = `${Math.round(11 * dpr)}px ${SANS}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const pad = 3 * dpr;

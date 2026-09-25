@@ -16,16 +16,22 @@ import type { PropContext, PropDef, WriteResult } from './spec';
  * Where you put the result in a kind's `props` array does not matter; `propSchema` sorts.
  */
 
-function bad<S>(error: string): WriteResult<S> {
+/* ------------------------------------------------ value checks, for every writer ---- */
+
+export function bad<S>(error: string): WriteResult<S> {
   return { ok: false, error };
 }
 
-function asString(v: unknown): string | null {
+export function asString(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-/** A tuple of exactly two integers. Used by both `position` and `size`. */
-function asIntPair(v: unknown): [number, number] | null {
+export function asInt(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) ? v : null;
+}
+
+/** A tuple of exactly two integers: a position, a size, an offset. */
+export function asIntPair(v: unknown): [number, number] | null {
   if (!Array.isArray(v) || v.length !== 2) return null;
   const [a, b] = v;
   if (typeof a !== 'number' || typeof b !== 'number') return null;
@@ -38,6 +44,10 @@ function asIntPair(v: unknown): [number, number] | null {
   `{ ...s, label }` to `S & { label: string }` and will not accept that as `S`, because a
   subtype could have narrowed `label` to a literal. None of these kinds does, and the alternative
   -- a setter callback per field per kind -- is more machinery than the cast saves.
+
+  `doc`, where a factory takes one, replaces the generated text for a kind whose field means
+  something the shared sentence does not say -- a connection's name shares a namespace with
+  blocks, and its draw order decides what it may bundle onto.
 */
 
 export function kindProp<S extends ShapeBase>(kind: string): PropDef<S> {
@@ -51,11 +61,13 @@ export function kindProp<S extends ShapeBase>(kind: string): PropDef<S> {
   };
 }
 
-export function nameProp<S extends ShapeBase>(noun: string): PropDef<S> {
+export function nameProp<S extends ShapeBase>(noun: string, doc?: string): PropDef<S> {
   return {
     key: 'name',
     title: 'Name',
-    doc: `Internal identifier for this ${noun}. Must be unique across the diagram and cannot be empty. This is what connections and queries refer to, so renaming it rewrites every reference.`,
+    doc:
+      doc ??
+      `Internal identifier for this ${noun}. Must be unique across the diagram and cannot be empty. This is what connections and queries refer to, so renaming it rewrites every reference.`,
     mode: 'edit',
     type: { type: 'string', minLength: 1 },
     read: (s) => s.name,
@@ -72,11 +84,13 @@ export function nameProp<S extends ShapeBase>(noun: string): PropDef<S> {
   };
 }
 
-export function labelProp<S extends ShapeBase>(noun: string): PropDef<S> {
+export function labelProp<S extends ShapeBase>(noun: string, doc?: string): PropDef<S> {
   return {
     key: 'label',
     title: 'Label',
-    doc: `Text drawn on the ${noun} on the canvas. Purely cosmetic and may be left empty, in which case the name is drawn instead. Unlike the name it does not have to be unique.`,
+    doc:
+      doc ??
+      `Text drawn on the ${noun} on the canvas. Purely cosmetic and may be left empty, in which case the name is drawn instead. Unlike the name it does not have to be unique.`,
     mode: 'edit',
     type: { type: 'string' },
     read: (s) => s.label,
@@ -168,11 +182,14 @@ export function labelModeProp<S extends ShapeBase & { labelMode: LabelMode }>(
 
 export function descriptionProp<S extends ShapeBase & { description: string }>(
   what: string,
+  doc?: string,
 ): PropDef<S> {
   return {
     key: 'description',
     title: 'Description',
-    doc: `Free-text note describing ${what}. Not drawn on the canvas — it appears as a tooltip when you hover, so it can be as long as it needs to be without crowding the diagram.`,
+    doc:
+      doc ??
+      `Free-text note describing ${what}. Not drawn on the canvas — it appears as a tooltip when you hover, so it can be as long as it needs to be without crowding the diagram.`,
     mode: 'edit',
     type: { type: 'string' },
     read: (s) => s.description,
@@ -185,11 +202,13 @@ export function descriptionProp<S extends ShapeBase & { description: string }>(
   };
 }
 
-export function zIndexProp<S extends ShapeBase>(): PropDef<S> {
+export function zIndexProp<S extends ShapeBase>(doc?: string): PropDef<S> {
   return {
     key: 'zIndex',
     title: 'Draw order',
-    doc: `Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored, so it cannot be typed here — use the bring-forward and send-backward buttons in the toolbar, or ${keys('cmd', '[')} and ${keys('cmd', ']')}.`,
+    doc:
+      doc ??
+      `Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored, so it cannot be typed here — use the bring-forward and send-backward buttons in the toolbar, or ${keys('cmd', '[')} and ${keys('cmd', ']')}.`,
     mode: 'computed',
     type: { type: 'integer', minimum: 0 },
     read: (_s, ctx: PropContext) => ctx.index,

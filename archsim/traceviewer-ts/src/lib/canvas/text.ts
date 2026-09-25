@@ -20,9 +20,9 @@
 
   And it has to be reachable from callers with no `DrawContext` at all. `tabRect` is driven from
   `hitTest` through the bare `HitContext.measure` callback, which `ToolHost` rebuilds on every
-  hit test and every hover; `flagMeasurer` in `timeline/layout.ts` runs in a layout pass with no
-  draw context in sight. Threading the cache through `DrawContext` would have left both of them
-  on the uncached path, which is where half the per-frame cost was.
+  hit test and every hover, and `cursorMeasurer` in `timeline/layout.ts` runs in a layout pass
+  with no draw context in sight. Threading the cache through `DrawContext` would have left both
+  on the uncached path. (`flagMeasurer` stays uncached on purpose; see its note.)
 
   WHAT THIS IS FOR. Iteration 6.3, and the Safari defect that stayed after the grid was fixed:
   interaction got slow in proportion to SHAPE COUNT in the 50-70% zoom band, which is the one

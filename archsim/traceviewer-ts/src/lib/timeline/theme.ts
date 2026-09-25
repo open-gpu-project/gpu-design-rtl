@@ -1,3 +1,5 @@
+import { MONO, SANS } from '../canvas/theme';
+
 /**
  * Colours and metrics for the trace panel's canvas.
  *
@@ -127,7 +129,10 @@ export const FLAG_PAD_X = 10;
  * Exported because the hit test measures with it too: a flag is sized to its text, so the
  * clickable box cannot be computed without the same metrics the renderer used.
  */
-export const FLAG_FONT = '11px ui-sans-serif, system-ui, sans-serif';
+export const FLAG_FONT = `11px ${SANS}`;
+
+/** Per-character width estimate for a flag label with no canvas to measure against. */
+export const FLAG_EST_CHAR_PX = 6.2;
 
 /* -------------------------------------------------------------------------- the cursor ---- */
 
@@ -137,7 +142,7 @@ export const FLAG_FONT = '11px ui-sans-serif, system-ui, sans-serif';
  * Exported for the same reason `FLAG_FONT` is: the cursor's flag is sized to the tick it shows,
  * so the box you can grab has to be measured with the font the box was drawn with.
  */
-export const CURSOR_FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+export const CURSOR_FONT = `10px ${MONO}`;
 export const CURSOR_EST_CHAR_PX = 6;
 
 /** Cursor flag body height, and the padding either side of the tick inside it. */

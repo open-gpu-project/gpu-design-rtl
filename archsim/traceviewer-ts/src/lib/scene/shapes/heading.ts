@@ -7,6 +7,7 @@ import {
   INSET_MARGIN_PX,
   INSET_TEXT_MIN_PX,
   LABEL_FONT_PX,
+  SANS,
   SUBTITLE_FONT_PX,
   TAB_CORNER_R_PX,
   TAB_EST_CHAR_PX,
@@ -279,7 +280,7 @@ export function insetBaselines(
 }
 
 /** The one font the inset lines are drawn in. Sizes vary per box and per frame; family never. */
-const INSET_FAMILY = 'ui-sans-serif, system-ui, sans-serif';
+const INSET_FAMILY = SANS;
 
 /**
  * One inset line fitted to `maxW`: the largest whole device size in `[floorPx, ceilingPx]` that

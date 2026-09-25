@@ -2,11 +2,16 @@ import Spline from '@lucide/svelte/icons/spline';
 import { anchorHitTest, type AnchorHit } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
 import { ANCHOR_DOT_R_PX } from '../canvas/theme';
-import type { Anchor, Vec2 } from '../geom/types';
-import { autoWaypoints } from '../scene/curve';
-import { opsFor } from '../scene/registry';
-import { CorridorIndex, routeConnection, samePoints } from '../scene/route';
-import { connOps, makeConnection } from '../scene/shapes/conn';
+import type { Anchor } from '../geom/types';
+import { CorridorIndex, samePoints } from '../scene/route';
+import {
+  anchorOf,
+  autoPoints,
+  connOps,
+  newConnection,
+  pathBetween,
+  preferredPathOf,
+} from '../scene/shapes/conn';
 import type { ConnectionShape, DrawContext, PathStyle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
@@ -31,11 +36,6 @@ const HINT_SELF = 'A connection needs two different blocks.';
  * pointer is up. `isGesturing()` is true across that window, which correctly refuses undo,
  * delete and restack -- all of which would commit underneath a half-built connection.
  */
-/** An anchor or a bare cursor point, as a point. */
-function asPoint(t: Anchor | Vec2): Vec2 {
-  return 'pos' in t ? t.pos : t;
-}
-
 export class ConnectTool implements Tool {
   readonly defaultCursor = 'crosshair';
 
@@ -108,7 +108,7 @@ export class ConnectTool implements Tool {
         snap to a curve the instant it landed. A ghost that changes shape under the cursor reads
         as a bug rather than as a preview.
       */
-      this.#path = opsFor(hit.shape).preferredPath?.(hit.shape) ?? 'ortho';
+      this.#path = preferredPathOf(hit.shape);
       this.#hover = hit;
       this.#retarget(p, c);
       c.setHint(HINT_PENDING);
@@ -214,34 +214,23 @@ export class ConnectTool implements Tool {
     const hover =
       this.#hover !== null && this.#hover.shape.name !== from.shape ? this.#hover : null;
     const target = hover?.anchor ?? p.snapped;
-    // A curve needs a normal at the far end to bow away from; a bare cursor has none, so the
-    // ghost runs straight to it until it lands on something that does.
-    const curve =
-      this.#path === 'curve' &&
-      (hover === null || (opsFor(hover.shape).preferredPath?.(hover.shape) ?? 'ortho') === 'curve');
-    const points = curve
-      ? [
-          from.anchor.pos,
-          ...(hover === null ? [] : autoWaypoints(from.anchor, hover.anchor)),
-          asPoint(target),
-        ]
-      : routeConnection(from.anchor, target, this.#corridorIndex(c));
+    // While the far end is loose, the source's family stands; once it lands, both ends decide.
+    const path: PathStyle =
+      this.#path === 'curve' && (hover === null || preferredPathOf(hover.shape) === 'curve')
+        ? 'curve'
+        : 'ortho';
+    const points = autoPoints(path, from.anchor, target, this.#corridorIndex(c));
     if (this.#ghost !== null && samePoints(points, this.#ghost.points)) return false;
 
-    this.#ghost = {
-      kind: 'conn',
+    this.#ghost = newConnection({
       name: 'preview',
-      label: '',
-      labelOffset: [0, 0],
-      description: '',
       from: from.shape,
       fromAnchor: from.anchor.id,
       to: hover?.shape.name ?? '',
       toAnchor: hover?.anchor.id ?? '',
-      routing: 'auto',
-      path: curve ? 'curve' : 'ortho',
+      path,
       points,
-    };
+    });
     return true;
   }
 
@@ -258,10 +247,7 @@ export class ConnectTool implements Tool {
     const scene = c.scene;
     // Re-resolve the source anchor: the block may have moved between the two clicks.
     const source = c.scene.shapes.find((s) => s.name === pending.shape);
-    const a =
-      source === undefined
-        ? null
-        : (opsFor(source).resolveAnchor?.(source, pending.anchor.id) ?? null);
+    const a = anchorOf(source, pending.anchor.id);
     if (a === null) {
       this.#reset();
       c.setHint(HINT_IDLE);
@@ -269,25 +255,16 @@ export class ConnectTool implements Tool {
       return;
     }
 
-    /*
-      Both ends have to agree. That is what makes "a plain arrow may still be drawn to a network
-      interface" true by construction -- draw from a block to an interface and you get a square
-      arrow, because only one end asked for a curve.
-    */
-    const wants = (x: Shape | undefined): PathStyle =>
-      x === undefined ? 'ortho' : (opsFor(x).preferredPath?.(x) ?? 'ortho');
-    const path: PathStyle =
-      wants(source) === 'curve' && wants(hit.shape) === 'curve' ? 'curve' : 'ortho';
-
-    const shape = makeConnection(
-      scene.nextName('conn'),
-      pending.shape,
-      a,
-      hit.shape.name,
-      hit.anchor,
-      this.#corridorIndex(c),
+    const path = pathBetween(source, hit.shape);
+    const shape = newConnection({
+      name: scene.nextName('conn'),
+      from: pending.shape,
+      fromAnchor: a.id,
+      to: hit.shape.name,
+      toAnchor: hit.anchor.id,
       path,
-    );
+      points: autoPoints(path, a, hit.anchor, this.#corridorIndex(c)),
+    });
     const normalized = connOps.normalize(shape);
     this.#from = null;
     this.#ghost = null;
