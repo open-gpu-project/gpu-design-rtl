@@ -1,4 +1,4 @@
-import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
+import { DEV_URL, diagramCanvas, enumOptions, open, row, suite } from './harness.mjs';
 
 /*
   Iteration 6's component kinds: the FIFO, the fabric, and the network interfaces a fabric or a
@@ -740,7 +740,6 @@ const clear = async () => {
       length: 32,
       depth: 16,
       protocol: 'axi3',
-      channel: 'all',
       modport: 'slave',
       pending: [0, 0],
       inward: true,
@@ -892,6 +891,25 @@ const clear = async () => {
     after.join(','),
   );
   t.ok('which did move the parent past the other shape', ai > 0, after.join(','));
+
+  /*
+    What the panel offers for an interface, now that `channel` has gone.
+
+    Asserted through the rendered rows rather than through the schema, because the schema is
+    where it was deleted FROM -- a check that read the same list twice would pass against a panel
+    still rendering a stale document, which is the one state `applyDocument` refuses.
+  */
+  await page.evaluate(() =>
+    window.__scene.selectOnly(window.__scene.shapes.find((s) => s.kind === 'nif').name),
+  );
+  await page.waitForTimeout(400);
+  t.ok('an interface offers no channel row', (await row(page, 'channel').count()) === 0);
+  t.ok(
+    'and still offers its protocol and its modport',
+    JSON.stringify(await enumOptions(page, 'protocol')) === JSON.stringify(['axi3']) &&
+      JSON.stringify(await enumOptions(page, 'modport')) === JSON.stringify(['master', 'slave']),
+    `${JSON.stringify(await enumOptions(page, 'protocol'))} ${JSON.stringify(await enumOptions(page, 'modport'))}`,
+  );
 
   // Deleting an interface is refused, and must not record an undo entry for doing nothing.
   const label = await page.evaluate(() => window.__scene.history.undoLabel);
@@ -1225,17 +1243,15 @@ const clear = async () => {
       order: back.map(key),
       pins: back
         .filter((s) => s.kind === 'nif')
-        .map((s) => `${s.parent}/${s.side}/${s.offset}/${s.protocol}/${s.channel}/${s.modport}`),
+        .map((s) => `${s.parent}/${s.side}/${s.offset}/${s.protocol}/${s.modport}`),
       // `box` is computed, so it must NOT be in the record.
       recordKeys: Object.keys(doc.shapes.find((r) => r.kind === 'nif') ?? {}),
     };
   });
   t.ok('a scene of fabrics and interfaces round-trips', round.same, JSON.stringify(round.order));
   t.ok(
-    'carrying each interface parent, side, offset and bus identity',
-    round.pins.every((p) =>
-      /^[^/]+\/[nesw]\/-?\d+\/axi3\/(aw|w|b|ar|r|all)\/(master|slave)$/.test(p),
-    ),
+    'carrying each interface parent, side, offset, protocol and modport',
+    round.pins.every((p) => /^[^/]+\/[nesw]\/-?\d+\/axi3\/(master|slave)$/.test(p)),
     JSON.stringify(round.pins),
   );
   t.ok(
@@ -1316,6 +1332,8 @@ const clear = async () => {
           offset: 32,
           size: [32, 8],
           protocol: 'axi3',
+          // Kept on purpose. Iteration 6.3 removed the `channel` property, and this fixture is
+          // now also a file written before that happened -- see the assertion below.
           channel: 'aw',
           modport: 'slave',
         },
@@ -1347,6 +1365,8 @@ const clear = async () => {
     return {
       names: back.map((s) => s.name),
       wires: back.filter((s) => s.kind === 'conn').map((s) => `${s.from}->${s.to}`),
+      stale: 'channel' in (back.find((s) => s.kind === 'nif') ?? {}),
+      pin: back.find((s) => s.kind === 'nif')?.modport,
     };
   });
   t.ok(
@@ -1359,6 +1379,18 @@ const clear = async () => {
     JSON.stringify(r.names) === JSON.stringify(['w0', 'fab.if_1', 'fab', 'b']),
     JSON.stringify(r.names),
   );
+  /*
+    Backward compatibility for the property iteration 6.3 removed, as an assertion rather than a
+    claim in a commit message.
+
+    `hydrateShape` iterates the SCHEMA and skips any key not in it, so the `channel: 'aw'` above
+    is ignored rather than carried onto the shape or treated as an error. That is also why
+    `SceneDoc.version` stays at 2: a reader of either vintage produces a valid document from a
+    file of either vintage, and refusing an unrecognised number would break the files that still
+    work.
+  */
+  t.ok('a file written before the channel key was removed still loads', r.pin === 'slave', r.pin);
+  t.ok('and the key is ignored rather than kept on the shape', r.stale === false);
 }
 
 const failed = t.report(errors);

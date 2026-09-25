@@ -14,15 +14,18 @@ into windows, or collapsed to an edge. Three panels exist so far.
   from the toolbar: you set how many a fabric or a block carries and drag them into place. A
   link drawn between two interfaces is a **curve** rather than a rectilinear wire — a straight
   run unless a straight line would leave one port backwards or arrive at the other from behind,
-  in which case it bows out along both normals, and bent through waypoints you insert.
-  Joining two interfaces that disagree — different channels, or two masters — badges the link,
-  and clicking the badge says what is wrong. Every
+  in which case it bows out along both normals, and bent through waypoints you insert. Every
   box kind carries a label and a subtitle, and `labelMode` decides how they are shown: `inset`
   centres the label in the block with the subtitle beneath it, while `tabbed_left` and
   `tabbed_right` put the label in a small folder tab above a top corner and leave the body
-  empty. Hovering a block or a wire raises a tooltip — a block's description, a wire's name and
-  description, and in the tabbed modes the subtitle too, since that is the only place it
-  appears. Drag a band with the select tool to select several at once, and copy, cut and paste
+  empty. A subtitle may hold several lines: type a newline into it and each line is drawn in
+  turn, all at one size chosen so the widest of them fits, with lines dropped from the bottom
+  when the block is too short for all of them. A diagram saves to and opens from a JSON file,
+  byte-for-byte the same record `⌘C` writes to the system clipboard — one format, two transports,
+  which is why the read pipeline is shared. The transport is a Blob download and an
+  `<input type="file">` rather than the File System Access API, which Safari does not implement. Hovering a block or a wire raises a tooltip — a block's
+  description, a wire's name and description, and in the tabbed modes the subtitle too, since that
+  is the only place it appears, one paragraph per line. Drag a band with the select tool to select several at once, and copy, cut and paste
   them as a group -- a connection comes along when both of its blocks do, and a pasted copy
   fills the gaps in its own numbering, so copies of `block0, block2` arrive as `block1, block3`.
 - **Properties** — an editable tree view of the selected block, validated live against a JSON
@@ -64,7 +67,7 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see the conventions section of the latest
-iteration document. `npm run verify` is 559 assertions across ten suites. Anything touching
+iteration document. `npm run verify` is 612 assertions across eleven suites. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -85,7 +88,6 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | Click two network interfaces with the connection tool | Draw a bus link between them, straight where it can be     |
 | Click the `+` on a selected curve                     | Insert a waypoint there                                    |
 | Click a waypoint, then `⌫`                            | Remove just that waypoint                                  |
-| Click a red `!` badge                                 | List what is wrong with that link                          |
 | Click two block edges with the connection tool        | Draw an arrow between them                                 |
 | Drag a segment of a selected connection               | Reshape its route, pinning it to manual routing            |
 | Drag a round bead on a selected connection            | Slide that end along its edge, or onto another block       |
@@ -95,6 +97,7 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | `⇧`+click                                             | Add to or remove from the selection                        |
 | `⌫`                                                   | Delete the selection                                       |
 | `⌘C` / `⌘X` / `⌘V`                                    | Copy / cut / paste the selection                           |
+| `⌘S` / `⌘O`                                           | Save the diagram to a file / open one                      |
 | `⌘Z` / `⇧⌘Z`                                          | Undo / redo                                                |
 | `⌘]` `⌘[` `⇧⌘]` `⇧⌘[`                                 | To front / to back / forward / backward                    |
 | `⌘0` / `⌘1`                                           | Reset zoom / zoom to fit                                   |
@@ -278,11 +281,12 @@ type-check cleanly and only fail at runtime.
   not the pixels) and
   [safari-performance-report-2.md](history/safari-performance-report-2.md) (the cost is a step
   discontinuity at each level-of-detail boundary, paid out of process).
-- [iter-3-2-measurement.md](history/iter-3-2-measurement.md) — **in progress.** The dot grid as
-  cached row strips: 31× fewer primitives at the worst zoom, pixel-identical, and flat in canvas
-  area. Safari's pinch folded into the rAF accumulator, and two readouts that dirtied the document
-  at input frequency. Holds the protocol for the one measurement only real Safari can make, and
-  the results sheet it fills in.
+- [iter-3-2-measurement.md](history/iter-3-2-measurement.md) — **awaiting its sweep.** The dot
+  grid as cached row strips: 31× fewer primitives at the worst zoom, pixel-identical, and flat in
+  canvas area. Safari's pinch folded into the rAF accumulator, and two readouts that dirtied the
+  document at input frequency. Holds the protocol for the one measurement only real Safari can
+  make, and the results sheet it fills in. Iteration 6.3 made `strips` the default on the
+  arithmetic alone and kept all four modes so the sweep is still runnable.
 - [iter-6-components.md](history/iter-6-components.md) — the four component kinds: queues,
   network interfaces, the fabric that carries them, and curved links between two interfaces with
   waypoint editing and cross-shape validation. Why an interface is a first-class child shape
@@ -294,6 +298,12 @@ type-check cleanly and only fail at runtime.
   and two incompatible styles of hand-written icon. Why a derived extent has to be derived by
   every writer including the one running mid-gesture, why an anchor id must not name anything that
   can change under it, and why a semantic colour cannot share a hue with the selection.
+- [iter-6-3-files-and-fitting.md](history/iter-6-3-files-and-fitting.md) — five: a diagram that
+  saves to and opens from a file, the network channel property and the whole connection
+  compatibility subsystem withdrawn, the dot grid's strip cache finally made the default, a text
+  width cache for the shape-count half of the same Safari defect, and subtitles of several lines.
+  Why `⌘S` is a window-capture listener rather than a tool binding, why removing a property needs
+  no migration and no version bump, and why `Math.trunc` rather than `Math.round` places a line.
 - [iter-6-2-fold-and-defaults.md](history/iter-6-2-fold-and-defaults.md) — four more: a wire that
   lagged the fabric its port was on, links that bowed when a straight line would have done, and
   two defaults that did not line up with the grid. Why the dependency fold now reads back its own

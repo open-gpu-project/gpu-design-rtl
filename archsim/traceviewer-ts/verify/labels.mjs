@@ -19,6 +19,13 @@ import { DEV_URL, open, suite } from './harness.mjs';
   against a scratch canvas. The pixels are then checked once, at sizes either side of the
   interesting thresholds, because correct arithmetic wired into nothing at all would pass every
   assertion in the first two parts.
+
+  Iteration 6.3 added two more things to this file, and they share the machinery. Subtitles grew
+  from one line to `n`, so the `hasSubtitle` boolean below became a line COUNT -- every number in
+  this block is the number the boolean produced, which is what makes the whole first part the
+  regression net for that change. And `text.ts` grew a width cache, which is the second half of
+  the Safari fix and the only part of it that scales with shape count, so the last part counts
+  `measureText` calls the way `grid.mjs` counts `rect`.
 */
 
 const t = suite('labels');
@@ -30,16 +37,16 @@ const ramp = await page.evaluate(() => {
   const f = window.__insetType;
   const sizes = [];
   // 0.05 steps, not 1: the budget is continuous and its thresholds do not land on integers.
-  for (let h = 100; h <= 4000; h++) sizes.push({ h: h / 20, ty: f(h / 20, true) });
+  for (let h = 100; h <= 4000; h++) sizes.push({ h: h / 20, ty: f(h / 20, 1) });
   return {
-    big: f(200, true),
-    atOldGate: f(44, true),
+    big: f(200, 1),
+    atOldGate: f(44, 1),
     // Where the pair now reaches full size. The old rule needed 44 for anything at all.
-    atFull: f(31, true),
+    atFull: f(31, 1),
     // Room for a label and not for a subtitle; and room for neither.
-    labelOnly: f(24, true),
-    tiny: f(12, true),
-    noSubtitle: f(200, false),
+    labelOnly: f(24, 1),
+    tiny: f(12, 1),
+    noSubtitle: f(200, 0),
     sizes,
   };
 });
@@ -285,6 +292,322 @@ t.ok(
   JSON.stringify(fit.ellipsisOnly),
 );
 
+/* ------------------------------------------- subtitles of several lines, as pure ---- */
+
+/*
+  Iteration 6.3. The property editor has always accepted a newline in a subtitle and the file
+  format has always round-tripped it; canvas 2D draws one as a space, so what the user typed was
+  silently collapsed into one over-long run.
+
+  The whole of the first part of this file is the regression net for the generalisation, because
+  every number in it is the number the `hasSubtitle` boolean produced. These assertions add what
+  the boolean could not express.
+*/
+
+{
+  /*
+    The one- and zero-line answers, against literals captured from the build BEFORE the change.
+
+    Pinned as a table rather than derived, which is the point: a formula that agrees with itself
+    proves nothing, and these are the numbers every existing diagram was drawn with.
+  */
+  const BASELINE = [
+    [200, { label: 13, subtitle: 10, gap: 14, pad: 6 }, { label: 13, subtitle: 0, gap: 0, pad: 6 }],
+    [44, { label: 13, subtitle: 10, gap: 14, pad: 6 }, { label: 13, subtitle: 0, gap: 0, pad: 6 }],
+    [31, { label: 13, subtitle: 10, gap: 14, pad: 6 }, { label: 13, subtitle: 0, gap: 0, pad: 6 }],
+    [
+      28.9,
+      { label: 13, subtitle: 8.010526315789473, gap: 13.144526315789474, pad: 6 },
+      { label: 13, subtitle: 0, gap: 0, pad: 6 },
+    ],
+    [28.88, { label: 13, subtitle: 0, gap: 0, pad: 6 }, { label: 13, subtitle: 0, gap: 0, pad: 6 }],
+    [24, { label: 13, subtitle: 0, gap: 0, pad: 6 }, { label: 13, subtitle: 0, gap: 0, pad: 6 }],
+    [
+      16,
+      { label: 10.526315789473685, subtitle: 0, gap: 0, pad: 6 },
+      { label: 10.526315789473685, subtitle: 0, gap: 0, pad: 6 },
+    ],
+    [13.6, { label: 8, subtitle: 0, gap: 0, pad: 6 }, { label: 8, subtitle: 0, gap: 0, pad: 6 }],
+    [13.5, null, null],
+    [12, null, null],
+  ];
+
+  const got = await page.evaluate(
+    (table) =>
+      table.map(([h]) => {
+        const one = window.__insetType(h, 1);
+        const none = window.__insetType(h, 0);
+        const strip = (ty) =>
+          ty === null ? null : { label: ty.label, subtitle: ty.subtitle, gap: ty.gap, pad: ty.pad };
+        return [h, strip(one), strip(none)];
+      }),
+    BASELINE,
+  );
+  t.ok(
+    'one subtitle line is numerically what the boolean produced, and none is what false produced',
+    JSON.stringify(got) === JSON.stringify(BASELINE),
+    JSON.stringify(got),
+  );
+}
+
+{
+  const multi = await page.evaluate(() => {
+    const f = window.__insetType;
+    const INK_H = 0.95;
+    const LEAD = 2.94;
+    const MARGIN = 3;
+    const FLOOR = 8;
+    const LABEL = 13;
+
+    const overflow = [];
+    const shrinking = [];
+    const closedForm = [];
+    const capped = [];
+    let monotone = true;
+    let prevLines = -1;
+
+    for (let i = 60; i <= 4000; i++) {
+      const h = i / 20;
+      for (const req of [0, 1, 2, 3, 4]) {
+        const ty = f(h, req);
+        if (ty === null) continue;
+        if (ty.lines > req) capped.push({ h, req, lines: ty.lines });
+        // The budget, generalised: `n` line-heights and `n` leads under a full-size label.
+        const span = INK_H * ty.label + ty.lines * (INK_H * ty.subtitle + LEAD);
+        if (h - span < 2 * MARGIN - 1e-9) overflow.push({ h, req, slack: h - span });
+        // Brute force against the closed form, which is the only way to check a rearrangement.
+        let want = 0;
+        for (let n = 1; n <= req; n++) {
+          const per = (h - 2 * MARGIN - INK_H * LABEL - n * LEAD) / (n * INK_H);
+          if (per >= FLOOR - 1e-12) want = n;
+        }
+        if (want !== ty.lines) closedForm.push({ h, req, want, got: ty.lines });
+      }
+      const two = f(h, 2);
+      const one = f(h, 1);
+      if (two !== null && one !== null && two.subtitle > one.subtitle + 1e-9) {
+        shrinking.push({ h, one: one.subtitle, two: two.subtitle });
+      }
+      // Lines offered can only grow with the block, for the same reason the label can only grow:
+      // text that vanishes halfway through a zoom is the defect this file was opened for.
+      const four = f(h, 4);
+      const lines = four === null ? 0 : four.lines;
+      if (lines + 1e-9 < prevLines) monotone = false;
+      prevLines = lines;
+    }
+    return { overflow, shrinking, closedForm, capped, monotone };
+  });
+
+  t.ok(
+    'a second line is paid for out of the same budget, never at the first line size',
+    multi.shrinking.length === 0,
+    JSON.stringify(multi.shrinking.slice(0, 3)),
+  );
+  t.ok(
+    'the stack never overflows the block, at any line count',
+    multi.overflow.length === 0,
+    JSON.stringify(multi.overflow.slice(0, 3)),
+  );
+  /*
+    The largest PREFIX that fits, and the assertion that the closed form is that prefix. Under an
+    all-or-nothing rule, adding a second line would blank the subtitle entirely on a block that
+    had been showing one -- a regression bought by a feature, which is the thing to not do.
+  */
+  t.ok(
+    'the largest prefix that fits is what is offered, and a loop agrees with the closed form',
+    multi.closedForm.length === 0,
+    JSON.stringify(multi.closedForm.slice(0, 3)),
+  );
+  t.ok(
+    'never more lines than were typed',
+    multi.capped.length === 0,
+    JSON.stringify(multi.capped.slice(0, 3)),
+  );
+  t.ok('and more height never means fewer lines', multi.monotone);
+}
+
+{
+  /*
+    The baseline quantisation, and it is worth its own block.
+
+    The one-line code placed the pair at `cy - half` and `cy + half` for
+    `half = Math.floor(gap * dpr / 2)` -- a symmetric floor of the MAGNITUDE. `Math.trunc` of the
+    signed offset is that; `Math.round` is not, and is off by one device pixel wherever
+    `gap * dpr` is odd, which is every size the label has been shrunk to. So this is checked at a
+    height whose `gap` is deliberately not a round number.
+  */
+  const b = await page.evaluate(() => {
+    const f = window.__insetType;
+    const bl = window.__insetBaselines;
+    const out = {};
+    for (const dpr of [1, 2]) {
+      // 28.9 gives subtitle 8.0105..., so `gap` is 13.1445... and `gap * dpr` is odd-ish at both.
+      for (const h of [200, 28.9]) {
+        const ty = f(h, 1);
+        const half = Math.floor((ty.gap * dpr) / 2);
+        out[`${h}@${dpr}`] = { got: bl(ty, 1, dpr), want: [-half, half] };
+      }
+      const none = f(200, 0);
+      out[`none@${dpr}`] = { got: bl(none, 0, dpr), want: [0] };
+    }
+    const four = f(200, 4);
+    const many = bl(four, four.lines, 2);
+    const mids = [];
+    for (let i = 0; i + 1 < many.length; i++) mids.push((many[i] + many[i + 1]) / 2);
+    return {
+      out,
+      many,
+      lines: four.lines,
+      increasing: mids.every((m, i) => i === 0 || m > mids[i - 1]),
+      // Centred on the baseline set, to within the truncation of one device pixel.
+      centred: Math.abs(many[0] + many[many.length - 1]) <= 1,
+    };
+  });
+
+  const pairsMatch = Object.entries(b.out).every(
+    ([, v]) => JSON.stringify(v.got) === JSON.stringify(v.want),
+  );
+  t.ok(
+    'one subtitle line lands on exactly the two baselines the old code drew',
+    pairsMatch,
+    JSON.stringify(b.out),
+  );
+  t.ok(
+    'a four-line block stays centred, with plate boundaries that cannot invert',
+    b.lines >= 2 && b.increasing && b.centred,
+    JSON.stringify({ lines: b.lines, many: b.many, centred: b.centred }),
+  );
+}
+
+{
+  const shared = await page.evaluate(() => {
+    const FAMILY = 'ui-sans-serif, system-ui, sans-serif';
+    const g = document.createElement('canvas').getContext('2d');
+    const one = window.__insetFit;
+    const many = window.__insetFitLines;
+
+    // One shared size, chosen by the WIDEST line: lines at different sizes read as ragged.
+    const widest = one(g, 'WWWWWWWWWW', 26, 16, 90);
+    const pair = many(g, ['A', 'WWWWWWWWWW'], 26, 16, 90);
+
+    // And one line through the many-line fitter is the one-line fitter, across the same sweep
+    // the width block above uses -- so `fitInsetLine` really is a wrapper and not a second rule.
+    const drift = [];
+    for (const text of ['XU0', 'FETCH', 'REGFILE', 'XBN_ARB', 'DISPATCH', 'L2 CACHE']) {
+      for (let maxW = 2; maxW <= 200; maxW += 1) {
+        const a = one(g, text, 26, 16, maxW);
+        const c = many(g, [text], 26, 16, maxW);
+        if (a.px !== c.px || a.text !== (c.lines[0] ?? '')) drift.push({ text, maxW, a, c });
+      }
+    }
+
+    /*
+      Cost, not just output. Three lines must cost no more `ctx.font` assignments than one,
+      because the whole reason they share a size is that one binary search answers for all of
+      them -- three independent searches would have tripled the probe count and made a
+      multi-line subtitle a per-frame regression in exactly the zoom band iteration 6.3 fixes.
+    */
+    const P = CanvasRenderingContext2D.prototype;
+    const fd = Object.getOwnPropertyDescriptor(P, 'font');
+    const md = P.measureText;
+    let fonts = 0;
+    let measures = 0;
+    Object.defineProperty(P, 'font', {
+      ...fd,
+      set(v) {
+        fonts++;
+        fd.set.call(this, v);
+      },
+    });
+    P.measureText = function (...a) {
+      measures++;
+      return md.apply(this, a);
+    };
+    const count = (fn) => {
+      window.__textCache('clear');
+      fonts = 0;
+      measures = 0;
+      fn();
+      return { fonts, measures };
+    };
+    let cost;
+    try {
+      cost = {
+        // A width the text does not fit at, so the binary search really runs.
+        oneLine: count(() => many(g, ['WWWWWWWWWW'], 26, 16, 70)),
+        threeLines: count(() => many(g, ['WWWWWWWWWW', 'WWWWWWWWW', 'WWWWWWWW'], 26, 16, 70)),
+      };
+    } finally {
+      Object.defineProperty(P, 'font', fd);
+      P.measureText = md;
+    }
+
+    return { widest, pair, drift, cost };
+  });
+
+  t.ok(
+    'every subtitle line shares one size, chosen by fitting the widest',
+    shared.pair.px === shared.widest.px,
+    JSON.stringify({ pair: shared.pair, widest: shared.widest }),
+  );
+  t.ok(
+    'and one line through the many-line fitter is exactly the one-line fitter',
+    shared.drift.length === 0,
+    JSON.stringify(shared.drift.slice(0, 2)),
+  );
+  t.ok(
+    'fitting three lines costs no more font changes than fitting one',
+    shared.cost.threeLines.fonts === shared.cost.oneLine.fonts,
+    JSON.stringify(shared.cost),
+  );
+  /*
+    And the measures grow with the LINES, not with lines times probes. Three lines at five probes
+    each would be fifteen; three lines sharing one search is three per probe at worst, and the
+    cache collapses the repeats within a search.
+  */
+  t.ok(
+    'and its measurements grow with the lines, not with lines times probes',
+    shared.cost.threeLines.measures <= 3 * shared.cost.oneLine.measures,
+    JSON.stringify(shared.cost),
+  );
+}
+
+{
+  const split = await page.evaluate(() => {
+    const f = window.__subtitleLines;
+    return {
+      empty: f(''),
+      one: f('a'),
+      two: f('a\nb'),
+      crlf: f('a\r\nb'),
+      interior: f('a\n\nb'),
+      trailing: f('a\n'),
+      leading: f('\na'),
+      both: f('\n\na\n\n'),
+      cr: f('a\rb'),
+    };
+  });
+  const want = {
+    empty: [],
+    one: ['a'],
+    two: ['a', 'b'],
+    crlf: ['a', 'b'],
+    // Interior blanks are a layout the user typed, and dropping one would renumber the lines.
+    interior: ['a', '', 'b'],
+    // A stray Enter at either end is a typo, and must not reserve a line of the block's height.
+    trailing: ['a'],
+    leading: ['a'],
+    both: ['a'],
+    // Not a separator: nothing produces classic-Mac endings, and a lone `\r` could be typed.
+    cr: ['a\rb'],
+  };
+  t.ok(
+    'a subtitle splits on newlines, trimmed at the ends and preserved in the middle',
+    JSON.stringify(split) === JSON.stringify(want),
+    JSON.stringify(split),
+  );
+}
+
 /* -------------------------------------------------------------- the budget, as pixels ---- */
 
 /*
@@ -464,7 +787,7 @@ for (const z of ZOOMS) {
     const b = v.toScreen({ x: s.x + s.w, y: s.y + s.h });
     const boxW = (b.x - a.x) * v.dpr;
     const boxH = (b.y - a.y) * v.dpr;
-    const ty = window.__insetType(boxH / v.dpr, false);
+    const ty = window.__insetType(boxH / v.dpr, 0);
     if (ty === null) return null;
     const floorPx = Math.round(8 * v.dpr);
     const ceiling = Math.max(floorPx, Math.floor(ty.label * v.dpr));
@@ -548,6 +871,241 @@ t.ok(
   zoomed > 0 && zoomed < lit[120],
   JSON.stringify({ zoomed, atZoom1: lit[120] }),
 );
+
+/* ------------------------------------------- several subtitle lines, as pixels ---- */
+
+/*
+  Correct arithmetic wired into nothing at all would pass every assertion in the pure block
+  above, which is the reason this file has a pixel part -- and the reason iteration 6.3 needed
+  one too.
+
+  Three blocks of one height class, differing only in what their subtitle says. `ink` reads the
+  lit text pixels inside each, so "the second line is actually drawn" and "the short block still
+  draws the first line" are measurements rather than inferences.
+*/
+{
+  const SPECS = [
+    // Room for the label and three subtitle lines over.
+    { name: 'tall_none', h: 120, subtitle: '' },
+    { name: 'tall_one', h: 120, subtitle: 'first line' },
+    { name: 'tall_two', h: 120, subtitle: 'first line\nsecond line' },
+    // Room for the label and EXACTLY one subtitle line. The regression case.
+    { name: 'short_one', h: 31, subtitle: 'first line' },
+    { name: 'short_two', h: 31, subtitle: 'first line\nsecond line' },
+  ];
+
+  await page.evaluate((specs) => {
+    const sc = window.__scene;
+    sc.commit('scene', () => {
+      sc.shapes = specs.map((sp, i) => ({
+        kind: 'rect',
+        name: sp.name,
+        label: 'BLOCK',
+        subtitle: sp.subtitle,
+        labelMode: 'inset',
+        description: '',
+        x: 24 + (i % 3) * 220,
+        y: 24 + Math.floor(i / 3) * 170,
+        w: 190,
+        h: sp.h,
+      }));
+    });
+    sc.setSelection(new Set());
+    const v = window.__view;
+    v.z = 1;
+    v.camX = 0;
+    v.camY = 0;
+    v.clampCamera();
+    window.__session.renderer.requestFrame();
+  }, SPECS);
+  await page.waitForTimeout(500);
+
+  const px = {};
+  for (const sp of SPECS) px[sp.name] = await ink(sp.name);
+
+  t.ok(
+    'every block in the multi-line scene is where the check thinks it is',
+    SPECS.every((sp) => px[sp.name].onScreen),
+    JSON.stringify(px),
+  );
+
+  t.ok(
+    'a second subtitle line is actually drawn, and inks more of a tall block than one line does',
+    px.tall_two.n > px.tall_one.n && px.tall_one.n > px.tall_none.n,
+    JSON.stringify({ none: px.tall_none.n, one: px.tall_one.n, two: px.tall_two.n }),
+  );
+
+  /*
+    THE regression this whole design decision is about.
+
+    Under an all-or-nothing rule, a block with room for exactly one subtitle line would show
+    nothing at all the moment a second line was typed -- a feature that blanks text the user
+    could already see. Within 12% of the one-line block, not equal to it, because the two draw
+    the same two lines at the same sizes and antialiasing over a different string is the only
+    difference between them.
+  */
+  t.ok(
+    'a block with room for only one line still draws one, rather than none',
+    px.short_two.n > 0 && Math.abs(px.short_two.n - px.short_one.n) < 0.12 * px.short_one.n,
+    JSON.stringify({ one: px.short_one.n, two: px.short_two.n }),
+  );
+
+  /*
+    And the stack stays inside the block. `ink` excludes a 2px border, and `insetType` reserves
+    3px of margin each side, so the ink must clear neither -- this is the assertion that would
+    catch a generalised budget that spends height it does not have.
+  */
+  t.ok(
+    'and the lines never collide with each other or with the outline',
+    px.tall_two.h > px.tall_one.h && px.tall_two.h < 120 - 2 * 3,
+    JSON.stringify({ oneH: px.tall_one.h, twoH: px.tall_two.h }),
+  );
+}
+
+/* ---------------------------------------------- what a frame costs to measure ---- */
+
+/*
+  Iteration 6.3's second Safari fix, and the only part of it that scales with SHAPE COUNT --
+  which is the axis neither triage report varied and the one the user's report added.
+
+  `text.ts` had no cache of any kind. `drawInsetLabel` reaches `measureText` through
+  `fitFontPx`'s binary search, and that takes its one-probe fast path only while the label fits
+  at the ceiling; for typical block widths it stops doing so around z = 0.48, and below about
+  0.46 the fit bottoms out and falls through to `fitText`'s own probes. So a box went from about
+  one measurement per frame to ten or sixteen, at integer sizes that change every frame during a
+  pinch -- two to three hundred shaping calls a frame at twenty boxes.
+
+  Counted the way `grid.mjs` counts `rect`: a counter on the prototype, never a frame time.
+*/
+{
+  const cost = await page.evaluate(() => {
+    const P = CanvasRenderingContext2D.prototype;
+    const md = P.measureText;
+    let measures = 0;
+    P.measureText = function (...a) {
+      measures++;
+      return md.apply(this, a);
+    };
+
+    const count = (fn) => {
+      measures = 0;
+      fn();
+      return measures;
+    };
+
+    try {
+      const FAMILY = 'ui-sans-serif, system-ui, sans-serif';
+      const g = document.createElement('canvas').getContext('2d');
+      const fit = window.__insetFit;
+
+      window.__textCache('clear');
+      const firstFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
+      const repeatFit = count(() => fit(g, 'REGFILE', 26, 16, 80));
+
+      // Two sizes of one string must not collide: the size is inside the cache key.
+      window.__textCache('clear');
+      g.font = `16px ${FAMILY}`;
+      const small = g.measureText('REGFILE').width;
+      g.font = `26px ${FAMILY}`;
+      const big = g.measureText('REGFILE').width;
+
+      // The cap is a leak guard: the key space only grows unboundedly through editing.
+      window.__textCache('clear');
+      for (let i = 0; i < 5200; i++) fit(g, `name_${i}`, 26, 16, 80);
+      const bounded = window.__textCache().size;
+
+      return { firstFit, repeatFit, small, big, bounded };
+    } finally {
+      P.measureText = md;
+    }
+  });
+
+  t.ok(
+    'measuring one string twice costs one measureText, not two',
+    cost.firstFit > 0 && cost.repeatFit === 0,
+    JSON.stringify({ first: cost.firstFit, repeat: cost.repeatFit }),
+  );
+  t.ok(
+    'two sizes of one string do not collide',
+    cost.small > 0 && cost.big > cost.small,
+    JSON.stringify({ small: cost.small, big: cost.big }),
+  );
+  t.ok('and the cache is bounded', cost.bounded <= 4096, String(cost.bounded));
+}
+
+{
+  /*
+    A whole FRAME of 24 boxes, at a zoom inside the 50-70% band, which is the shape of the user's
+    report: >20 shapes, and slow only there.
+
+    The second frame at the same zoom must measure NOTHING. That is the fix, stated as a
+    measurement -- before the cache, every box re-ran its binary search on every frame because
+    nothing survived between them.
+  */
+  const frames = await page.evaluate(() => {
+    const sc = window.__scene;
+    sc.commit('scene', () => {
+      sc.shapes = Array.from({ length: 24 }, (_, i) => ({
+        kind: 'rect',
+        name: `perf_${i}`,
+        label: `BLOCK_${i}`,
+        subtitle: 'first line\nsecond line',
+        labelMode: 'inset',
+        description: '',
+        x: 40 + (i % 6) * 150,
+        y: 40 + Math.floor(i / 6) * 120,
+        w: 128,
+        h: 96,
+      }));
+    });
+    sc.setSelection(new Set());
+    const v = window.__view;
+    v.zoomTo(0.61, v.viewportCenter);
+
+    const P = CanvasRenderingContext2D.prototype;
+    const md = P.measureText;
+    let measures = 0;
+    P.measureText = function (...a) {
+      measures++;
+      return md.apply(this, a);
+    };
+    const r = window.__session.renderer;
+    const frame = () => {
+      measures = 0;
+      r.draw();
+      return measures;
+    };
+    try {
+      window.__textCache('clear');
+      const cold = frame();
+      const warm = frame();
+      const again = frame();
+      // One integer device size away, so a handful of lines re-measure and no more.
+      v.zoomTo(0.63, v.viewportCenter);
+      const nudged = frame();
+      return { cold, warm, again, nudged, boxes: sc.shapes.length };
+    } finally {
+      P.measureText = md;
+    }
+  });
+
+  t.ok('the perf scene really is 24 boxes', frames.boxes === 24, String(frames.boxes));
+  t.ok(
+    'a cold frame of 24 two-line boxes measures at most twice per line drawn',
+    frames.cold > 0 && frames.cold <= 24 * 3 * 2,
+    JSON.stringify(frames),
+  );
+  t.ok(
+    'and a repeat frame at the same zoom measures nothing at all',
+    frames.warm === 0 && frames.again === 0,
+    JSON.stringify(frames),
+  );
+  t.ok(
+    'a zoom that crosses one device size re-measures per line, not per line per probe',
+    frames.nudged <= 24 * 3 * 2,
+    JSON.stringify(frames),
+  );
+}
 
 const code = t.report(errors);
 await browser.close();

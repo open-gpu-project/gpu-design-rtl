@@ -349,13 +349,43 @@ export class ToolHost {
 
   /* ------------------------------------------------------------------ commands ---- */
 
+  /**
+   * Write the status bar from outside a tool.
+   *
+   * Tools reach the same field through `ToolContext.setHint`, which is the closure built in the
+   * constructor. This exists for the callers that are not tools and never will be -- opening a
+   * file is the first -- and it deliberately does not gate on `isGesturing`, because a hint is
+   * not a mutation and the message a caller has to deliver is usually about why it refused.
+   */
+  setHint(text: string): void {
+    this.hint = text;
+  }
+
+  /**
+   * The document was replaced out from under the tools: drop the sub-part cursor and re-frame.
+   *
+   * See the note above `undo` for why the cursor cannot be derived across a swap. This is the
+   * third such funnel, and the only one whose new document shares nothing with the old, which is
+   * why it also zooms to fit: the camera was framing a diagram that no longer exists.
+   *
+   * Does not commit and does not invalidate -- `zoomToFit` already requests a frame, and the
+   * commit that swapped the shapes has run by the time this is called. That ordering is required
+   * rather than incidental: `scene.onCommit` re-derives the world bounds `zoomToFit` reads, so
+   * calling this first would frame the OLD content.
+   */
+  documentReplaced(): void {
+    this.subPart = null;
+    this.zoomToFit();
+  }
+
   /*
-    Undo and redo are the one place the sub-part cursor has to be cleared explicitly.
+    Undo, redo and a document load are the three places the sub-part cursor has to be cleared
+    explicitly.
 
     Everywhere else it is DERIVED: the tool re-checks on every read that its shape is still the
     sole selection and that the index still exists, which covers deselection, multi-select,
     deletion and a collapse without a hook per cause. A document swap defeats that, because the
-    index can still be valid and mean something else entirely -- so the two funnels that swap
+    index can still be valid and mean something else entirely -- so the three funnels that swap
     one drop it.
   */
   undo(): void {

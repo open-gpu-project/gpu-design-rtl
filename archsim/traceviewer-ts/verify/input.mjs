@@ -222,7 +222,7 @@ await page.evaluate(() => {
     kind: 'rect',
     name,
     label: name.toUpperCase(),
-    subtitle: 'the second line',
+    subtitle: 'the second line\nand a third',
     labelMode,
     description: 'What this block is for.',
     x,
@@ -255,6 +255,14 @@ const tipText = () =>
     const el = document.querySelector('[data-testid="canvas-tooltip"]');
     return el === null ? null : el.innerText.replace(/\s+/g, ' ').trim();
   });
+
+/** The tooltip's lines as separate paragraphs, which `tipText` flattens away. */
+const tipLines = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="canvas-tooltip"] .line')].map(
+      (el) => el.textContent,
+    ),
+  );
 
 const insetCentre = await atWorld(112, 112);
 await page.mouse.move(insetCentre.x - 40, insetCentre.y - 30);
@@ -329,6 +337,51 @@ t.ok(
     tabbedTip.indexOf('the second line') < tabbedTip.indexOf('What this block is for.'),
   String(tabbedTip),
 );
+/*
+  Iteration 6.3. A subtitle may hold several lines, and `ShapeTooltip.lines` is rendered as
+  `<p>` elements -- so a newline left inside one would collapse to a space in HTML and the two
+  lines would run together. Split at the source instead, one paragraph per line.
+*/
+{
+  const lines = await tipLines();
+  t.ok(
+    'and a two-line subtitle becomes two paragraphs rather than one run',
+    JSON.stringify(lines) ===
+      JSON.stringify(['the second line', 'and a third', 'What this block is for.']),
+    JSON.stringify(lines),
+  );
+  t.ok(
+    'with no newline left inside any of them',
+    lines.every((l) => !l.includes('\n')),
+    JSON.stringify(lines),
+  );
+
+  /*
+    Two IDENTICAL lines, which is the `{#each}` key.
+
+    `CanvasTooltip` used to key on the line's own text, and a subtitle split on newlines makes a
+    duplicate trivially reachable -- `"AW\nAW"` names the same channel on both ends of a bus,
+    which is a thing a person would write. Svelte throws on a duplicate key, so this asserts on
+    the page-error list rather than on the DOM: the paragraphs appearing at all is the evidence.
+  */
+  const before = errors.length;
+  await page.evaluate(() => {
+    const sc = window.__scene;
+    const s = sc.shapes.find((x) => x.name === 'tabbed_one');
+    sc.replaceShape(s, { ...s, subtitle: 'AW\nAW' }, 'dup');
+  });
+  await page.mouse.move(tabbedCentre.x - 30, tabbedCentre.y - 20);
+  await page.waitForTimeout(200);
+  await page.mouse.move(tabbedCentre.x, tabbedCentre.y);
+  await page.waitForTimeout(800);
+  const dup = await tipLines();
+  t.ok(
+    'two identical subtitle lines do not crash the tooltip',
+    JSON.stringify(dup) === JSON.stringify(['AW', 'AW', 'What this block is for.']) &&
+      errors.length === before,
+    `${JSON.stringify(dup)} errors +${errors.length - before}`,
+  );
+}
 
 // Press and drag: a tooltip must not survive into a gesture.
 await page.mouse.down();
@@ -605,6 +658,20 @@ await leaveToolbar();
       ]),
     JSON.stringify(bar),
   );
+  /*
+    The file commands after the tools, never among them.
+
+    The slice above is the regression net for that, and this is the other half of it: the
+    document commands are a cluster of their own, first among the command clusters, so the bar
+    reads File / Edit / Arrange / View. A button added inside a tool cluster would shift the
+    digits the registry assigns by POSITION, which is a shortcut the user has learned and a
+    literal `Digit4` several suites press.
+  */
+  t.ok(
+    'the file commands come after every tool cluster, as a cluster of their own',
+    JSON.stringify(bar?.slice(3, 5)) === JSON.stringify(['rule', ['Open diagram', 'Save diagram']]),
+    JSON.stringify(bar),
+  );
 }
 
 // The conditional in `toolTipText`, which the toolbar cannot exercise: every registered tool is
@@ -652,6 +719,25 @@ t.ok(
     (await chromeTip()) === 'Delete (⌫)',
     String(await chromeTip()),
   );
+}
+
+/*
+  The file commands' tooltips.
+
+  Not covered by the "every registered tool" sweep above, because these two are not tools -- they
+  are the only buttons on the bar whose shortcut is bound at window level rather than in
+  `ToolHost`, so the tooltip is the only place a user finds out they exist.
+*/
+{
+  for (const [label, want] of [
+    ['Open diagram', 'Open diagram (⌘O)'],
+    ['Save diagram', 'Save diagram (⌘S)'],
+  ]) {
+    await leaveToolbar();
+    await dwellOn(label);
+    const got = await chromeTip();
+    t.ok(`${label} names itself and gives its key`, got === want, `got ${got}`);
+  }
 }
 
 {

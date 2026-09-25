@@ -79,9 +79,6 @@ export interface FabricShape extends Headed {
 /** Which end of a bus this interface is. SystemVerilog modport convention. */
 export type Modport = 'master' | 'slave';
 
-/** An AXI3 channel, or `all` for an interface standing in for the whole bundle. */
-export type Channel = 'aw' | 'w' | 'b' | 'ar' | 'r' | 'all';
-
 /**
  * A network interface: a flat plain box glued to a parent's border.
  *
@@ -112,7 +109,6 @@ export interface NifShape extends ShapeBase {
   readonly depth: number;
   /** The bus standard. Means something beyond this editor later; today it is a label. */
   readonly protocol: 'axi3';
-  readonly channel: Channel;
   readonly modport: Modport;
   readonly description: string;
   /**
@@ -372,15 +368,6 @@ export interface RenderFlags {
   readonly selected: boolean;
   /** An uncommitted preview: draw it dashed and faint. */
   readonly ghost: boolean;
-  /**
-   * How many violations `diagnose` found for this shape, so `draw` can badge it.
-   *
-   * Passed in rather than looked up, because `DrawContext` deliberately exposes only
-   * `boundsOf` and widening that to "read the scene" is the wrong move -- a `draw` that could
-   * see other shapes could re-enter `draw`, and the purity contract would stop being
-   * enforceable. The renderer computes the map once per frame instead.
-   */
-  readonly problems?: number | undefined;
   /** Which sub-part is selected, for a kind that has them. Tool state, not document state. */
   readonly activePart?: number | undefined;
 }
@@ -551,18 +538,6 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * real as the ones outside it, and they are how its internal routing is drawn.
    */
   interfaceInward?(s: S): boolean;
-
-  /**
-   * What is wrong with this shape, given its dependencies. Empty means nothing is.
-   *
-   * Cross-shape validation, which no property writer can do: a connection between two network
-   * interfaces is well formed as a record whatever it joins, and only the pair together says
-   * whether joining them made sense.
-   *
-   * Prose, not codes. It is shown to the person who drew the diagram, and a hardware designer
-   * reading "AW cannot drive AR" needs no lookup table.
-   */
-  diagnose?(s: S, deps: ReadonlyMap<ShapeName, Shape>): readonly string[];
 
   /* ----------------------------------------------------------------- sub-parts ---- */
 

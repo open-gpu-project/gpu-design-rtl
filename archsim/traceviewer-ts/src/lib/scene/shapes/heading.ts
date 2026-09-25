@@ -100,15 +100,50 @@ export function headingHit(s: Headed, body: Rect, p: Vec2, hc: HitContext): bool
 }
 
 /**
+ * A subtitle as the lines it was typed as. `[]` for an empty one.
+ *
+ * The property editor is a JSON editor, so a subtitle has always been able to hold a `\n` -- the
+ * writer validates with a bare `typeof v === 'string'`, and `serializeScene` round-trips it. What
+ * did not happen until iteration 6.3 was DRAWING it: canvas 2D treats every whitespace character
+ * including a newline as a space, so `"AW\nslave"` came out as one long run and was shrunk and
+ * ellipsised as if the user had typed a space.
+ *
+ * `/\r?\n/`, so a subtitle pasted out of a Windows editor splits the same way. A lone `\r` is
+ * NOT a separator: nothing produces classic-Mac line endings, and treating it as one would split
+ * a string a user could reasonably have typed.
+ *
+ * The list is trimmed at both ends and preserved in the middle, which is one rule: a stray Enter
+ * at the start or end of the field is a typo and must not reserve a line of the box's height,
+ * while a blank BETWEEN two lines is a layout the user typed. Dropping an interior blank would
+ * also renumber the lines, changing which one the shared font size was fitted to.
+ *
+ * Exported and pure, so the rules are arithmetic to check rather than pixels to count.
+ */
+export function subtitleLines(subtitle: string): readonly string[] {
+  if (subtitle === '') return [];
+  const lines = subtitle.split(/\r?\n/);
+  let lo = 0;
+  let hi = lines.length;
+  while (lo < hi && lines[lo] === '') lo++;
+  while (hi > lo && lines[hi - 1] === '') hi--;
+  return lines.slice(lo, hi);
+}
+
+/**
  * What hovering a box kind should say.
  *
  * In the tabbed modes the subtitle is not drawn anywhere, so this is the only place it appears.
  * In `inset` it is already on the box and repeating it here would be noise.
+ *
+ * A multi-line subtitle becomes one paragraph per line, because `ShapeTooltip.lines` is rendered
+ * as `<p>` elements and a newline inside one collapses in HTML. The `filter` drops interior
+ * blanks that `subtitleLines` preserves, which is right here and not on the canvas: a blank line
+ * spaces a block's text, where an empty paragraph is three pixels of nothing in a tooltip.
  */
 export function headingTooltip(s: Headed): ShapeTooltip {
-  const lines = (s.labelMode === 'inset' ? [s.description] : [s.subtitle, s.description]).filter(
-    (l) => l !== '',
-  );
+  const lines = (
+    s.labelMode === 'inset' ? [s.description] : [...subtitleLines(s.subtitle), s.description]
+  ).filter((l) => l !== '');
   return { title: headline(s), lines };
 }
 
@@ -138,15 +173,39 @@ export function headingTooltip(s: Headed): ShapeTooltip {
  *  - The subtitle goes first, and by a wide margin: a label needs 13.6 CSS px of box height
  *    and the pair needs 28.9, so there is no size at which a subtitle appears under no label.
  *  - The lines cannot collide or overflow on the way down, because `room` is what is left of the
- *    budget once the label and the lead have been taken out of it.
+ *    budget once the label and the leads have been taken out of it.
+ *
+ * ITERATION 6.3 generalised the subtitle from one line to `n`, and the 0- and 1-line answers are
+ * unchanged to the last bit -- which is what makes `verify/labels.mjs`'s existing numbers the
+ * regression net for the change.
  *
  * Pure and exported so the ramp can be checked as arithmetic rather than by counting lit pixels
  * at a dozen zoom levels.
+ *
+ * @param subtitleLines How many lines the subtitle HAS. The returned `lines` says how many fit.
  */
 export function insetType(
   hCss: number,
-  hasSubtitle: boolean,
-): { label: number; subtitle: number; gap: number; pad: number } | null {
+  subtitleLines: number,
+): {
+  label: number;
+  /** The ONE size every subtitle line is drawn at. 0 when `lines` is 0. */
+  subtitle: number;
+  /**
+   * How many subtitle lines the height affords -- at most `subtitleLines`.
+   *
+   * The largest PREFIX that fits, not all or nothing. Under the old rule, generalising to `n`
+   * would have meant that adding a second line made the ENTIRE subtitle vanish from a box that
+   * had been showing one: a regression bought by a feature. Lines drop from the bottom, where
+   * the reader has already got the gist, and the full text is still on hover and in the panel.
+   */
+  lines: number;
+  /** Label baseline to FIRST subtitle baseline. 0 when `lines` is 0. */
+  gap: number;
+  /** Subtitle baseline to the next. 0 when `lines` is under 2, so the short records stay total. */
+  step: number;
+  pad: number;
+} | null {
   const availH = hCss - 2 * INSET_MARGIN_PX;
   const label = Math.min(LABEL_FONT_PX, availH / INSET_INK_H);
   if (label < INSET_TEXT_MIN_PX) return null;
@@ -156,19 +215,67 @@ export function insetType(
     today -- where `label` is under its ceiling there is no room for a second line either way --
     but they would stop agreeing the moment something other than height could shrink the label,
     which is exactly what `fitInsetLine` does downstream.
+
+    `n` lines cost `n` line-heights AND `n` leads: one lead under the label and one between each
+    later pair. So `subFor(1)` is the old single-line `room`, exactly.
   */
-  const room = (availH - INSET_INK_H * LABEL_FONT_PX - INSET_LEAD_PX) / INSET_INK_H;
-  const second = Math.min(SUBTITLE_FONT_PX, room);
-  const subtitle = hasSubtitle && second >= INSET_TEXT_MIN_PX ? second : 0;
+  const subFor = (n: number): number =>
+    (availH - INSET_INK_H * LABEL_FONT_PX - n * INSET_LEAD_PX) / (n * INSET_INK_H);
+  /*
+    Closed form, not a loop. `subFor` is decreasing in `n`, so `subFor(n) >= INSET_TEXT_MIN_PX`
+    rearranges to a single bound -- and at `n = 1` it reduces to `availH >= 22.89`, i.e.
+    `hCss >= 28.89`, which is the threshold the one-line version already had.
+  */
+  const affordable = Math.floor(
+    (availH - INSET_INK_H * LABEL_FONT_PX) / (INSET_INK_H * INSET_TEXT_MIN_PX + INSET_LEAD_PX),
+  );
+  const lines = Math.min(subtitleLines, Math.max(0, affordable));
+  const subtitle = lines === 0 ? 0 : Math.min(SUBTITLE_FONT_PX, subFor(lines));
   return {
     label,
     subtitle,
+    lines,
     // Ink to ink, so the blank between the lines is the same whatever sizes they came out at.
     // At full size the three terms add back up to INSET_LINE_GAP_PX, by INSET_LEAD_PX's
     // definition, which is why an ordinary box is spaced exactly as it always was.
-    gap: subtitle === 0 ? 0 : INSET_INK_BELOW * label + INSET_INK_ABOVE * subtitle + INSET_LEAD_PX,
+    gap: lines === 0 ? 0 : INSET_INK_BELOW * label + INSET_INK_ABOVE * subtitle + INSET_LEAD_PX,
+    // Between two subtitle lines both terms are the same size, so this is one line-height plus
+    // the lead -- the `gap` formula with `label` replaced by `subtitle`.
+    step: lines < 2 ? 0 : INSET_INK_H * subtitle + INSET_LEAD_PX,
     pad: 2 * INSET_MARGIN_PX,
   };
+}
+
+/**
+ * The baselines of the whole text block, as DEVICE-pixel offsets from the box centre, label
+ * first: `lines + 1` of them.
+ *
+ * `Math.trunc`, and this is not a nicety -- it is what makes the one-line case reproduce the old
+ * code exactly. That placed the pair at `cy - half` and `cy + half` for
+ * `half = Math.floor(gap * dpr / 2)`, i.e. a symmetric floor of the MAGNITUDE, and `trunc` is
+ * what floors a magnitude on both sides of zero. A `Math.round` here is off by a device pixel
+ * wherever `gap * dpr` is not even, which is every size the label has been shrunk to.
+ *
+ * Centred on the baseline SET rather than on its ink, again because that is what the one-line
+ * code did. The ink is very slightly asymmetric about it (`INSET_INK_ABOVE` 0.43 against
+ * `INSET_INK_BELOW` 0.52), which at full size leaves the block 0.39 CSS px high of centre -- not
+ * worth a correction that would move every existing diagram by a fraction of a pixel.
+ *
+ * Exported so the placement is checkable as arithmetic: that the block stays centred, that
+ * consecutive midpoints increase so two plates cannot invert, and that one line is exactly the
+ * pair the old code drew.
+ */
+export function insetBaselines(
+  ty: { gap: number; step: number },
+  lines: number,
+  dpr: number,
+): readonly number[] {
+  const span = lines === 0 ? 0 : ty.gap + (lines - 1) * ty.step;
+  const out: number[] = [Math.trunc((-span / 2) * dpr)];
+  for (let i = 1; i <= lines; i++) {
+    out.push(Math.trunc((ty.gap + (i - 1) * ty.step - span / 2) * dpr));
+  }
+  return out;
 }
 
 /** The one font the inset lines are drawn in. Sizes vary per box and per frame; family never. */
@@ -203,15 +310,53 @@ export function fitInsetLine(
   floorPx: number,
   maxW: number,
 ): { px: number; text: string } {
-  const px = fitFontPx(sizedMeasurer(ctx, text, INSET_FAMILY), ceilingPx, floorPx, maxW);
+  const r = fitInsetLines(ctx, [text], ceilingPx, floorPx, maxW);
+  return { px: r.px, text: r.lines[0] ?? '' };
+}
+
+/**
+ * `n` inset lines at ONE shared size, chosen by fitting the WIDEST of them.
+ *
+ * **One `fitFontPx` over a measurer that maxes across the lines, not `n` independent searches.**
+ * Two reasons, and the first is the one a reader sees: lines at different sizes read as ragged,
+ * which is the same argument the note above makes for clamping the subtitle below the label. The
+ * second is cost -- the probe count stays `fitFontPx`'s five whatever `n` is, where `n` searches
+ * would have multiplied it, and a two-line subtitle would then have been a per-frame regression
+ * on Safari at exactly the zoom band iteration 6.3 was fixing. With `cachedTextWidth` behind it
+ * the measures are `n` on a cold cache and none on a warm one.
+ *
+ * A line that cuts down to nothing but an ellipsis comes back empty but KEEPS ITS SLOT. Dropping
+ * it would shift every line below it up, so the text would jump as the box was zoomed past the
+ * width at which that one line stopped fitting. An empty line in the middle is legal anyway --
+ * see `subtitleLines` -- so it is indistinguishable from one the user typed.
+ *
+ * Leaves `ctx.font` at the size it chose, the promise `fitInsetLine` has always made.
+ */
+export function fitInsetLines(
+  ctx: CanvasRenderingContext2D,
+  lines: readonly string[],
+  ceilingPx: number,
+  floorPx: number,
+  maxW: number,
+): { px: number; lines: readonly string[] } {
+  if (lines.length === 0) return { px: 0, lines: [] };
+  const px = fitFontPx(sizedMeasurer(ctx, lines, INSET_FAMILY), ceilingPx, floorPx, maxW);
   if (px !== 0) {
     // Usually the size the last probe already set, in which case the engine short-circuits.
     ctx.font = `${px}px ${INSET_FAMILY}`;
-    return { px, text };
+    return { px, lines };
   }
+  /*
+    Only the lines that overflow at the floor are cut, and they are cut independently. The fit
+    above failed because the WIDEST line did not fit at `floorPx`; the narrower ones still do,
+    and `fitText` returns them untouched.
+  */
   ctx.font = `${floorPx}px ${INSET_FAMILY}`;
-  const cut = fitText(ctx, text, maxW);
-  return { px: floorPx, text: cut === '…' ? '' : cut };
+  const cut = lines.map((l) => {
+    const t = fitText(ctx, l, maxW);
+    return t === '…' ? '' : t;
+  });
+  return { px: floorPx, lines: cut };
 }
 
 /**
@@ -295,7 +440,8 @@ function drawPlate(
  */
 function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean): void {
   const { ctx, theme, dpr } = dc;
-  const ty = insetType(d.boxH / dpr, s.subtitle !== '');
+  const wanted = subtitleLines(s.subtitle);
+  const ty = insetType(d.boxH / dpr, wanted.length);
   if (ty === null) return;
 
   const floorPx = Math.round(INSET_TEXT_MIN_PX * dpr);
@@ -314,27 +460,28 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
   // A subtitle under no label names nothing, so the label decides for both lines.
   if (label.text === '') return;
 
-  const sub =
-    ty.subtitle === 0
-      ? { px: 0, text: '' }
-      : fitInsetLine(
-          ctx,
-          s.subtitle,
-          Math.max(
-            floorPx,
-            Math.min(
-              ceilingOf(ty.subtitle),
-              Math.floor((label.px * SUBTITLE_FONT_PX) / LABEL_FONT_PX),
-            ),
-          ),
-          floorPx,
-          maxW,
-        );
+  // `ty.lines` and not `wanted.length`: the height may afford fewer than were typed, and the
+  // prefix is what gets drawn -- see the note on `insetType`'s `lines`.
+  const sub = fitInsetLines(
+    ctx,
+    wanted.slice(0, ty.lines),
+    Math.max(
+      floorPx,
+      Math.min(ceilingOf(ty.subtitle), Math.floor((label.px * SUBTITLE_FONT_PX) / LABEL_FONT_PX)),
+    ),
+    floorPx,
+    maxW,
+  );
 
   const cx = (d.x0 + d.x1) / 2;
   const cy = (d.y0 + d.y1) / 2;
-  const half = Math.floor((ty.gap * dpr) / 2);
-  const twoLine = sub.text !== '';
+  /*
+    Every line cut away to nothing is the one-line case's "the whole subtitle vanishes",
+    generalised -- and re-placing with zero lines is what keeps the label on the box's centre
+    rather than pushed up by a block of reserved height with nothing in it.
+  */
+  const drawn = sub.lines.some((l) => l !== '') ? sub.lines.length : 0;
+  const baselines = insetBaselines(ty, drawn, dpr);
 
   /*
     Both lines are fitted before either is drawn, so the font each was measured at has to be
@@ -348,8 +495,16 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
     overflow, since the drawn sizes are bounded by the ones it was computed from.
   */
   const padX = 4 * dpr;
-  const labelY = twoLine ? cy - half : cy;
-  const subY = cy + half;
+  const at = (i: number): number => cy + baselines[i]!;
+  /*
+    Consecutive plates MEET at the midpoint of the two baselines they sit between, rather than
+    each hugging its own ink: two plates sized to their own ink leave a sliver of whatever is
+    underneath showing between them -- on a FIFO, a stub of divider floating between two lines.
+    At one subtitle line the midpoint is `cy` integer-exactly, because the two offsets are the
+    same integer either side of zero, so this is the old behaviour generalised rather than
+    changed.
+  */
+  const boundary = (i: number): number => (at(i) + at(i + 1)) / 2;
 
   ctx.font = `${label.px}px ${INSET_FAMILY}`;
   /*
@@ -375,28 +530,33 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
       d,
       cx,
       ctx.measureText(label.text).width + 2 * padX,
-      labelY - INSET_INK_ABOVE * label.px - dpr,
-      twoLine ? cy : labelY + INSET_INK_BELOW * label.px + dpr,
+      at(0) - INSET_INK_ABOVE * label.px - dpr,
+      drawn === 0 ? at(0) + INSET_INK_BELOW * label.px + dpr : boundary(0),
     );
   }
   ctx.fillStyle = theme.shapeLabel;
   // The label is what the diagram is *about*; the name is the identifier behind it.
-  ctx.fillText(label.text, cx, labelY);
+  ctx.fillText(label.text, cx, at(0));
 
-  if (!twoLine) return;
+  if (drawn === 0) return;
+  // One assignment for the whole block rather than one per line: every subtitle line shares the
+  // size `fitInsetLines` chose, which is the point of fitting them together.
   ctx.font = `${sub.px}px ${INSET_FAMILY}`;
-  if (plate) {
-    drawPlate(
-      dc,
-      d,
-      cx,
-      ctx.measureText(sub.text).width + 2 * padX,
-      cy,
-      subY + INSET_INK_BELOW * sub.px + dpr,
-    );
+  for (let i = 1; i <= drawn; i++) {
+    if (sub.lines[i - 1] === '') continue;
+    if (plate) {
+      drawPlate(
+        dc,
+        d,
+        cx,
+        ctx.measureText(sub.lines[i - 1]!).width + 2 * padX,
+        boundary(i - 1),
+        i === drawn ? at(i) + INSET_INK_BELOW * sub.px + dpr : boundary(i),
+      );
+    }
+    ctx.fillStyle = theme.shapeSubtitle;
+    ctx.fillText(sub.lines[i - 1]!, cx, at(i));
   }
-  ctx.fillStyle = theme.shapeSubtitle;
-  ctx.fillText(sub.text, cx, subY);
 }
 
 /**
@@ -437,7 +597,9 @@ function drawTab(s: Headed, body: Rect, dc: DrawContext, selected: boolean): voi
   ctx.stroke();
 
   ctx.font = TAB_FONT;
-  const text = fitText(ctx, headline(s), tab.textW);
+  // The font is handed over as well as assigned, so the whole-string probe is cached. One tab
+  // label per tabbed box per frame, plus one per hit test through `tabMeasurer`.
+  const text = fitText(ctx, headline(s), tab.textW, TAB_FONT);
   if (text !== '') {
     ctx.fillStyle = theme.shapeLabel;
     ctx.textAlign = 'center';

@@ -248,7 +248,7 @@ export function resizeBox(r: Rect, handle: HandleId, p: Vec2, mods: Modifiers): 
  * A ghost draws its body but not its text: `inner` runs, the heading does not. A preview has no
  * label to show yet, while the body is the whole point of previewing -- and it is the rule the
  * other kinds already follow, `nif` ghosting its fill but not its label and `conn` its line but
- * not its badge.
+ * not its label.
  */
 export function drawBoxBody(
   s: Headed,

@@ -4,17 +4,20 @@
     what is used. Never a `title` prop: iteration 5.3 removed every native tooltip in favour of
     the `tip()` attachment, and the checks assert no control in this pane carries one.
   */
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
   import LayerArrowDown from '@lucide/svelte/icons/layer-arrow-down';
   import LayerArrowUp from '@lucide/svelte/icons/layer-arrow-up';
   import LayersArrowDown from '@lucide/svelte/icons/layers-arrow-down';
   import LayersArrowUp from '@lucide/svelte/icons/layers-arrow-up';
   import Maximize from '@lucide/svelte/icons/maximize';
   import Redo from '@lucide/svelte/icons/redo';
+  import Save from '@lucide/svelte/icons/save';
   import Trash from '@lucide/svelte/icons/trash';
   import Undo from '@lucide/svelte/icons/undo';
   import ZoomIn from '@lucide/svelte/icons/zoom-in';
   import ZoomOut from '@lucide/svelte/icons/zoom-out';
   import type { SceneStore } from '../lib/scene/scene.svelte';
+  import { useSession } from '../lib/session.svelte';
   import type { ToolHost } from '../lib/tools/host.svelte';
   import { hint, keys } from '../lib/keys';
   import { toolTipText } from '../lib/tools/registry';
@@ -28,6 +31,16 @@
   }
 
   const { scene, view, host }: Props = $props();
+
+  /*
+    Read from context rather than taken as a fourth prop.
+
+    A document lives across the whole app, not inside the diagram pane, so the file commands sit
+    on `EditorSession` -- and `DiagramView` deliberately destructures only what its children
+    need, so threading a `session` prop down would put the session in the one place that had
+    managed without it. `TraceView` and `PropertiesView` already reach for it this way.
+  */
+  const session = useSession();
 
   const group = 'flex items-center gap-1 px-2';
   const divider = 'h-5 w-px bg-[var(--color-panel-border)]';
@@ -67,6 +80,38 @@
       {/each}
     </div>
   {/each}
+
+  <!--
+    The file cluster, first among the command clusters so the bar reads File / Edit / Arrange /
+    View. After the tool clusters, never among them: `verify/input.mjs` asserts the first three
+    children of this element are the registry's own groups, which is the regression net for
+    exactly that.
+  -->
+  <div class={divider}></div>
+
+  <div class={group}>
+    <button
+      class={btn}
+      aria-label="Open diagram"
+      {@attach tip(hint('Open diagram', 'cmd', 'o'))}
+      onclick={() => void session.openDocument()}
+    >
+      <FolderOpen class="h-4 w-4" />
+    </button>
+    <!--
+      Never disabled on an empty scene. Saving an empty diagram is a legitimate thing to want --
+      it is how you clear a file you no longer need the contents of -- and a greyed button with
+      no explanation is a worse answer than a file with no shapes in it.
+    -->
+    <button
+      class={btn}
+      aria-label="Save diagram"
+      {@attach tip(hint('Save diagram', 'cmd', 's'))}
+      onclick={() => session.saveDocument()}
+    >
+      <Save class="h-4 w-4" />
+    </button>
+  </div>
 
   <div class={divider}></div>
 

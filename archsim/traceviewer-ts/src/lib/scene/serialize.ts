@@ -2,6 +2,7 @@ import type { PropContext, PropertyBag } from '../props/spec';
 import { hydrateShape, serializeShape } from '../props/project';
 import { uniqueName } from './names';
 import { opsFor, tryOpsForKind } from './registry';
+import { pruneOrphans } from './resolve';
 import type { Shape, ShapeName } from './shape';
 
 export interface SceneDoc {
@@ -78,4 +79,30 @@ export function deserializeScene(doc: unknown): Shape[] {
     out[i] = hydrateShape(opsFor(s).props, s, bags[i]!, ctx);
   }
   return out;
+}
+
+/**
+ * The full lenient read: rebuild, canonicalise, then drop what has nothing left to hang off.
+ *
+ * `deserializeScene` alone is not enough and never was, which the two callers that existed before
+ * this function both knew and only one of them wrote down. It runs no `normalize`, so a
+ * degenerate rect from a hand-edited file arrives with zero extent and is drawn as nothing; and
+ * it runs no `pruneOrphans`, so a connection naming a block the file does not contain is kept
+ * with an endpoint resolving nowhere. `readFragment` has always done all three -- this is that
+ * pipeline, named, so the file path and the clipboard path cannot drift.
+ *
+ * `dropped` counts the records that did not survive, including the unknown kinds
+ * `deserializeScene` skipped. A load that silently lost half a diagram is worse than one that
+ * says so, and the count is the only thing a caller can say about it: which records went, and
+ * why, is not a question this pipeline can answer without becoming a validator.
+ */
+export function readDocument(doc: unknown): { shapes: readonly Shape[]; dropped: number } {
+  const raw = typeof doc === 'object' && doc !== null ? (doc as { shapes?: unknown }).shapes : null;
+  const offered = Array.isArray(raw) ? raw.length : 0;
+  const loaded = deserializeScene(doc);
+  const normalized = loaded
+    .map((s) => opsFor(s).normalize(s))
+    .filter((s): s is Shape => s !== null);
+  const shapes = pruneOrphans(normalized);
+  return { shapes, dropped: offered - shapes.length };
 }

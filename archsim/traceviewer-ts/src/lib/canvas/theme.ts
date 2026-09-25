@@ -45,9 +45,6 @@ export interface Theme {
    * The marquee band. Amber, because that is already what this canvas means by "selected"
    * (`shapeStrokeSelected`, `handleStroke`), and the band is selection in progress.
    */
-  /** The badge on a connection whose two ends do not agree, and the ink of its glyph. */
-  readonly badgeFill: string;
-  readonly badgeInk: string;
   readonly marqueeStroke: string;
   readonly marqueeFill: string;
 }
@@ -76,8 +73,6 @@ export const darkTheme: Theme = {
   connLabel: '#cbd5e1',
   anchorDotFill: '#fbbf24',
   anchorDotStroke: '#0f1115',
-  badgeFill: '#f87171',
-  badgeInk: '#1a0d0d',
   marqueeStroke: '#fbbf24',
   marqueeFill: 'rgba(251, 191, 36, 0.10)',
 };
@@ -202,18 +197,6 @@ export const TAB_EST_CHAR_PX = 5.6;
 export const NIF_LABEL_FONT = '10px ui-sans-serif, system-ui, sans-serif';
 export const NIF_LABEL_PAD_PX = 3;
 export const NIF_LABEL_MIN_PX = 11;
-
-/**
- * The violation badge's radius and where it sits along the line, in CSS pixels.
- *
- * Well inside `CULL_MARGIN_PX`, which is the promise that covers everything sized in screen
- * pixels rather than world units -- a connection's `bounds` is its route, and the badge hangs
- * off it.
- */
-export const BADGE_R_PX = 7;
-export const BADGE_OFFSET_PX = 14;
-/** Grab radius for the badge, which is clicked rather than dragged. */
-export const BADGE_HIT_PX = 11;
 
 /**
  * The furthest, in CSS pixels, that anything may be drawn outside its shape's `bounds`.

@@ -1,6 +1,5 @@
 <script lang="ts">
   import ChromeTooltip from './components/ChromeTooltip.svelte';
-  import ViolationsPopover from './components/ViolationsPopover.svelte';
   import WorkspaceShell from './components/WorkspaceShell.svelte';
   import {
     DotGrid,
@@ -11,9 +10,11 @@
     type GridMode,
     type GridTiers,
   } from './lib/canvas/grid-renderer';
+  import { clearTextCache, resetTextCacheStats, textCacheStats } from './lib/canvas/text';
   import { darkTheme } from './lib/canvas/theme';
   import { keys } from './lib/keys';
   import { clearWorkspace } from './lib/dock/layout';
+  import { parseSceneDoc, saveFileName } from './lib/scene/file';
   import type { Vec2 } from './lib/geom/types';
   import { opsFor, opsForKind } from './lib/scene/registry';
   import {
@@ -39,10 +40,16 @@
   } from './lib/scene/curve';
   import { arrowBox } from './lib/scene/shapes/conn';
   import { makeFifo } from './lib/scene/shapes/fifo';
-  import { fitInsetLine, insetType } from './lib/scene/shapes/heading';
+  import {
+    fitInsetLine,
+    fitInsetLines,
+    insetBaselines,
+    insetType,
+    subtitleLines,
+  } from './lib/scene/shapes/heading';
   import { copyFragment, dependencyOrder, readFragment, translateAll } from './lib/scene/fragment';
   import { nextFreeIndexedName, uniqueName } from './lib/scene/names';
-  import { deserializeScene, serializeScene } from './lib/scene/serialize';
+  import { deserializeScene, readDocument, serializeScene } from './lib/scene/serialize';
   import type { Shape } from './lib/scene/shape';
   import { EditorSession, provideSession } from './lib/session.svelte';
   import { tickTiers } from './lib/timeline/ticks';
@@ -52,6 +59,48 @@
   // floated, or popped out, and the document must not be able to die with it.
   const session = new EditorSession();
   provideSession(session);
+
+  /*
+    The two document shortcuts, at WINDOW level and in here rather than in `ToolHost`.
+
+    `ToolHost.#globalKey` is the wrong home for all three of its own reasons. `onKeyDown` refuses
+    keys unless the diagram pane owns the keyboard, so Cmd+S would do nothing precisely when the
+    property panel has focus -- and Safari's Save Page dialog would appear instead. It also
+    refuses when the target is editable, so Cmd+S with the caret in the JSON editor would fall
+    through to the browser the same way. And its window listeners are registered in
+    `CanvasSurface`'s `onMount`, so they die whenever the dock remounts that pane; a shortcut for
+    the document cannot be owned by one view of it.
+
+    `App` is where `ChromeTooltip` is mounted for the same reason: it outlives every pane.
+
+    `preventDefault` is the whole point, not politeness -- it is what stops Safari's Save Page and
+    Open File panels. `e.code`, matching `#globalKey`'s convention, so a non-QWERTY layout binds
+    the same physical key. Shift is excluded so Shift+Cmd+S stays the browser's Save As.
+
+    CAPTURE, and this is the part that was measured rather than assumed. `svelte-jsoneditor`'s
+    editable cell calls `stopPropagation` on every keydown it sees, so a bubble-phase listener on
+    `window` never fires at all while the caret is in the property panel -- which is precisely
+    where a user reaches for Cmd+S, and precisely where the browser's own dialog would have
+    answered instead. Window capture is the first handler in the tree, so nothing can swallow it
+    and there is no `defaultPrevented` to consult: these two chords mean "the document", app-wide,
+    and no widget gets to redefine them.
+  */
+  $effect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.code === 'KeyS') {
+        e.preventDefault();
+        session.saveDocument();
+      } else if (e.code === 'KeyO') {
+        e.preventDefault();
+        // Inside the keydown task, so Safari still counts this as a user gesture and opens the
+        // picker. Awaiting it here would not: the gesture ends with the handler.
+        void session.openDocument();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
 
   /*
     Iteration 3.2 measurement scaffolding, and deliberately NOT inside the DEV block below: the
@@ -74,6 +123,21 @@
         session.renderer.requestFrame();
       }
       return getGridTiers();
+    },
+    /*
+      The text width cache's counters, beside `__gridMode` and NOT inside the DEV block below,
+      for exactly the same reason: iteration 6.3's second Safari fix is a cache, "is the cache
+      working" is a number rather than an impression, and the number has to come from the build
+      that ships.
+
+      `misses` should be 0 across a repeat frame at a resting zoom. During a pinch it should be
+      bounded by the lines drawn times the whole device sizes the sweep crossed -- NOT by the box
+      count, which is the shape of the claim.
+    */
+    __textCache: (reset?: 'reset' | 'clear'): ReturnType<typeof textCacheStats> => {
+      if (reset === 'clear') clearTextCache();
+      else if (reset === 'reset') resetTextCacheStats();
+      return textCacheStats();
     },
   });
 
@@ -174,6 +238,16 @@
       */
       __insetType: insetType,
       /*
+        Iteration 6.3's multi-line subtitles, pure and exported for the same reason `insetType`
+        is: the split rules, the shared size and the baseline quantisation are all arithmetic,
+        and counting lit pixels at a dozen zoom levels would not settle any of them. The
+        baselines in particular have to be checked against the exact integers the one-line code
+        produced, which is the only way a `round` where a `trunc` belongs gets caught.
+      */
+      __subtitleLines: subtitleLines,
+      __insetBaselines: insetBaselines,
+      __insetFitLines: fitInsetLines,
+      /*
         The width half of the same decision, which `__insetType` deliberately knows nothing of.
 
         Not pure -- it needs a canvas to measure against -- which is exactly why it is exposed:
@@ -246,6 +320,12 @@
       },
       /** The file format, through the app's own registry, for the same reason as `__ops`. */
       __doc: { serializeScene, deserializeScene },
+      /*
+        The pure half of the file path. `parseSceneDoc` and `readDocument` are the two decisions a
+        load makes before anything is committed -- is this a diagram at all, and what of it
+        survives -- and both are answerable without a picker, a download or a pointer.
+      */
+      __file: { parseSceneDoc, saveFileName, readDocument },
       __dump: () => serializeScene(session.scene.shapes),
       __resetLayout: () => {
         clearWorkspace();
@@ -259,5 +339,4 @@
   <WorkspaceShell />
   <!-- Outside every pane on purpose; see the note in the component for what goes wrong inside one. -->
   <ChromeTooltip />
-  <ViolationsPopover />
 </main>

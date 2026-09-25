@@ -3,7 +3,15 @@ import { Renderer } from './canvas/renderer';
 import { darkTheme } from './canvas/theme';
 import { ViewController } from './canvas/view.svelte';
 import { computeWorldBounds } from './scene/bounds';
+import {
+  parseSceneDoc,
+  saveFileName,
+  sceneFileText,
+  SCENE_FILE_ACCEPT,
+  SCENE_FILE_MIME,
+} from './scene/file';
 import { SceneStore } from './scene/scene.svelte';
+import { readDocument, serializeScene, type SceneDoc } from './scene/serialize';
 import type { ShapeName } from './scene/shape';
 import { TimelineHost } from './timeline/host.svelte';
 import { TimelineRenderer } from './timeline/renderer';
@@ -13,6 +21,7 @@ import { demoTrace } from './trace/fixture';
 import { entityPath, type SignalId, type TraceDoc } from './trace/model';
 import { TraceStore } from './trace/store.svelte';
 import { ToolHost } from './tools/host.svelte';
+import { downloadText, pickTextFile } from './ui/file-transport';
 
 /** Matches the `id` of a registered panel and of the `DockPane` that hosts it. */
 export type PanelId = string;
@@ -62,7 +71,6 @@ export class EditorSession {
       shapes: this.scene.shapes,
       selection: this.scene.selection,
       draft: this.scene.draft,
-      problems: this.scene.diagnostics,
       activePart: this.host.subPart,
       overlay: (dc) => this.host.drawOverlay(dc),
     }));
@@ -107,6 +115,92 @@ export class EditorSession {
     this.timeline.setContent(this.trace.rows.length, doc.lastTick);
   }
 
+  /* ------------------------------------------------------------------ the file ---- */
+
+  /**
+   * The name of the last file opened, or null before any has been.
+   *
+   * The whole of the editor's document-name concept, and it lives here rather than on the scene
+   * because it is a property of where the document came from, not of the document -- undo must
+   * not restore it, and a copied fragment must not carry it.
+   */
+  #openedName: string | null = null;
+
+  /**
+   * Write the diagram to a file.
+   *
+   * Commits nothing and pushes no history entry, so it needs no `isGesturing` guard -- the same
+   * argument `copySelection` makes, and for the same reason: this reads the document and hands a
+   * string to the browser.
+   */
+  saveDocument(): void {
+    const name = saveFileName(this.#openedName);
+    const doc = serializeScene(this.scene.shapes);
+    downloadText(name, sceneFileText(doc), SCENE_FILE_MIME);
+    this.host.setHint(`Saved \u201c${name}\u201d \u2014 ${countOf(this.scene.shapes.length)}.`);
+  }
+
+  /**
+   * Ask for a file and load it. Nothing happens until one is chosen.
+   *
+   * Must be called from inside a user gesture, because `pickTextFile` is -- see its note. The
+   * promise it returns is awaited rather than fired and forgotten so that a file which is not a
+   * diagram can be reported instead of silently doing nothing.
+   */
+  async openDocument(): Promise<void> {
+    const picked = await pickTextFile(SCENE_FILE_ACCEPT);
+    if (picked === null) return;
+    const doc = parseSceneDoc(picked.text);
+    if (doc === null) {
+      /*
+        Refused WITHOUT committing, which is the one thing this path must get right. Loading an
+        unreadable file as an empty document would wipe the diagram the user has open because
+        they picked the wrong entry in a list -- recoverable through undo, but only if they
+        realise what happened, and the file they wanted is still unopened either way.
+      */
+      this.host.setHint(
+        `Could not open \u201c${picked.name}\u201d \u2014 that is not a diagram file.`,
+      );
+      return;
+    }
+    this.loadDocument(doc, picked.name);
+  }
+
+  /**
+   * Replace the whole document, as one undoable step.
+   *
+   * Through `scene.commit`, which is not merely convenient but the only whole-array swap path
+   * there is -- and it buys three things beyond the history entry. It clears the draft, so a
+   * half-drawn rect cannot outlive the document it was being drawn into. It runs
+   * `#expandChildren`, so a file recording `interfaces: 2` on a fabric without its two `nif`
+   * records gets them minted as part of the load rather than one commit later. And it runs
+   * `#resolveDependencies`, so every wire in the file is rerouted against the geometry it
+   * actually arrived with.
+   *
+   * Selection goes through `setSelection`, never by assignment: that is `SceneStore`'s single
+   * write path and the one `onSelectionChanged` cannot be bypassed on. `clearSelection` would
+   * not do, because it early-returns when the selection is already empty.
+   *
+   * `host.documentReplaced()` comes after the commit, and the order is required -- see its note.
+   */
+  loadDocument(doc: SceneDoc, from: string): void {
+    const { shapes, dropped } = readDocument(doc);
+    this.scene.commit('load', () => {
+      this.scene.shapes = shapes;
+      this.scene.setSelection(new Set());
+    });
+    this.#openedName = from;
+    this.host.documentReplaced();
+    // A partial load is still a load. Saying how much went is the only honest thing available:
+    // which records went, and why, is not something `readDocument` can report without becoming
+    // a validator.
+    this.host.setHint(
+      dropped === 0
+        ? `Opened \u201c${from}\u201d \u2014 ${countOf(shapes.length)}.`
+        : `Opened \u201c${from}\u201d \u2014 ${countOf(shapes.length)}, ${dropped} could not be read.`,
+    );
+  }
+
   /* --------------------------------------------------------- global selection ---- */
 
   /**
@@ -149,6 +243,11 @@ export class EditorSession {
   focusPanel(id: PanelId): void {
     if (this.keyboardOwner !== id) this.keyboardOwner = id;
   }
+}
+
+/** `1 object`, not `1 objects`. The status bar tolerates the ugly form; a sentence does not. */
+function countOf(n: number): string {
+  return `${n} object${n === 1 ? '' : 's'}`;
 }
 
 const SESSION = Symbol('archsim.session');

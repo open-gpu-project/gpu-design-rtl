@@ -1,8 +1,6 @@
 import { alignStroke } from '../../canvas/pixel';
 import {
   ANCHOR_DOT_R_PX,
-  BADGE_OFFSET_PX,
-  BADGE_R_PX,
   ARROW_HALF_W_PX,
   ARROW_LEN_PX,
   ARROW_TIP_TOL_PX,
@@ -52,9 +50,6 @@ import type {
   ShapeOps,
 } from '../shape';
 import { connProps } from './conn.props';
-// The pure geometry module, never the kind: `nif.ts` registers itself, and importing it here
-// would close a cycle through the registry.
-import { nifEdge } from './nif-geom';
 
 const SEGMENT_HANDLE = /^seg:(\d+)$/;
 const END_HANDLE = /^end:(from|to)$/;
@@ -505,7 +500,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
       ctx.stroke();
     }
 
-    if (!flags.ghost && (flags.problems ?? 0) > 0) drawBadge(dc, badgeAt(s, dev, dpr));
     if (!flags.ghost && s.label !== '') drawLabel(s, dc, dev);
 
     // Restore everything touched. `lineJoin` in particular: `rect.ts` strokes with `strokeRect`,
@@ -570,67 +564,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
     return samePoints(points, s.points) ? s : { ...s, points };
   },
 
-  /**
-   * Whether joining these two interfaces made sense.
-   *
-   * Only checked for a CURVE, which is to say only for a link the tool drew as a bus. A plain
-   * arrow to an interface is explicitly allowed -- it is how you say "this block talks to that
-   * port" without claiming the two are wired together -- so checking it would report violations
-   * about a relationship the user never asserted.
-   *
-   * `all` is compatible with any single channel: a diagram drawn at bundle level should not
-   * report five violations for one wire.
-   */
-  diagnose(s, deps) {
-    if (!isCurve(s)) return [];
-    const a = deps.get(s.from);
-    const b = deps.get(s.to);
-    if (a === undefined || b === undefined) return [];
-    if (a.kind !== 'nif' || b.kind !== 'nif') return [];
-
-    const out: string[] = [];
-    /*
-      Widened to `string` deliberately. `protocol` has exactly one value today, so the compiler
-      narrows the comparison to `never` and rejects it as unreachable -- which is true, and will
-      stop being true the moment a second bus standard is added. Deleting the check would mean
-      the first person to add one gets no error and no reminder that this rule exists.
-    */
-    const pa: string = a.protocol;
-    const pb: string = b.protocol;
-    if (pa !== pb) {
-      out.push(
-        `${a.name} speaks ${pa.toUpperCase()} and ${b.name} speaks ${pb.toUpperCase()}. A link joins one bus standard to itself.`,
-      );
-    }
-    if (a.channel !== b.channel && a.channel !== 'all' && b.channel !== 'all') {
-      out.push(
-        `${a.name} carries the ${a.channel.toUpperCase()} channel and ${b.name} carries ${b.channel.toUpperCase()}. A channel connects only to itself, or to an interface set to “all”.`,
-      );
-    }
-    if (a.modport === b.modport) {
-      out.push(
-        `Both ends are ${a.modport}s. A master drives the transaction and a slave answers it, so one of each is what a link needs.`,
-      );
-    }
-    /*
-      Which EDGE each end used. A wire from the outside of one port to the inside of another is
-      not a bus; it is a line drawn through a border.
-
-      The modport rule above is untouched by this and needs to be: inside a fabric, a slave port
-      routing to a master port is still one of each.
-    */
-    const ea = nifEdge(s.fromAnchor, a.inward);
-    const eb = nifEdge(s.toAnchor, b.inward);
-    if (ea !== eb) {
-      const inner = ea === 'in' ? a : b;
-      const outer = ea === 'in' ? b : a;
-      out.push(
-        `${inner.name} is joined on its inward edge and ${outer.name} on its outward edge. A link runs between two outward edges, or between two inward ones — an inward edge faces the inside of its own parent.`,
-      );
-    }
-    return out;
-  },
-
   /*
     A curve contributes NO corridors.
 
@@ -647,77 +580,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
    */
   tooltip: (s) => ({ title: s.name, lines: s.description !== '' ? [s.description] : [] }),
 };
-
-/**
- * Where the violation badge sits, in DEVICE pixels.
- *
- * **The single source of that point.** `draw` paints it here and the select tool hit-tests
- * against it, so the badge you can click is by construction the badge you can see -- the same
- * rule `tabRect` follows, and the defect `visibleFlags` exists to prevent in the trace panel.
- *
- * At the midpoint and offset perpendicular to the line, so it does not sit under the label,
- * which takes the midpoint itself.
- */
-export function badgeAt(s: ConnectionShape, dev: readonly Vec2[], dpr: number): Vec2 {
-  if (dev.length < 2) return dev[0] ?? { x: 0, y: 0 };
-  const mid = isCurve(s) ? curveAt(dev, 0.5) : midOfLongestRun(dev);
-  const t = isCurve(s)
-    ? (curveEndDirection(dev.slice(0, Math.max(2, Math.ceil(dev.length / 2) + 1))) ?? {
-        x: 1,
-        y: 0,
-      })
-    : (endDirection(dev) ?? { x: 1, y: 0 });
-  // Perpendicular, turned the same way the label's `perp` axis turns.
-  return { x: mid.x - t.y * BADGE_OFFSET_PX * dpr, y: mid.y + t.x * BADGE_OFFSET_PX * dpr };
-}
-
-/**
- * The badge in CSS pixels, for the tool's hit test.
- *
- * Same function, `dpr` of one and a CSS projector -- so the clickable point cannot drift from
- * the drawn one by a scale factor, which is the failure this shape of helper exists to avoid.
- */
-export function badgeScreen(s: ConnectionShape, project: (p: Vec2) => Vec2): Vec2 {
-  return badgeAt(s, s.points.map(project), 1);
-}
-
-function midOfLongestRun(dev: readonly Vec2[]): Vec2 {
-  let best = 1;
-  let bestLen = -1;
-  for (let i = 1; i < dev.length; i++) {
-    const l = Math.abs(dev[i]!.x - dev[i - 1]!.x) + Math.abs(dev[i]!.y - dev[i - 1]!.y);
-    if (l > bestLen) {
-      bestLen = l;
-      best = i;
-    }
-  }
-  return { x: (dev[best - 1]!.x + dev[best]!.x) / 2, y: (dev[best - 1]!.y + dev[best]!.y) / 2 };
-}
-
-/** A filled disc with an exclamation mark. Device space. */
-function drawBadge(dc: DrawContext, at: Vec2): void {
-  const { ctx, dpr, theme } = dc;
-  const r = BADGE_R_PX * dpr;
-  ctx.beginPath();
-  ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = theme.badgeFill;
-  ctx.fill();
-
-  /*
-    An exclamation mark drawn as two primitives rather than as text.
-
-    `fillText` at this size would be hinted differently at every dpr and would need a font
-    string, a baseline and a measurement to centre; a bar and a dot are exact at any zoom and
-    cost nothing. The glyph is dark on the badge rather than light, so the badge reads as a
-    warning sticker rather than as another handle.
-  */
-  ctx.fillStyle = theme.badgeInk;
-  const w = Math.max(1, Math.round(r / 3.5));
-  ctx.fillRect(at.x - w / 2, at.y - r * 0.55, w, r * 0.72);
-  ctx.beginPath();
-  ctx.arc(at.x, at.y + r * 0.42, Math.max(1, w * 0.62), 0, Math.PI * 2);
-  ctx.fill();
-}
 
 /**
  * Where the arrowhead sits, in device pixels: the box around the triangle, with the tip

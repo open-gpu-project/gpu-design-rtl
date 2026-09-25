@@ -35,13 +35,7 @@ function anchorsOf(s: NifShape): readonly Anchor[] {
   return nifAnchors(box(s), s.side, s.inward);
 }
 
-export function makeNif(
-  name: ShapeName,
-  parent: ShapeName,
-  side: Side,
-  offset: number,
-  channel: NifShape['channel'] = 'all',
-): NifShape {
+export function makeNif(name: ShapeName, parent: ShapeName, side: Side, offset: number): NifShape {
   return {
     kind: 'nif',
     name,
@@ -53,7 +47,6 @@ export function makeNif(
     length: NIF_LENGTH,
     depth: NIF_DEPTH,
     protocol: 'axi3',
-    channel,
     modport: 'slave',
     pending: NO_PENDING,
     // Placeholders, both of them. `reroute` runs in the same commit that creates this and owns
@@ -83,7 +76,7 @@ export const nifOps: ShapeOps<NifShape> = {
   tooltip: (s) => ({
     title: s.label !== '' ? `${s.label} (${s.name})` : s.name,
     lines: [
-      `${s.protocol.toUpperCase()} ${s.channel === 'all' ? 'all channels' : s.channel.toUpperCase()} · ${s.modport}`,
+      `${s.protocol.toUpperCase()} · ${s.modport}`,
       ...(s.description !== '' ? [s.description] : []),
     ],
   }),
@@ -296,7 +289,9 @@ export const nifOps: ShapeOps<NifShape> = {
 
     if (across >= NIF_LABEL_MIN_PX) {
       ctx.font = NIF_LABEL_FONT;
-      const text = fitText(ctx, s.label, Math.max(0, along - 2 * NIF_LABEL_PAD_PX));
+      // Cached on the whole-string probe: a fabric carries up to 64 of these, and the label
+      // usually fits, so that probe is the only measurement most frames make per port.
+      const text = fitText(ctx, s.label, Math.max(0, along - 2 * NIF_LABEL_PAD_PX), NIF_LABEL_FONT);
       /*
         Nothing at all, rather than a bare ellipsis. The gate above is on the ACROSS extent, so
         there is a band of zoom where the box is deep enough for a label while the 32-unit width

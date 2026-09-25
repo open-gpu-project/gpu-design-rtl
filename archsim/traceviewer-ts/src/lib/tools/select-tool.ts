@@ -1,18 +1,11 @@
 import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2';
 import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
-import {
-  BADGE_HIT_PX,
-  DRAG_SLOP_PX,
-  HANDLE_SIZE_PX,
-  SELECT_ON_PRESS_BEGINS_MOVE,
-} from '../canvas/theme';
+import { DRAG_SLOP_PX, HANDLE_SIZE_PX, SELECT_ON_PRESS_BEGINS_MOVE } from '../canvas/theme';
 import type { Vec2 } from '../geom/types';
 import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
 import { opsFor } from '../scene/registry';
-import { badgeScreen } from '../scene/shapes/conn';
-import { toggleViolations } from '../ui/violations.svelte';
 import { movesWith, rerouteAll } from '../scene/resolve';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
 import { registerTool } from './registry';
@@ -115,16 +108,6 @@ export class SelectTool implements Tool {
 
   onPointerDown(p: PointerInfo, c: ToolContext): void {
     if (p.button !== 0) return;
-
-    /*
-      The violation badge, before anything else.
-
-      It cannot be a `Handle`, which is what everything else clickable on a shape is: handles
-      exist only on SELECTED shapes, and a badge that only appeared once you had selected the
-      thing it is warning you about would be useless. So it gets its own pass, ahead of the
-      normal hit test, reading its position from the same function `draw` places it with.
-    */
-    if (this.#hitBadge(p, c)) return;
 
     const hit = c.hitTest(p);
 
@@ -478,7 +461,7 @@ export class SelectTool implements Tool {
     */
     if (plus.length > 0) {
       // Big enough that the cross inside it is legible: at 2.6 the arms came out 1.4 CSS px and
-      // the badge read as a small blank square rather than as a plus.
+      // the handle read as a small blank square rather than as a plus.
       const r = Math.max(4, Math.round((HANDLE_SIZE_PX * dpr) / 2.2));
       ctx.globalAlpha = 0.75;
       ctx.beginPath();
@@ -505,35 +488,6 @@ export class SelectTool implements Tool {
       ctx.globalAlpha = 1;
     }
     restore();
-  }
-
-  /** Open the violations popup if the press landed on a badge. True when it did. */
-  #hitBadge(p: PointerInfo, c: ToolContext): boolean {
-    const problems = c.scene.diagnostics;
-    if (problems.size === 0) return false;
-    const tol = BADGE_HIT_PX;
-    const project = (q: Vec2): Vec2 => c.view.toScreen(q);
-
-    // Top-down, so the badge of the shape drawn last wins where two overlap.
-    for (let i = c.scene.shapes.length - 1; i >= 0; i--) {
-      const s = c.scene.shapes[i]!;
-      const lines = problems.get(s.name);
-      if (lines === undefined || s.kind !== 'conn') continue;
-      const at = badgeScreen(s, project);
-      if (Math.hypot(at.x - p.screen.x, at.y - p.screen.y) > tol) continue;
-
-      const box = c.view.canvas?.getBoundingClientRect();
-      toggleViolations({
-        shape: s.name,
-        title: `${s.name}: ${lines.length} problem${lines.length === 1 ? '' : 's'}`,
-        lines,
-        x: (box?.left ?? 0) + at.x,
-        y: (box?.top ?? 0) + at.y,
-      });
-      c.requestFrame();
-      return true;
-    }
-    return false;
   }
 
   #abort(c: ToolContext): void {

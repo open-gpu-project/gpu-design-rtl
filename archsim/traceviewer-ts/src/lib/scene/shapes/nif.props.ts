@@ -1,6 +1,6 @@
 import { descriptionProp, kindProp, labelProp, nameProp, zIndexProp } from '../../props/common';
 import { propSchema, type PropDef, type PropSchema, type WriteResult } from '../../props/spec';
-import type { Channel, Modport, NifShape } from '../shape';
+import type { Modport, NifShape } from '../shape';
 import { GRID } from '../../grid';
 import { MIN_NIF_LENGTH, NIF_DEPTH, NIF_LENGTH } from './nif-geom';
 
@@ -19,17 +19,20 @@ function asIntPair(v: unknown): [number, number] | null {
 }
 
 const SIDE_VALUES = ['n', 'e', 's', 'w'] as const;
-const CHANNELS: readonly Channel[] = ['aw', 'w', 'b', 'ar', 'r', 'all'];
 const MODPORTS: readonly Modport[] = ['master', 'slave'];
 
 /**
  * The network interface's properties.
  *
- * `protocol` and `channel` are two keys rather than one because they answer different questions.
- * The protocol is which bus standard this is -- and it is the one that will mean something
- * outside this editor, once a diagram is checked against RTL. The channel is which wire of that
- * bus the interface carries. Folding them into a single `axi3_aw` enum would make adding a second
- * protocol a rewrite of the value set rather than one more entry.
+ * `protocol` is the one key here that will mean something outside this editor, once a diagram is
+ * checked against RTL. Everything else is geometry or presentation.
+ *
+ * It carried a `channel` sibling until iteration 6.3, on the theory that a diagram would be drawn
+ * one AXI3 channel at a time. Nothing ever drew one. No geometry, no colour and no canvas label
+ * depended on it, the only consumer was the compatibility check that has also gone, and five
+ * enum values bought one clause of tooltip text -- so it was withdrawn rather than kept against a
+ * use that had not appeared in three iterations. An old file's `channel` key is ignored on load;
+ * see the note on `hydrateShape`.
  *
  * `position`, `size` and `parent` are absent on purpose. An interface has no position of its own:
  * it has a `side` and an `offset` on a parent, and its box follows from those. Offering an
@@ -106,7 +109,7 @@ const props: readonly PropDef<NifShape>[] = [
   {
     key: 'protocol',
     title: 'Protocol',
-    doc: 'Which bus standard this interface speaks. Only AXI3 so far. This is the field that will mean something outside the design editor — it is what a future check against the RTL would match on — so it is kept separate from the channel rather than folded into it.',
+    doc: 'Which bus standard this interface speaks. Only AXI3 so far. This is the field that will mean something outside the design editor — it is what a future check against the RTL would match on. An enum with one value rather than a fixed string, because what grows when a second standard is added is the value set and not the shape of the record.',
     mode: 'edit',
     type: { type: 'enum', values: ['axi3'] },
     read: (s) => s.protocol,
@@ -116,22 +119,9 @@ const props: readonly PropDef<NifShape>[] = [
         : bad('Protocol must be “axi3”.'),
   },
   {
-    key: 'channel',
-    title: 'Channel',
-    doc: 'Which AXI3 channel this interface carries: “aw” write address, “w” write data, “b” write response, “ar” read address, “r” read data. Use “all” for an interface standing in for the whole bundle, which is compatible with any single channel — a diagram drawn at bundle level should not report five violations for one wire.',
-    mode: 'edit',
-    type: { type: 'enum', values: [...CHANNELS] },
-    read: (s) => s.channel,
-    write: (s, v): Write => {
-      const channel = CHANNELS.find((c) => c === v);
-      if (channel === undefined) return bad(`Channel must be one of ${CHANNELS.join(', ')}.`);
-      return { ok: true, shape: { ...s, channel } };
-    },
-  },
-  {
     key: 'modport',
     title: 'Modport',
-    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. It is the colour of the interface’s border — violet for a master, sky for a slave — which is why selecting one, and turning that border amber, hides it until you deselect. A connection between two masters, or two slaves, is a violation.',
+    doc: 'Which end of the bus this is, following the SystemVerilog modport convention: a “master” drives the transaction and a “slave” answers it. It is the colour of the interface’s border — violet for a master, sky for a slave — which is why selecting one, and turning that border amber, hides it until you deselect. Nothing checks what you join to what: the colours are there so you can see it yourself.',
     mode: 'edit',
     type: { type: 'enum', values: [...MODPORTS] },
     read: (s) => s.modport,

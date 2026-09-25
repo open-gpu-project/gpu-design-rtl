@@ -9,12 +9,15 @@ function mod(n: number, m: number): number {
 /**
  * Which primitive the dot tiers are emitted with.
  *
- * Measurement scaffolding for iteration 3.2. Safari rasterizes the canvas display list in its GPU
- * process and charges roughly 21us per `ctx.rect()` there, which is 308ms of the 330ms composite
- * measured at the worst zoom -- but *which* primitive that cost attaches to decides whether the
- * fix is two lines or a strip cache, and no amount of script-time profiling can tell them apart.
+ * Safari rasterizes the canvas display list in its GPU process and charges roughly 21us per
+ * `ctx.rect()` there, which is 308ms of the 330ms composite measured at the worst zoom. The
+ * O(area) paths below emit up to 14 668 rects in one frame at `z = 0.5001`; `strips` emits 478.
  *
- * - `batch`     One path for the whole tier, one `fill()`. The shipped behaviour, and the control.
+ * - `strips`    One cached row bitmap per row kind, blitted once per visible row. Turns an
+ *               O(area) frame into an O(perimeter) one. **The shipped behaviour** since
+ *               iteration 6.3. See `TierStrips`.
+ * - `batch`     One path for the whole tier, one `fill()`. What shipped through iteration 6.2,
+ *               and **the control**: it is what `strips` is measured and diffed against.
  * - `row-fill`  One path per row. Collapses each fill's bounding box from the whole canvas
  *               (~8.7Mpx) to `devW x size` (~13kpx). Iteration 3.1 section 4.1's experiment.
  * - `fill-rect` No path at all: one `fillRect()` per dot. Every engine special-cases solid
@@ -22,22 +25,32 @@ function mod(n: number, m: number): number {
  *               tessellating a 14 668-subpath path" from "cost of a rect". Note that the batching
  *               comment on `batchDots` measured `arc()`, a curve -- it says nothing about
  *               `fillRect`.
- * - `strips`    One cached row bitmap per row kind, blitted once per visible row. Turns an
- *               O(area) frame into an O(perimeter) one. See `TierStrips`.
  *
- * The first three emit the same rects, in the same order, at the same `globalAlpha`, and dots
- * provably never overlap (iteration 3.1 section 8), so each pixel is blended exactly once in all
- * of them: they are pixel-identical by construction rather than by approximation, which is what
- * makes swapping between them a fair measurement. `strips` is identical too, but for a longer
- * reason -- see `TierStrips`.
+ * The three direct paths emit the same rects, in the same order, at the same `globalAlpha`, and
+ * dots provably never overlap (iteration 3.1 section 8), so each pixel is blended exactly once in
+ * all of them: they are pixel-identical by construction rather than by approximation, which is
+ * what makes swapping between them a fair measurement. `strips` is identical too, but for a
+ * longer reason -- see `TierStrips`.
+ *
+ * **Why all four are still here, now that one has won.** `verify/grid.mjs` diffs the modes
+ * against each other, so deleting the control would delete the regression net for the change that
+ * made `strips` the default -- with one mode there is nothing to diff and "the output does not
+ * change" stops being assertable. And `history/iter-3-2-measurement.md` section 5's result tables
+ * are still blank: the four-mode sweep in real Safari has not been run, `row-fill` or `fill-rect`
+ * winning on its own would mean this file's ~440 lines of strip cache could be deleted rather
+ * than shipped, and report 2 section 6.3's persistence run needs the peak that `strips` removes.
+ * The two losing direct modes come out when those tables are filled in.
  *
  * Deliberately NOT behind `import.meta.env.DEV`: the thing being measured must be the thing that
  * ships, and gating it behind a different build mode than the one under test is exactly the class
- * of mistake the two triage reports kept catching. The losing modes come out when 3.2 lands.
+ * of mistake the two triage reports kept catching.
+ *
+ * Note that `batchDots` is NOT dead code under `strips` -- `DotGrid.#tier` falls back to it below
+ * `STRIP_MIN_ROWS` and whenever a degenerate geometry defeats strip construction.
  */
 export type GridMode = 'batch' | 'row-fill' | 'fill-rect' | 'strips';
 
-let gridMode: GridMode = 'batch';
+let gridMode: GridMode = 'strips';
 
 export function setGridMode(mode: GridMode): void {
   gridMode = mode;

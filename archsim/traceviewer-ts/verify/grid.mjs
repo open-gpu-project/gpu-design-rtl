@@ -31,6 +31,20 @@ import { DEV_URL, diagramCanvas, open, suite } from './harness.mjs';
 const t = suite('grid');
 const { browser, page, errors } = await open(DEV_URL);
 
+/*
+  The shipped mode, asserted BEFORE anything in this file has had a chance to set it.
+
+  Iteration 6.3 made `strips` the default, which is the whole fix for the 50-70% zoom band: the
+  direct paths emit up to 14 668 rects at z = 0.5001 and this one emits 478. Every other check
+  here sets a mode explicitly, so without this one the default could regress to `batch` and the
+  file would still be entirely green.
+*/
+t.ok(
+  'the shipped default is the strip cache',
+  (await page.evaluate(() => window.__gridMode())) === 'strips',
+  await page.evaluate(() => window.__gridMode()),
+);
+
 const DEV_W = 3092;
 const DEV_H = 1222;
 const DPR = 2;
@@ -39,6 +53,19 @@ const DPR = 2;
 const CAM_X = 137.37;
 const CAM_Y = 91.13;
 
+/*
+  `batch` first, which is what `renderModes` diffs everything else against.
+
+  Deliberately NOT the shipped mode, even though iteration 6.3 made `strips` the default. The
+  control has to be the implementation whose output is right by construction -- one rect per dot,
+  in a loop -- because the clever one is what needs vouching for, and `strips` is only
+  pixel-identical through a four-paragraph argument about clipping, premultiplication and
+  `globalAlpha`. Putting `strips` first would also collapse the byte-identity claim below:
+  `row-fill` and `fill-rect` must match `batch` EXACTLY, where `strips` is allowed one LSB in the
+  blend band, and diffing all three against `strips` would hold the two direct variants to the
+  weaker bound. The diff is symmetric, so "strips is within tol of batch" says everything "batch
+  is within tol of strips" would.
+*/
 const MODES = ['batch', 'row-fill', 'fill-rect', 'strips'];
 
 /**
@@ -110,7 +137,9 @@ const renderModes = (z, modes = MODES, h = DEV_H, tiers = 'both') =>
         }
       } finally {
         for (const k of Object.keys(orig)) P[k] = orig[k];
-        window.__gridMode('batch');
+        // The DEFAULT, not `'batch'`: restoring the old default here would leave every block
+        // after this one testing a mode that does not ship.
+        window.__gridMode('strips');
         window.__gridTiers('both');
       }
       return out;
@@ -332,7 +361,7 @@ const reuse = await page.evaluate(
       return { cold, sameCam, vertical, horizontal };
     } finally {
       for (const k of Object.keys(orig)) P[k] = orig[k];
-      window.__gridMode('batch');
+      window.__gridMode('strips');
     }
   },
   { w: DEV_W, h: DEV_H, dpr: DPR, camX: CAM_X, camY: CAM_Y },
@@ -531,7 +560,8 @@ for (const z of [0.5001, 0.512, 0.875, 1]) {
       .join(' '),
   );
 }
-await page.evaluate(() => window.__gridMode('row-fill'));
+// Back to the default before the geometry block below, which reads the LIVE canvas.
+await page.evaluate(() => window.__gridMode('strips'));
 
 const geom = await page.evaluate(() => ({
   css: [window.__view.cssW, window.__view.cssH],

@@ -133,7 +133,7 @@ export function subtitleProp<S extends ShapeBase & { subtitle: string }>(noun: s
   return {
     key: 'subtitle',
     title: 'Subtitle',
-    doc: `A second, shorter line under the label — what this ${noun} is, where the label is what it is called. In the “inset” label mode it is drawn under the label on the canvas, in a smaller and quieter type, and it disappears before the label does as the ${noun} shrinks. In the two tabbed modes there is nowhere on the ${noun} to put it, so it moves to the top of the hover tooltip instead. May be left empty.`,
+    doc: `A second, shorter line under the label — what this ${noun} is, where the label is what it is called. In the “inset” label mode it is drawn under the label on the canvas, in a smaller and quieter type, and it disappears before the label does as the ${noun} shrinks. A newline starts a new line: every line is drawn at one size, chosen so the widest of them fits, and lines are dropped from the bottom when the ${noun} is too short for all of them — the full text stays here and on hover. In the two tabbed modes there is nowhere on the ${noun} to put it, so it moves to the top of the hover tooltip, one paragraph per line. May be left empty.`,
     mode: 'edit',
     type: { type: 'string' },
     read: (s) => s.subtitle,

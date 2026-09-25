@@ -109,17 +109,6 @@ export function nifAnchors(r: Rect, side: Side, inward: boolean): readonly Ancho
   return out;
 }
 
-/**
- * Which edge an anchor id names, with anything unrecognised meaning the outward one.
- *
- * `inward` is a parameter rather than an assumption, and that is what stops a hand-edited file
- * earning a false violation: an id of `'in'` on an interface whose parent does not offer an
- * inward edge is DRAWN on the outward edge, so the outward edge is what must be reported on.
- */
-export function nifEdge(id: string, inward: boolean): 'in' | 'out' {
-  return inward && id === NIF_IN ? 'in' : 'out';
-}
-
 /** Distance from `p` to the infinite LINE of a face, not to the face segment. */
 function distToFaceLine(pr: Rect, side: Side, p: Vec2): number {
   if (side === 'n') return Math.abs(p.y - pr.y);

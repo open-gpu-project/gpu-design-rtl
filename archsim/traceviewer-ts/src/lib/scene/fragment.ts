@@ -4,7 +4,7 @@ import { unionBounds } from './bounds';
 import { nextFreeIndexedName } from './names';
 import { opsFor } from './registry';
 import { pruneOrphans } from './resolve';
-import { deserializeScene, serializeScene, type SceneDoc } from './serialize';
+import { readDocument, serializeScene, type SceneDoc } from './serialize';
 import type { Shape, ShapeName } from './shape';
 
 /**
@@ -91,11 +91,11 @@ export function readFragment(doc: unknown, live: ReadonlySet<ShapeName>): readon
   // Loads under the fragment's ORIGINAL names. That is the point: the connections name blocks
   // that are in this same array, so `checkEndpoint` is satisfied even when every one of those
   // names is also taken in the live scene.
-  const loaded = deserializeScene(doc);
-  const normalized = loaded
-    .map((s) => opsFor(s).normalize(s))
-    .filter((s): s is Shape => s !== null);
-  const clean = pruneOrphans(normalized);
+  //
+  // Through `readDocument`, which is this function's own former body lifted out for the file
+  // loader to share. The `dropped` count it also returns is ignored here on purpose: a clipboard
+  // doc the user never saw cannot usefully report that two of its records were unusable.
+  const clean = readDocument(doc).shapes;
   if (clean.length === 0) return [];
 
   /*

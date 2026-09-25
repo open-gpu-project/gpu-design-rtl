@@ -64,7 +64,13 @@
     style:top="{pos.y}px"
   >
     <div class="title">{tip.title}</div>
-    {#each tip.lines as line (line)}
+    <!--
+      Keyed on the INDEX, not on the string. A `ShapeTooltip`'s lines are prose with no identity
+      of their own, `HoverTip` is `$state.raw` and rebuilt from scratch per tooltip, and keying on
+      the text is a duplicate-key crash the moment two lines are equal -- which a subtitle split
+      on newlines makes trivially reachable with `"AW\nAW"`.
+    -->
+    {#each tip.lines as line, i (i)}
       <p class="line">{line}</p>
     {/each}
   </div>
@@ -95,6 +101,12 @@
     font-size: 11px;
     line-height: 1.4;
     color: var(--color-ink-dim, #8a94a6);
+    /*
+      A subtitle arrives already split into one line per paragraph, so this is for the other free
+      text that does not: a `description` is a plain string that `conn`, `nif` and `heading` all
+      put straight into `lines`, and a newline typed into one would otherwise collapse to a space.
+    */
+    white-space: pre-wrap;
   }
 
   .line:first-of-type {

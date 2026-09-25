@@ -185,7 +185,7 @@ export function curveEndDirection(points: readonly Vec2[]): Vec2 | null {
   return d.x === 0 && d.y === 0 ? null : d;
 }
 
-/** A point on the curve at `t` in `[0, 1]` of the whole run, for the label and the badge. */
+/** A point on the curve at `t` in `[0, 1]` of the whole run, for the label. */
 export function curveAt(points: readonly Vec2[], t: number): Vec2 {
   const spans = curveSpans(points);
   if (spans.length === 0) return points[0] ?? { x: 0, y: 0 };

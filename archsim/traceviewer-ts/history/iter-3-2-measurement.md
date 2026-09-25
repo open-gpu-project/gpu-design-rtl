@@ -158,6 +158,16 @@ a tail, and only a flat cost removes it. Which is the property `strips` was buil
 
 ## 2. Setup
 
+**The scene matters, and iteration 6.3 is why.** The grid cost is independent of shape count, but
+the text-fitting cost is not — the 6.3 report was ">20 rectangles, slow only at 50–70%", and the
+width cache added in that iteration is what this sweep now also measures. So draw **~24 blocks
+with 6–8 character labels and two-line subtitles** before recording, and record the count in the
+results sheet. `⌘S` saves that fixture and `⌘O` opens it, which is how the same scene gets carried
+into the `preview` build — `__dump()` is DEV-gated and cannot.
+
+Also check `__gridMode()` prints `'strips'` before starting: that is the confirmation the default
+flipped in the build under test rather than in a dev-only path.
+
 1. `npm run dev`, and open `http://localhost:5183` in Safari.
 2. **Screenshots instrument OFF** in Web Inspector → Timelines. Script / Layout & Rendering / CPU
    only. It captures a full-page image per frame and puts a ~42 ms floor on every frame
@@ -177,10 +187,15 @@ result. It should not — script time is 0.7 % of the frame.
 Paste once per mode. It counts primitives per frame, which is the quantity the fix holds down, and
 rAF-to-rAF intervals, which is what actually gets felt.
 
+**Extended in iteration 6.3** with `measureText` and the `font` setter. Those are the second
+Safari cost, and the only one that scales with SHAPE COUNT — the axis neither report varied, and
+the one the user's 6.3 report added (">20 rectangles, slow only at 50–70%"). `font` needs a
+descriptor wrap rather than a method wrap, because it is an accessor and not a function.
+
 ```js
 (() => {
   const P = CanvasRenderingContext2D.prototype;
-  const keys = ['rect', 'fillRect', 'fill', 'drawImage'];
+  const keys = ['rect', 'fillRect', 'fill', 'drawImage', 'measureText'];
   const orig = {};
   const n = {};
   for (const k of keys) {
@@ -191,6 +206,15 @@ rAF-to-rAF intervals, which is what actually gets felt.
       return orig[k].apply(this, a);
     };
   }
+  const fd = Object.getOwnPropertyDescriptor(P, 'font');
+  n.font = 0;
+  Object.defineProperty(P, 'font', {
+    ...fd,
+    set(v) {
+      n.font++;
+      fd.set.call(this, v);
+    },
+  });
   const rows = [];
   let last = 0;
   let stop = false;
@@ -206,6 +230,7 @@ rAF-to-rAF intervals, which is what actually gets felt.
   window.__sweep = () => {
     stop = true;
     for (const k of keys) P[k] = orig[k];
+    Object.defineProperty(P, 'font', fd);
     const busy = rows.filter((r) => r.rect + r.fillRect + r.drawImage > 0);
     const d = busy.map((r) => r.ms).sort((a, b) => a - b);
     const q = (p) => d[Math.min(d.length - 1, Math.floor(d.length * p))];
@@ -221,6 +246,12 @@ rAF-to-rAF intervals, which is what actually gets felt.
       max: d.at(-1),
       opsMed: ops[ops.length >> 1],
       opsMax: ops.at(-1),
+      // Iteration 6.3. Should be ~0 per frame at a resting zoom with the width cache warm, and
+      // bounded by lines-drawn times the whole device sizes a sweep crossed -- NOT by box count.
+      measMed: [...busy.map((r) => r.measureText)].sort((a, b) => a - b)[busy.length >> 1],
+      measMax: Math.max(...busy.map((r) => r.measureText)),
+      fontMed: [...busy.map((r) => r.font)].sort((a, b) => a - b)[busy.length >> 1],
+      textCache: window.__textCache?.() ?? null,
       css: v ? [v.cssW, v.cssH] : null,
       dpr: v ? v.dpr : null,
       bitmap: v?.canvas ? [v.canvas.width, v.canvas.height] : null,
@@ -272,30 +303,30 @@ difference there means the sweep was not the same shape and the times are not co
 
 ### z ≈ 0.5 boundary, 40 % → 70 % → 40 %
 
-| mode        | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax |
-| ----------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: |
-| `batch`     |        |        |        |        |        |        |        |
-| `row-fill`  |        |        |        |        |        |        |        |
-| `fill-rect` |        |        |        |        |        |        |        |
-| `strips`    |        |        |        |        |        |        |        |
+| mode        | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax | measMed | fontMed |
+| ----------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: | ------: | ------: |
+| `strips`    |        |        |        |        |        |        |        |         |         |
+| `batch`     |        |        |        |        |        |        |        |         |         |
+| `row-fill`  |        |        |        |        |        |        |        |         |         |
+| `fill-rect` |        |        |        |        |        |        |        |         |         |
 
 ### Tier isolation, 40 % → 60 % → 40 %, `batch` mode (§1a)
 
-| tiers   | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax |
-| ------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: |
-| `major` |        |        |        |        |        |        |        |
-| `minor` |        |        |        |        |        |        |        |
+| tiers   | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax | measMed |
+| ------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: | ------: |
+| `major` |        |        |        |        |        |        |        |         |
+| `minor` |        |        |        |        |        |        |        |         |
 
 ### z ≈ 0.1 boundary, 8 % → 12 % → 8 %
 
-| mode        | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax |
-| ----------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: |
-| `batch`     |        |        |        |        |        |        |        |
-| `row-fill`  |        |        |        |        |        |        |        |
-| `fill-rect` |        |        |        |        |        |        |        |
-| `strips`    |        |        |        |        |        |        |        |
+| mode        | frames | p50 ms | p90 ms | p95 ms | max ms | opsMed | opsMax | measMed | fontMed |
+| ----------- | -----: | -----: | -----: | -----: | -----: | -----: | -----: | ------: | ------: |
+| `strips`    |        |        |        |        |        |        |        |         |         |
+| `batch`     |        |        |        |        |        |        |        |         |         |
+| `row-fill`  |        |        |        |        |        |        |        |         |         |
+| `fill-rect` |        |        |        |        |        |        |        |         |         |
 
-`cssW × cssH`: ______ `dpr`: ____ `bitmap`: ______
+`cssW × cssH`: ______ `dpr`: ____ `bitmap`: ______ **boxes in the scene**: ______
 
 ### How to read it
 
@@ -325,9 +356,14 @@ it to 478 ops predicts ~10 ms, which report 2's own L1 measurements contradict.
 
 ### While the peak still exists
 
-Optional, and unreproducible once `strips` becomes the default — report 2 §6.3's persistence run.
-Two arrivals at `z = 0.45`: once by pinching gently within L1, once after holding `z = 0.53` for
-~3 s. If the second starts at 100 ms+ and decays over ~0.5–1 s, report 2 §3's residual is real.
+Report 2 §6.3's persistence run. Two arrivals at `z = 0.45`: once by pinching gently within L1,
+once after holding `z = 0.53` for ~3 s. If the second starts at 100 ms+ and decays over ~0.5–1 s,
+report 2 §3's residual is real.
+
+**Run this first, and under `__gridMode('batch')`.** Iteration 6.3 made `strips` the default
+without waiting for this sheet, on the arithmetic alone — but it kept `batch`, so this experiment
+did not become unreproducible, it just became something you have to ask for. Do it before
+anything else in the sweep, while the peak is fresh.
 
 ---
 

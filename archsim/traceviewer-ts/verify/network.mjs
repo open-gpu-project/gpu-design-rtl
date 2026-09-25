@@ -86,9 +86,9 @@ async function setPins(parent, spec) {
       sc.shapes
         .filter((s) => s.kind === 'nif' && s.parent === p)
         .forEach((pin, i) => {
-          const [side, channel, modport] = list[i] ?? list[0];
+          const [side, modport] = list[i] ?? list[0];
           const cur = sc.shapes.find((x) => x.name === pin.name);
-          sc.replaceShape(cur, { ...cur, side, channel, modport }, 'pins');
+          sc.replaceShape(cur, { ...cur, side, modport }, 'pins');
         });
     },
     [parent, spec],
@@ -256,8 +256,8 @@ async function connect(a, b) {
     fabric('B', 80, 360, 320, 56, 1),
     block('C', 520, 360, 120, 90),
   ]);
-  await setPins('A', [['s', 'aw', 'master']]);
-  await setPins('B', [['n', 'aw', 'slave']]);
+  await setPins('A', [['s', 'master']]);
+  await setPins('B', [['n', 'slave']]);
 
   const [a] = await pinsOf('A');
   const [b] = await pinsOf('B');
@@ -334,8 +334,8 @@ async function connect(a, b) {
 
 {
   await seed([fabric('A', 80, 60, 320, 56, 1), fabric('B', 80, 400, 320, 56, 1)]);
-  await setPins('A', [['s', 'aw', 'master']]);
-  await setPins('B', [['n', 'aw', 'slave']]);
+  await setPins('A', [['s', 'master']]);
+  await setPins('B', [['n', 'slave']]);
   const [a] = await pinsOf('A');
   const [b] = await pinsOf('B');
   await connect(a, b);
@@ -445,154 +445,77 @@ async function connect(a, b) {
   );
 }
 
-// -------------------------------------------------------- violations and the badge ----
+// ------------------------------------------- no compatibility checking, and no badge ----
 
+/*
+  Iteration 6.3 withdrew connection compatibility checking entirely, after user testing. What
+  went was the whole subsystem: `conn.diagnose`, the `ShapeOps.diagnose` seam it was the only
+  implementation of, `SceneStore.diagnostics`, `RenderFlags.problems`, the red `!` badge and its
+  popup, and the `channel` property two of the four rules were about.
+
+  So this block asserts an ABSENCE, which is worth stating rather than leaving to the fact that
+  the old assertions are gone. A deletion that leaves a seam behind is how the next iteration
+  reintroduces half of it by accident, and "two masters joined by a bus is simply a bus" is a
+  product decision that deserves to be written down somewhere a change would trip over.
+*/
 {
-  await seed([fabric('A', 80, 60, 420, 56, 3), fabric('B', 80, 400, 420, 56, 3)]);
-  await setPins('A', [
-    ['s', 'aw', 'master'],
-    ['s', 'aw', 'master'],
-    ['s', 'r', 'master'],
-  ]);
-  await setPins('B', [
-    ['n', 'aw', 'slave'],
-    ['n', 'aw', 'master'],
-    ['n', 'w', 'slave'],
-  ]);
-  const A = await pinsOf('A');
-  const B = await pinsOf('B');
-  for (let i = 0; i < 3; i++) await connect(A[i], B[i]);
+  await seed([fabric('A', 80, 60, 320, 56, 1), fabric('B', 80, 360, 320, 56, 1)]);
+  // Two MASTERS, which used to be the loudest of the four rules.
+  await setPins('A', [['s', 'master']]);
+  await setPins('B', [['n', 'master']]);
 
-  const diag = await page.evaluate(() =>
-    Object.fromEntries([...window.__scene.diagnostics].map(([k, v]) => [k, v])),
-  );
-  const all = await wires();
-  const clean = all.filter((w) => diag[w.name] === undefined);
-  t.ok('a matched pair reports nothing', clean.length === 1, JSON.stringify(Object.keys(diag)));
+  const [a] = await pinsOf('A');
+  const [b] = await pinsOf('B');
+  await connect(a, b);
+
+  const gone = await page.evaluate(() => ({
+    seam: window.__ops('conn').diagnose === undefined,
+    store: window.__scene.diagnostics === undefined,
+    geometry:
+      window.__ops('conn').badgeAt === undefined && window.__ops('conn').badgeScreen === undefined,
+  }));
+
+  t.ok('a connection offers no diagnose seam', gone.seam);
+  // The store's `$derived` went with it: nothing recomputes per commit, which is the cost the
+  // check was paying on every edit whether or not anything was joined.
+  t.ok('and the document has no diagnostics to hand out', gone.store);
+  t.ok('and the badge geometry is not exported for anything to hit-test', gone.geometry);
+
+  const w = await wires();
   t.ok(
-    'two masters is a violation',
-    Object.values(diag).some((v) => v.some((m) => /Both ends are masters/.test(m))),
-    JSON.stringify(diag),
-  );
-  t.ok(
-    'so is a channel that does not match',
-    Object.values(diag).some((v) => v.some((m) => /channel connects only to itself/.test(m))),
-    JSON.stringify(diag),
-  );
-  t.ok(
-    'and the messages are prose, not codes',
-    Object.values(diag)
-      .flat()
-      .every((m) => m.length > 40 && /[a-z] [a-z]/.test(m)),
+    'two masters joined by a bus is simply a bus',
+    w.length === 1 && w[0]?.path === 'curve',
+    JSON.stringify(w),
   );
 
-  const allChannel = await page.evaluate(() => {
-    const ops = window.__ops('conn');
-    const nif = (n, ch, mp) => ({
-      kind: 'nif',
-      name: n,
-      parent: 'p',
-      side: 'n',
-      offset: 0,
-      length: 32,
-      depth: 8,
-      protocol: 'axi3',
-      channel: ch,
-      modport: mp,
-      label: '',
-      description: '',
-      pending: [0, 0],
-      x: 0,
-      y: 0,
-      w: 32,
-      h: 8,
-    });
-    const wire = {
-      kind: 'conn',
-      name: 'w',
-      label: '',
-      description: '',
-      labelOffset: [0, 0],
-      from: 'a',
-      to: 'b',
-      fromAnchor: 'n',
-      toAnchor: 'n',
-      routing: 'auto',
-      path: 'curve',
-      points: [
-        { x: 0, y: 0 },
-        { x: 10, y: 0 },
-      ],
-    };
-    const run = (ca, cb) =>
-      ops.diagnose(
-        wire,
-        new Map([
-          ['a', nif('a', ca, 'master')],
-          ['b', nif('b', cb, 'slave')],
-        ]),
-      ).length;
-    return {
-      allToAw: run('all', 'aw'),
-      awToAll: run('aw', 'all'),
-      awToW: run('aw', 'w'),
-      ortho: ops.diagnose(
-        { ...wire, path: 'ortho' },
-        new Map([
-          ['a', nif('a', 'aw', 'master')],
-          ['b', nif('b', 'w', 'master')],
-        ]),
-      ).length,
-    };
-  });
-  t.ok(
-    'an “all” interface is compatible with any single channel',
-    allChannel.allToAw === 0 && allChannel.awToAll === 0,
-    JSON.stringify(allChannel),
-  );
-  t.ok('two different single channels are not', allChannel.awToW === 1, String(allChannel.awToW));
   /*
-    A plain arrow between two interfaces is explicitly allowed -- it says "this talks to that"
-    without claiming the two are wired -- so checking it would report violations about a
-    relationship the user never asserted.
+    Nothing is swallowed into a popup any more.
+
+    The badge used to get its OWN pass ahead of the hit test, returning true and absorbing the
+    press -- it could not be a `Handle`, because handles exist only on selected shapes and a
+    warning you have to select the thing to see is no warning. With it gone, a press anywhere
+    near the link reaches the normal hit test. Probed in a ring around the midpoint rather than
+    at the one offset the badge used, because that offset was `badgeAt`'s and `badgeAt` is what
+    was deleted: the claim is about the whole neighbourhood, not about one point.
   */
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  for (const [dx, dy] of [
+    [0, 0],
+    [14, 0],
+    [-14, 0],
+    [0, 14],
+    [0, -14],
+  ]) {
+    await click(await toScreen(mid.x + dx, mid.y + dy));
+  }
   t.ok(
-    'and a plain arrow between interfaces is never checked',
-    allChannel.ortho === 0,
-    String(allChannel.ortho),
+    'and no violations popup can be raised by clicking around the link',
+    (await page.locator('[role="dialog"][aria-label="Connection violations"]').count()) === 0,
   );
-
-  // The badge: drawn and clicked from one function, which is what stops the two drifting.
-  const bad = Object.keys(diag)[0];
-  const at = await page.evaluate(async (n) => {
-    const s = window.__scene.shapes.find((x) => x.name === n);
-    const m = await import('/src/lib/scene/shapes/conn.ts');
-    const p = m.badgeScreen(s, (q) => window.__view.toScreen(q));
-    return { x: p.x, y: p.y };
-  }, bad);
-  await click(at);
-  const dialog = page.locator('[role="dialog"][aria-label="Connection violations"]');
-  t.ok('clicking the badge opens the violations popup', (await dialog.count()) === 1);
+  // The layer itself is gone, not merely empty: `ViolationsPopover.svelte` was deleted.
   t.ok(
-    'listing every violation on that link',
-    (await page.locator('[role="dialog"] li').count()) === diag[bad].length,
-    `${await page.locator('[role="dialog"] li').count()} vs ${diag[bad].length}`,
-  );
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
-  t.ok('and Escape closes it', (await dialog.count()) === 0);
-
-  // Fixing the diagram must clear the badge.
-  await page.evaluate((n) => {
-    const sc = window.__scene;
-    const w = sc.shapes.find((x) => x.name === n);
-    const pin = sc.shapes.find((x) => x.name === w.to);
-    sc.replaceShape(pin, { ...pin, modport: pin.modport === 'master' ? 'slave' : 'master' }, 'fix');
-  }, bad);
-  await page.waitForTimeout(250);
-  t.ok(
-    'and correcting the modport clears it',
-    !(await page.evaluate((n) => window.__scene.diagnostics.has(n), bad)),
+    'because the popup layer is not mounted at all',
+    (await page.locator('[role="dialog"]').count()) === 0,
   );
 }
 
@@ -676,7 +599,7 @@ async function connect(a, b) {
   t.ok('and keeps its manual flag', manual?.routing === 'manual', JSON.stringify(manual));
 }
 
-// ------------------------------------------ an interface's two anchors, and the edge rule ----
+// ------------------------------------------------- an interface's two anchors ----
 
 /*
   An interface offers exactly two connection points: the centre of its outward edge, and -- on a
@@ -689,11 +612,8 @@ async function connect(a, b) {
   border instead of away from it. An id that does not name a side cannot go stale when the side
   changes.
 
-  The normals must be the shared references out of `NORMALS`, because identity on a normal is a
-  legitimate thing for a caller to test.
-
-  And the edge a wire used is a rule of its own: outward-to-inward is a line drawn through a
-  border, not a bus.
+  And the normals must be the shared references out of `NORMALS`, because identity on a normal
+  is a legitimate thing for a caller to test.
 */
 {
   const anchors = await page.evaluate(() => {
@@ -709,7 +629,6 @@ async function connect(a, b) {
       length: 48,
       depth: 16,
       protocol: 'axi3',
-      channel: 'all',
       modport: 'slave',
       pending: [0, 0],
       inward: false,
@@ -792,96 +711,6 @@ async function connect(a, b) {
     anchors.eastOut?.n.x === 1 && anchors.eastOut?.n.y === 0,
     JSON.stringify(anchors.eastOut),
   );
-
-  const edge = await page.evaluate(() => {
-    const ops = window.__ops('conn');
-    const nif = (n, mp, inward) => ({
-      kind: 'nif',
-      name: n,
-      parent: 'f',
-      side: 'n',
-      offset: 0,
-      length: 48,
-      depth: 16,
-      protocol: 'axi3',
-      channel: 'all',
-      modport: mp,
-      label: '',
-      description: '',
-      pending: [0, 0],
-      inward,
-      x: 0,
-      y: 0,
-      w: 48,
-      h: 16,
-    });
-    const wire = (fa, ta, path = 'curve') => ({
-      kind: 'conn',
-      name: 'w',
-      label: '',
-      description: '',
-      labelOffset: [0, 0],
-      from: 'a',
-      to: 'b',
-      fromAnchor: fa,
-      toAnchor: ta,
-      routing: 'auto',
-      path,
-      points: [
-        { x: 0, y: 0 },
-        { x: 10, y: 0 },
-      ],
-    });
-    // One master and one slave throughout, so the modport rule never contributes a message.
-    const run = (fa, ta, ia = true, ib = true, path = 'curve') =>
-      ops.diagnose(
-        wire(fa, ta, path),
-        new Map([
-          ['a', nif('a', 'master', ia)],
-          ['b', nif('b', 'slave', ib)],
-        ]),
-      );
-    return {
-      outOut: run('out', 'out'),
-      inIn: run('in', 'in'),
-      mixed: run('out', 'in'),
-      unavailable: run('out', 'in', true, false),
-      legacy: run('n:16', 'out'),
-      ortho: run('out', 'in', true, true, 'ortho'),
-    };
-  });
-
-  t.ok('two outward edges are clean', edge.outOut.length === 0, JSON.stringify(edge.outOut));
-  t.ok(
-    'and so are two inward ones — a crossbar’s internal routing is real',
-    edge.inIn.length === 0,
-    JSON.stringify(edge.inIn),
-  );
-  t.ok(
-    'one of each is a violation',
-    edge.mixed.length === 1 && /inward edge/.test(edge.mixed[0]),
-    JSON.stringify(edge.mixed),
-  );
-  /*
-    A hand-edited file may say `in` on a port whose parent offers no inward edge. It is DRAWN on
-    the outward edge, so the outward edge is what has to be reported on -- otherwise the file
-    earns a violation about a wire nobody can see.
-  */
-  t.ok(
-    'an “in” the parent does not offer is judged as the outward edge it is drawn on',
-    edge.unavailable.length === 0,
-    JSON.stringify(edge.unavailable),
-  );
-  t.ok(
-    'a legacy id counts as outward here too',
-    edge.legacy.length === 0,
-    JSON.stringify(edge.legacy),
-  );
-  t.ok(
-    'and a plain arrow is still never checked',
-    edge.ortho.length === 0,
-    JSON.stringify(edge.ortho),
-  );
 }
 
 // ------------------------------------------------- the fold settles, in one call ----
@@ -898,7 +727,7 @@ async function connect(a, b) {
 */
 {
   await seed([fabric('A', 120, 120, 320, 56, 1), block('C', 640, 400, 120, 90)]);
-  await setPins('A', [['s', 'aw', 'master']]);
+  await setPins('A', [['s', 'master']]);
   const [pin] = await pinsOf('A');
   await connect(pin, { x: 640, y: 445 });
 
@@ -970,7 +799,6 @@ async function connect(a, b) {
       offset: 96,
       size: [48, 16],
       protocol: 'axi3',
-      channel: 'all',
       modport: 'master',
     },
     block('D', 640, 300, 120, 90),
@@ -1032,8 +860,8 @@ async function connect(a, b) {
 */
 {
   await seed([fabric('S', 120, 120, 256, 80, 1), fabric('T', 560, 400, 256, 80, 1)]);
-  await setPins('S', [['s', 'all', 'master']]);
-  await setPins('T', [['n', 'all', 'slave']]);
+  await setPins('S', [['s', 'master']]);
+  await setPins('T', [['n', 'slave']]);
   const [s] = await pinsOf('S');
   const [d] = await pinsOf('T');
   await connect(s, d);
@@ -1191,8 +1019,8 @@ async function connect(a, b) {
 {
   await seed([fabric('G', 160, 200, 384, 120, 2), block('E', 800, 240, 120, 90)]);
   await setPins('G', [
-    ['n', 'aw', 'master'],
-    ['n', 'aw', 'slave'],
+    ['n', 'master'],
+    ['n', 'slave'],
   ]);
   const pins = await pinsOf('G');
   await connect(pins[0], pins[1]);
