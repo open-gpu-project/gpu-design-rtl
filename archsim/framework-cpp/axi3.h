@@ -84,13 +84,7 @@ namespace framework::axi3 {
    public:
       bool ready() const { return m_fifo.can_write(); }
       void write(T data, tag_t tag = default_tag) { m_fifo.assign_write(data, tag); }
-
-      /**
-       * Forwards a payload and its tag together, so that piping a source
-       * straight into a sink -- `sink.write(source.read())` -- carries the
-       * tag across the hop instead of resetting it.
-       */
-      void write(std::pair<T, tag_t> tagged) { m_fifo.assign_write(tagged.first, tagged.second); }
+      void write(std::pair<T, tag_t> tagged) { m_fifo.assign_write(tagged); }
 
    private:
       friend struct Channel<T>;
@@ -103,7 +97,8 @@ namespace framework::axi3 {
    public:
       bool valid() const { return m_fifo.can_read(); }
       std::pair<T, tag_t> read() { return m_fifo.read(); }
-      std::optional<T> peek() const { return m_fifo.can_read() ? m_fifo.peek() : std::nullopt; }
+      std::optional<std::pair<T, tag_t>> peek() const { return m_fifo.peek(); }
+      std::optional<T> peek_data() const { return m_fifo.peek_data(); }
 
    private:
       friend struct Channel<T>;
@@ -112,12 +107,33 @@ namespace framework::axi3 {
    };
 
    template <ChannelData T>
-   struct Channel : Fifo<T, 2> {
+   struct Channel : public Fifo<T, 2> {
    public:
-      Channel(EntityConfig config) : Fifo<T, 2>{config} {}
+      Channel(EntityConfig config)
+            : Fifo<T, 2>{config, false},
+              m_tracer{config, "", "Traces any latched valid data on interface's output port"} {}
+
       std::tuple<ChannelSource<T>, ChannelSink<T>> split() {
          return {ChannelSource<T>(*this), ChannelSink<T>(*this)};
       }
+
+   protected:
+      virtual void on_tick() override {
+         Fifo<T, 2>::on_tick();
+         // We only care about recording the data presented at the head of the FIFO
+         // that *may or may not* be read in the next cycle.
+         auto peeked = this->peek();
+         if (peeked.has_value()) {
+            m_tracer.record((*peeked).first, (*peeked).second);
+         }
+      }
+      virtual void on_reset() override {
+         Fifo<T, 2>::on_reset();
+         m_tracer.reset();
+      }
+
+   private:
+      Tracer<T> m_tracer;
    };
 
    using ArChannel = Channel<ArChannelData>;
@@ -196,14 +212,27 @@ namespace framework::axi3 {
       }
 
       /**
-       * Overload naming the result tuple type instead of its elements, so a
-       * declared alias can be requested as-is: `get<fabric::AxiHpIfType>()`.
-       * `T`'s elements are unpacked back into the variadic form above.
+       * Same as `get()` except `T` is a tuple type instead of the raw types.
        */
       template <typename T>
          requires InterfaceSubsetTuple<T>
       T get() {
          return get_elements<T>(std::make_index_sequence<std::tuple_size_v<T>>{});
+      }
+
+      /**
+       * Get a single channel of type T from either the master or slave interface.
+       */
+      template <typename T>
+         requires MasterSubset<T> || SlaveSubset<T>
+      T& view() {
+         if constexpr (MasterSubset<T>) {
+            auto& side = std::get<MasterInterface>(interfaces);
+            return std::get<T>(side);
+         } else {
+            auto& side = std::get<SlaveInterface>(interfaces);
+            return std::get<T>(side);
+         }
       }
 
    private:
@@ -223,13 +252,10 @@ namespace framework::axi3 {
 
       // Helper called by constructor to create the tuple of channel references.
       static ChannelTupleTy make_channels(EntityConfig& config) {
-         const auto clock = config.clock_id;
-         const auto id = config.id;
-         auto& sim = config.simulation;
-         auto [_1, ar] = sim.add_entity<ArChannel>("ar", clock, id);
-         auto [_2, aw] = sim.add_entity<AwChannel>("aw", clock, id);
-         auto [_3, w] = sim.add_entity<WChannel>("w", clock, id);
-         auto [_4, r] = sim.add_entity<RChannel>("r", clock, id);
+         auto [_1, ar] = config.add_child<ArChannel>("ar");
+         auto [_2, aw] = config.add_child<AwChannel>("aw");
+         auto [_3, w] = config.add_child<WChannel>("w");
+         auto [_4, r] = config.add_child<RChannel>("r");
          return std::tie(ar, aw, w, r);
       }
 

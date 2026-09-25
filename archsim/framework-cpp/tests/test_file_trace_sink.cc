@@ -70,13 +70,13 @@ namespace sink_test {
    /// @brief The header document's byte range, per the envelope.
    std::string_view header_bytes(std::string_view file) {
       auto length = read_at<uint64_t>(file, 16);
-      return file.substr(FileTraceSink::header_offset, length);
+      return file.substr(FileTracerSink::header_offset, length);
    }
 
    /// @brief The body's byte range: between the header and the trailer.
    std::string_view body_bytes(std::string_view file) {
-      auto start = FileTraceSink::header_offset + read_at<uint64_t>(file, 16);
-      auto end = file.size() - FileTraceSink::trailer_size;
+      auto start = FileTracerSink::header_offset + read_at<uint64_t>(file, 16);
+      auto end = file.size() - FileTracerSink::trailer_size;
       return file.substr(start, end - start);
    }
 
@@ -86,13 +86,13 @@ namespace sink_test {
    /// @brief Writes a two-record trace and returns the file's bytes.
    std::string write_sample_trace(std::filesystem::path const& path) {
       {
-         FileTraceSink sink{path};
+         FileTracerSink sink{path};
          Simulation sim{&sink};
          auto clk = sim.add_clock("clk");
          auto [id, probe] = sim.add_entity<Probe>("dut", clk, std::nullopt);
          sim.build();
-         probe.tracer.on_value_change(first);
-         probe.tracer.on_value_change(second);
+         probe.tracer.record(first);
+         probe.tracer.record(second);
          sim.stop();
       }
       return read_file(path);
@@ -107,20 +107,20 @@ TEST_CASE("file_trace_sink: A trace file carries a recognizable envelope") {
    auto file = write_sample_trace(path.get());
 
    SECTION("opening with the magic and format version") {
-      REQUIRE(file.starts_with(FileTraceSink::file_magic));
-      REQUIRE(read_at<uint32_t>(file, 8) == FileTraceSink::format_version);
+      REQUIRE(file.starts_with(FileTracerSink::file_magic));
+      REQUIRE(read_at<uint32_t>(file, 8) == FileTracerSink::format_version);
    }
 
    SECTION("declaring a header length that lands on the body") {
       REQUIRE(read_at<uint64_t>(file, 16) > 0);
-      REQUIRE(FileTraceSink::header_offset + read_at<uint64_t>(file, 16) <
-              file.size() - FileTraceSink::trailer_size);
+      REQUIRE(FileTracerSink::header_offset + read_at<uint64_t>(file, 16) <
+              file.size() - FileTracerSink::trailer_size);
    }
 
    SECTION("closing with the body length and the trailer magic") {
-      auto trailer = file.size() - FileTraceSink::trailer_size;
+      auto trailer = file.size() - FileTracerSink::trailer_size;
       REQUIRE(read_at<uint64_t>(file, trailer) == body_bytes(file).size());
-      REQUIRE(file.substr(trailer + 8).starts_with(FileTraceSink::end_magic));
+      REQUIRE(file.substr(trailer + 8).starts_with(FileTracerSink::end_magic));
    }
 }
 
@@ -159,7 +159,8 @@ TEST_CASE("file_trace_sink: A trace file is readable without the program that wr
       std::vector<std::string> recovered{};
       for (auto const& record : records) {
          auto const& schema = header.schemas.at(header.signals.at(record.signal_id).schema_id);
-         recovered.push_back(reinterpret_to_json(parse_sidecar(schema), record.payload));
+         REQUIRE(schema.has_value());
+         recovered.push_back(reinterpret_to_json(parse_sidecar(*schema), record.payload));
       }
       REQUIRE(recovered == std::vector<std::string>{R"({"count":3,"label":"alpha"})",
                                                     R"({"count":-1,"label":"beta"})"});
@@ -169,18 +170,18 @@ TEST_CASE("file_trace_sink: A trace file is readable without the program that wr
 TEST_CASE("file_trace_sink: A path that cannot be opened fails loudly") {
    SECTION("throwing rather than silently discarding every write") {
       auto missing = std::filesystem::temp_directory_path() / "archsim_no_such_dir" / "t.beve";
-      REQUIRE_THROWS_AS(FileTraceSink{missing}, SimulationException);
+      REQUIRE_THROWS_AS(FileTracerSink{missing}, SimulationException);
    }
 }
 
 TEST_CASE("file_trace_sink: Destroying the sink finalizes the file") {
    TempPath path{"archsim_trace_unstopped.beve"};
    {
-      FileTraceSink sink{path.get()};
+      FileTracerSink sink{path.get()};
       sink.commit_header();
    }
 
    SECTION("writing the trailer even though nothing called stop()") {
-      REQUIRE(read_file(path.get()).ends_with(std::string{FileTraceSink::end_magic} + '\0'));
+      REQUIRE(read_file(path.get()).ends_with(std::string{FileTracerSink::end_magic} + '\0'));
    }
 }

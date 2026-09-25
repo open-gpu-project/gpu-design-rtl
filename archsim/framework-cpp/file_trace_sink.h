@@ -25,7 +25,7 @@ namespace framework {
    struct TraceFileHeader {
       uint32_t version{};
       /// @brief Schema sidecar JSON, opaque data
-      std::vector<std::string> schemas{};
+      std::vector<std::optional<std::string>> schemas{};
       /// @brief Indexed by signal id.
       std::vector<TraceSignal> signals{};
 
@@ -40,11 +40,11 @@ namespace framework {
     *     12..15  u32   flags (reserved)
     *     16..23  u64   header length in bytes
     *     24..    header document, BEVE-encoded `TraceFileHeader`
-    *     ...     body records, as documented on `TraceSink`
+    *     ...     body records, as documented on `TracerSink`
     *     end-16  u64   body length in bytes
     *     end-8   magic "ARCHEND\0"
     */
-   class FileTraceSink : public TraceSink {
+   class FileTracerSink : public TracerSink {
    public:
       static constexpr std::string_view file_magic = "ARCHTRC";
       static constexpr std::string_view end_magic = "ARCHEND";
@@ -56,10 +56,10 @@ namespace framework {
       static constexpr std::streamoff trailer_size = 16;
 
       /// @throws SimulationException if the file cannot be opened for writing.
-      explicit FileTraceSink(std::filesystem::path const& filename);
+      explicit FileTracerSink(std::filesystem::path const& filename);
 
       /// @brief Finalizes the file if `commit_file_end()` was never called.
-      ~FileTraceSink() override;
+      ~FileTracerSink() override;
 
       void commit_header() override;
       void commit_body_data(std::string_view data) override;

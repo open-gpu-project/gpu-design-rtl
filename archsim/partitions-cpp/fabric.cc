@@ -13,7 +13,7 @@ void Fabric::on_evaluate() {
    // SPLIT[0] between TCM_Slave.AR and ARB[0] from DPQ_ARB.AR
    bool split0_granted_arb0 = false;
    bool split0_granted_tcm_slave = false;
-   auto dpq_arb_r_data = get<ArChannelSource>(m_dpq_arb_if).peek();
+   auto dpq_arb_r_data = get<ArChannelSource>(m_dpq_arb_if).peek_data();
    if (get<ArChannelSource>(m_dpq_arb_if).valid()) {
       decide_split0(dpq_arb_r_data->araddr, split0_granted_tcm_slave, split0_granted_arb0);
    }
@@ -21,7 +21,7 @@ void Fabric::on_evaluate() {
    // SPLIT[1] between TCM_Slave.AW and AXI_HP.AW from DPQ_ARB.AW
    bool split1_granted_tcm_slave = false;
    bool split1_granted_axi_hp_arb = false;
-   auto dpq_arb_aw_data = get<AwChannelSource>(m_dpq_arb_if).peek();
+   auto dpq_arb_aw_data = get<AwChannelSource>(m_dpq_arb_if).peek_data();
    if (get<AwChannelSource>(m_dpq_arb_if).valid()) {
       decide_split0(dpq_arb_aw_data->awaddr, split1_granted_tcm_slave, split1_granted_axi_hp_arb);
    }
@@ -37,7 +37,7 @@ void Fabric::on_evaluate() {
    // SPLIT[3] between SPLIT[4] and ARB[1] from AXI_HP.R
    bool split3_granted_split4 = false;
    bool split3_granted_arb1 = false;
-   auto axi_hp_r_data = get<RChannelSource>(m_axi_hp_if).peek();
+   auto axi_hp_r_data = get<RChannelSource>(m_axi_hp_if).peek_data();
    if (get<RChannelSource>(m_axi_hp_if).valid()) {
       decide_split3(*axi_hp_r_data, split3_granted_split4, split3_granted_arb1);
    }

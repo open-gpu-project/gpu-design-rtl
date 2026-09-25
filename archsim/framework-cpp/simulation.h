@@ -4,19 +4,20 @@
 #include <cpptrace/cpptrace.hpp>
 #include <cstdint>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "concepts.h"
+
 namespace framework {
 
    class Simulation;
    class Entity;
    class TracerBase;
-   class TraceSink;
+   class TracerSink;
 
    using tag_t = uint32_t;
    static tag_t default_tag = 0;
@@ -49,32 +50,16 @@ namespace framework {
     * Opaque handle to a clock registered with the simulation. Only the
     * simulation that issued it can resolve it back to a `Clock`.
     */
-   struct clock_id_t {
-      bool operator==(clock_id_t const&) const = default;
-
-   private:
-      friend class Simulation;
-      explicit clock_id_t(unsigned value) : value{value} {}
-      unsigned value;
-   };
+   DECLARE_ID_TYPE(clock_id_t, Simulation, unsigned);
 
    /**
     * Opaque handle to an entity registered with the simulation. Only the
     * simulation that issued it can resolve it back to an `Entity`.
     */
-   struct entity_id_t {
-      bool operator==(entity_id_t const&) const = default;
+   DECLARE_ID_TYPE(entity_id_t, Simulation, unsigned);
 
-      /// @brief Hash functor, for using an entity id as an unordered container key.
-      struct hash {
-         std::size_t operator()(entity_id_t id) const { return std::hash<unsigned>{}(id.value); }
-      };
-
-   private:
-      friend class Simulation;
-      explicit entity_id_t(unsigned value) : value{value} {}
-      unsigned value;
-   };
+   template <typename T>
+   using EntityRef = std::pair<entity_id_t, T&>;
 
    /**
     * Configuration for a simulation entity, assigned by `Simulation` when
@@ -86,6 +71,10 @@ namespace framework {
       clock_id_t clock_id;
       entity_id_t id;
       std::string name;
+
+      template <typename T, typename... Args>
+         requires std::is_base_of_v<Entity, T>
+      EntityRef<T> add_child(std::string_view name, Args&&... args);
    };
 
    /**
@@ -103,6 +92,14 @@ namespace framework {
        * Read-only access to the entity's configuration.
        */
       EntityConfig const& config() const { return m_config; }
+
+      /**
+       * Adds a child entity to this entity. The child is constructed with the
+       * provided arguments and registered with the simulation.
+       */
+      template <typename T, typename... Args>
+         requires std::is_base_of_v<Entity, T>
+      EntityRef<T> add_child(std::string_view name, Args&&... args);
 
    protected:
       /**
@@ -144,7 +141,7 @@ namespace framework {
     */
    class Simulation {
    public:
-      explicit Simulation(TraceSink* sink = nullptr) : m_sink(sink) {}
+      explicit Simulation(TracerSink* sink = nullptr) : m_sink(sink) {}
 
       Clock& get_clock(clock_id_t id) { return m_clocks.at(id.value); }
       Clock const& get_clock(clock_id_t id) const { return m_clocks.at(id.value); }
@@ -162,10 +159,10 @@ namespace framework {
        */
       template <typename T, typename... Args>
          requires std::is_base_of_v<Entity, T>
-      std::pair<entity_id_t, T&> add_entity(std::string_view name,
-                                            clock_id_t clock,
-                                            std::optional<entity_id_t> parent,
-                                            Args&&... args) {
+      EntityRef<T> add_entity(std::string_view name,
+                              clock_id_t clock,
+                              std::optional<entity_id_t> parent,
+                              Args&&... args) {
          auto entity_id = entity_id_t{static_cast<unsigned>(m_entities.size())};
          m_entities.push_back(nullptr);
          auto& entity = add_entity_impl(entity_id,
@@ -220,6 +217,16 @@ namespace framework {
       /// @brief Gets the parent entity of the specified entity, if it exists.
       std::optional<entity_id_t> get_entity_parent(entity_id_t id) const;
 
+      /// @brief Sets the parent entity for a given tag. If the tag already has
+      //         a parent, it will be overwritten.
+      void set_tag_parent(tag_t tag, entity_id_t parent);
+
+      /**
+       * Dumps a text-based representation of the entity tree and tracers
+       * @param os The output stream to which the tree and tracers will be dumped.
+       */
+      void dump_tree(std::ostream& os) const;
+
    private:
       void run_one_tick();
 
@@ -239,7 +246,7 @@ namespace framework {
       std::vector<TracerBase*> m_tracers{};
       unsigned m_cycle_count{0};
       bool built = false;
-      TraceSink* m_sink = nullptr;
+      TracerSink* m_sink = nullptr;
    };
 
    /**
@@ -269,7 +276,20 @@ namespace framework {
 
    private:
       std::optional<cpptrace::stacktrace> m_caller{};
-      [[maybe_unused]] Entity& m_owner;
+      [[maybe_unused]]
+      Entity& m_owner;
    };
+
+   template <typename T, typename... Args>
+      requires std::is_base_of_v<Entity, T>
+   EntityRef<T> EntityConfig::add_child(std::string_view name, Args&&... args) {
+      return simulation.add_entity<T>(name, clock_id, id, std::forward<Args>(args)...);
+   }
+
+   template <typename T, typename... Args>
+      requires std::is_base_of_v<Entity, T>
+   EntityRef<T> Entity::add_child(std::string_view name, Args&&... args) {
+      return m_config.add_child<T>(name, std::forward<Args>(args)...);
+   }
 
 } // namespace framework

@@ -15,10 +15,20 @@ namespace framework {
    template <typename T, uint16_t Size>
    class Fifo : public Entity {
    public:
-      Fifo(EntityConfig config)
+      Fifo(EntityConfig config, bool enable_tracing = true)
             : Entity{config},
-              m_write_tracer{config, "write", "Tracks write data for each write operation"},
-              m_read_tracer{config, "read", "Tracks queue size before each read operation"} {
+              m_write_tracer{
+                    config,
+                    "write",
+                    "Tracks write data for each write operation",
+                    enable_tracing,
+              },
+              m_read_tracer{
+                    config,
+                    "read",
+                    "Tracks queue size before each read operation",
+                    enable_tracing,
+              } {
          static_assert(Size > 0, "Fifo size must be greater than 0");
          on_reset();
       }
@@ -40,6 +50,8 @@ namespace framework {
          m_next_write_data = std::make_pair(data, tag);
       }
 
+      void assign_write(std::pair<T, tag_t> tagged) { assign_write(tagged.first, tagged.second); }
+
       /**
        * Returns the entry at the head of the FIFO and stages the pop, which is
        * committed on the next tick(). Requires can_read().
@@ -53,20 +65,26 @@ namespace framework {
          return m_buffer[m_read_index];
       }
 
+      // Same as peek() but returns only the data without the tag
+      std::optional<T> peek_data() const {
+         return m_count > 0 ? std::optional<T>{m_buffer[m_read_index].first} : std::nullopt;
+      }
+
       /**
        * Returns the entry at the head of the FIFO without staging a pop.
        * Returns std::nullopt if the FIFO is empty.
        */
-      std::optional<T> peek() const {
-         return m_count > 0 ? std::optional<T>{m_buffer[m_read_index].first} : std::nullopt;
+      std::optional<std::pair<T, tag_t>> peek() const {
+         return m_count > 0 ? std::optional<std::pair<T, tag_t>>{m_buffer[m_read_index]}
+                            : std::nullopt;
       }
 
    protected:
-      void on_tick() override {
+      virtual void on_tick() override {
          // Handle any reads pending
          if (m_next_read_staged) {
             const auto tag = m_buffer[m_read_index].second;
-            m_read_tracer.on_value_change(m_count, tag);
+            m_read_tracer.record(m_count, tag);
             m_read_index = (m_read_index + 1) % Size;
             m_count--;
          }
@@ -74,20 +92,20 @@ namespace framework {
          // Handle any writes pending
          if (m_next_write_data.has_value()) {
             auto const& [data, tag] = m_next_write_data.value();
-            m_write_tracer.on_value_change(data, tag);
+            m_write_tracer.record(data, tag);
             m_buffer[m_write_index] = std::make_pair(data, tag);
             m_write_index = (m_write_index + 1) % Size;
             m_count++;
          }
       }
 
-      void on_after_tick() override {
+      virtual void on_after_tick() override {
          m_next_write_data.reset();
          m_next_read_staged = false;
          m_write_detector.reset();
       }
 
-      void on_reset() override {
+      virtual void on_reset() override {
          m_write_index = 0;
          m_read_index = 0;
          m_count = 0;

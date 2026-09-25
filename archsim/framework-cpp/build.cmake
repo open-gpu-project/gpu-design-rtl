@@ -8,13 +8,11 @@ add_library(
    ${CMAKE_CURRENT_LIST_DIR}/exceptions.h
    ${CMAKE_CURRENT_LIST_DIR}/fifo.h
    ${CMAKE_CURRENT_LIST_DIR}/file_trace_sink.cc
-   ${CMAKE_CURRENT_LIST_DIR}/file_trace_sink.h
    ${CMAKE_CURRENT_LIST_DIR}/reg.h
    ${CMAKE_CURRENT_LIST_DIR}/simulation.cc
-   ${CMAKE_CURRENT_LIST_DIR}/tracer.cc
-   ${CMAKE_CURRENT_LIST_DIR}/tracer.h
    ${CMAKE_CURRENT_LIST_DIR}/tracer_codec.cc
-   ${CMAKE_CURRENT_LIST_DIR}/tracer_codec.h
+   ${CMAKE_CURRENT_LIST_DIR}/tracer_sink.cc
+   ${CMAKE_CURRENT_LIST_DIR}/tracer.cc
 )
 
 # Create an alias for the library to be used by consumers

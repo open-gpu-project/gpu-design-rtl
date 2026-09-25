@@ -72,7 +72,7 @@ namespace {
       Maybe<RChannelData> tcm_master_r{};
    };
 
-   /// The single view `T` of `port`, unwrapped from the tuple `get()` returns.
+   // FIXME(claude): Deprecate this
    template <typename T>
    T view(AxiInterfaceHolder& port) {
       return std::get<T>(port.get<T>());
@@ -101,7 +101,7 @@ namespace {
               tcm_slave{add_port("tcm_slave")},
               dpq_arb{add_port("dpq_arb")},
               fabric{add_fabric(tcm_range)},
-              axi_hp_r{view<RChannelSink>(axi_hp)},
+              axi_hp_r{axi_hp.view<RChannelSink>()},
               tdsu_ar{view<ArChannelSink>(tdsu)},
               tcm_slave_r{view<RChannelSink>(tcm_slave)},
               dpq_arb_ar{view<ArChannelSink>(dpq_arb)},
@@ -162,9 +162,7 @@ namespace {
 
    private:
       AxiInterfaceHolder& add_port(std::string_view name) {
-         return config()
-               .simulation.add_entity<AxiInterfaceHolder>(name, config().clock_id, config().id)
-               .second;
+         return add_child<AxiInterfaceHolder>(name).second;
       }
 
       template <ChannelData T>
@@ -176,18 +174,8 @@ namespace {
       }
 
       Fabric& add_fabric(std::pair<uint32_t, uint32_t> tcm_range) {
-         return config()
-               .simulation
-               .add_entity<Fabric>("fabric",
-                                   config().clock_id,
-                                   config().id,
-                                   axi_hp,
-                                   tdsu,
-                                   upq,
-                                   tcm_master,
-                                   tcm_slave,
-                                   dpq_arb,
-                                   tcm_range)
+         return add_child<Fabric>(
+                      "fabric", axi_hp, tdsu, upq, tcm_master, tcm_slave, dpq_arb, tcm_range)
                .second;
       }
    };
@@ -488,7 +476,7 @@ TEST_CASE("fabric: a full AXI_HP.AR holds a request instead of dropping it") {
 
    // It must still be sitting in its own channel, untouched.
    REQUIRE(view<ArChannelSource>(dut.dpq_arb).valid());
-   REQUIRE(view<ArChannelSource>(dut.dpq_arb).peek()->arid.to_ulong() == kRidUse2);
+   REQUIRE(view<ArChannelSource>(dut.dpq_arb).peek_data()->arid.to_ulong() == kRidUse2);
 
    // Draining AXI_HP.AR lets the backlog through, in order and with tags intact.
    auto a = dut.step();
@@ -524,7 +512,7 @@ TEST_CASE("fabric: a TDSU ifetch return is not blocked by a full TCM_Master.R") 
    dut.step_no_drain();
 
    REQUIRE(view<RChannelSource>(dut.tdsu).valid());
-   REQUIRE(view<RChannelSource>(dut.tdsu).peek()->rdata.to_ulong() == 0x3333'3333u);
+   REQUIRE(view<RChannelSource>(dut.tdsu).peek_data()->rdata.to_ulong() == 0x3333'3333u);
 }
 
 TEST_CASE("fabric: a TDSU ifetch return is held when TDSU.R is full") {
@@ -546,6 +534,6 @@ TEST_CASE("fabric: a TDSU ifetch return is held when TDSU.R is full") {
    REQUIRE_NOTHROW(dut.step_no_drain());
 
    REQUIRE(view<RChannelSource>(dut.axi_hp).valid());
-   REQUIRE(view<RChannelSource>(dut.axi_hp).peek()->rdata.to_ulong() == 0x6666'6666u);
+   REQUIRE(view<RChannelSource>(dut.axi_hp).peek_data()->rdata.to_ulong() == 0x6666'6666u);
    REQUIRE_FALSE(view<RChannelSource>(dut.tcm_master).valid());
 }

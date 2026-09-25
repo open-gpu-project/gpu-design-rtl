@@ -95,5 +95,4 @@ TEST_CASE("reg: Tracing works") {
    std::string canary = "A";
    dut.assign(canary);
    sim.run(1);
-
 }

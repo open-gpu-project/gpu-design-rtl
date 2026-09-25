@@ -161,6 +161,10 @@ std::optional<entity_id_t> Simulation::get_entity_parent(entity_id_t id) const {
    return std::nullopt;
 }
 
+void Simulation::dump_tree(std::ostream& os) const {
+   (void) os;
+}
+
 void MultiDriverDetector::add_and_check_driver(std::string_view signal_name) {
    auto st = cpptrace::stacktrace::current();
    if (m_caller.has_value()) {

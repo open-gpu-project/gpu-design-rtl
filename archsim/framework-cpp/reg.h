@@ -11,11 +11,11 @@ namespace framework {
    template <std::equality_comparable T>
    class Reg : public Entity {
    public:
-      explicit Reg(EntityConfig config, T initial_value)
+      explicit Reg(EntityConfig config, T initial_value, bool enable_tracing = true)
             : Entity{config},
               m_initial_value{initial_value},
               m_value{initial_value, default_tag},
-              m_tracer{config, "", "Tracks value changes for the register"} {
+              m_tracer{config, "", "Tracks value changes for the register", enable_tracing} {
          on_reset();
       }
 
@@ -37,7 +37,7 @@ namespace framework {
          if (m_next_value.has_value()) {
             auto [next_value, next_tag] = m_next_value.value();
             if (next_value != m_value.first) {
-               m_tracer.on_value_change(next_value, next_tag);
+               m_tracer.record(next_value, next_tag);
             }
             m_value = std::make_pair(next_value, next_tag);
          }

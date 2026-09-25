@@ -10,7 +10,7 @@
 
 namespace trace_test {
 
-   /// @brief One decoded body record. See `framework::TraceSink` for the layout.
+   /// @brief One decoded body record. See `framework::TracerSink` for the layout.
    struct Record {
       bool is_tick{};
       unsigned tick{};
@@ -29,7 +29,7 @@ namespace trace_test {
       constexpr uint64_t tick_flag = 1ULL << 63;
       std::vector<Record> records{};
       std::size_t offset = 0;
-      while (offset + framework::TraceSink::record_header_size <= body.size()) {
+      while (offset + framework::TracerSink::record_header_size <= body.size()) {
          uint64_t header = 0;
          std::memcpy(&header, body.data() + offset, sizeof(header));
          offset += sizeof(header);

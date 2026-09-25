@@ -6,7 +6,7 @@
 
 using namespace framework;
 
-FileTraceSink::FileTraceSink(std::filesystem::path const& filename) : m_path{filename} {
+FileTracerSink::FileTracerSink(std::filesystem::path const& filename) : m_path{filename} {
    m_file.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
    if (!m_file.is_open()) {
       throw GenericSimulationException("Could not open trace file for writing",
@@ -14,7 +14,7 @@ FileTraceSink::FileTraceSink(std::filesystem::path const& filename) : m_path{fil
    }
 }
 
-FileTraceSink::~FileTraceSink() {
+FileTracerSink::~FileTracerSink() {
    // In case the file is still open, we should commit and close it
    try {
       commit_file_end();
@@ -23,11 +23,11 @@ FileTraceSink::~FileTraceSink() {
    }
 }
 
-void FileTraceSink::write_raw(void const* data, std::size_t size) {
+void FileTracerSink::write_raw(void const* data, std::size_t size) {
    m_file.write(static_cast<char const*>(data), static_cast<std::streamsize>(size));
 }
 
-void FileTraceSink::commit_header() {
+void FileTracerSink::commit_header() {
    TraceFileHeader header{.version = format_version};
    header.schemas.assign(schemas().begin(), schemas().end());
    header.signals.reserve(signals().size());
@@ -53,12 +53,12 @@ void FileTraceSink::commit_header() {
    write_raw(document.data(), document.size());
 }
 
-void FileTraceSink::commit_body_data(std::string_view data) {
+void FileTracerSink::commit_body_data(std::string_view data) {
    write_raw(data.data(), data.size());
    m_body_bytes += data.size();
 }
 
-void FileTraceSink::commit_file_end() {
+void FileTracerSink::commit_file_end() {
    if (m_finalized || !m_file.is_open()) {
       return;
    }

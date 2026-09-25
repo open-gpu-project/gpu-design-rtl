@@ -74,9 +74,9 @@ TEST_CASE("axi3: get() returns the requested views in the requested order") {
    sim.run(1);
 
    REQUIRE(ar_source.valid());
-   REQUIRE(ar_source.peek().value().araddr == std::bitset<32>{0xdead});
+   REQUIRE(ar_source.peek_data().value().araddr == std::bitset<32>{0xdead});
    REQUIRE(r_source.valid());
-   REQUIRE(r_source.peek().value().rdata == std::bitset<32>{0xbeef});
+   REQUIRE(r_source.peek_data().value().rdata == std::bitset<32>{0xbeef});
 }
 
 TEST_CASE("axi3: get() accepts a named tuple alias in place of its elements") {
@@ -96,10 +96,10 @@ TEST_CASE("axi3: get() accepts a named tuple alias in place of its elements") {
    sim.run(1);
 
    REQUIRE(std::get<ArChannelSource>(master_if).valid());
-   REQUIRE(std::get<ArChannelSource>(master_if).peek().value().araddr == std::bitset<32>{0xfeed});
+   REQUIRE(std::get<ArChannelSource>(master_if).peek_data().value().araddr == std::bitset<32>{0xfeed});
 
    auto [ar_source] = dut.get<ArChannelSource>();
-   REQUIRE(ar_source.peek().value().araddr == std::bitset<32>{0xfeed});
+   REQUIRE(ar_source.peek_data().value().araddr == std::bitset<32>{0xfeed});
 }
 
 TEST_CASE("axi3: get() views stay bound to one channel across calls") {

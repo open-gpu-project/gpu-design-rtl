@@ -44,20 +44,20 @@ TEST_CASE("fifo: peek() reads the head without popping it") {
    auto clk = sim.add_clock("clk");
    auto& dut = sim.add_entity<Fifo<int, 2>>("fifo", clk, std::nullopt).second;
 
-   REQUIRE_FALSE(dut.peek().has_value());
+   REQUIRE_FALSE(dut.peek_data().has_value());
 
    dut.assign_write(7);
    sim.run(1);
 
    // Peeking is non-destructive, so it stays readable however often we look
-   REQUIRE(dut.peek().value() == 7);
-   REQUIRE(dut.peek().value() == 7);
+   REQUIRE(dut.peek_data().value() == 7);
+   REQUIRE(dut.peek_data().value() == 7);
    REQUIRE(dut.can_read());
 
    dut.read();
    sim.run(1);
 
-   REQUIRE_FALSE(dut.peek().has_value());
+   REQUIRE_FALSE(dut.peek_data().has_value());
 }
 
 TEST_CASE("fifo: overrunning the fifo throws") {
@@ -80,6 +80,6 @@ TEST_CASE("fifo: overrunning the fifo throws") {
       REQUIRE_THROWS_AS(dut.assign_write(99), SimulationException);
 
       // The rejected write left the existing contents alone
-      REQUIRE(dut.peek().value() == 0);
+      REQUIRE(dut.peek_data().value() == 0);
    }
 }

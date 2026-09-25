@@ -3,96 +3,15 @@
 #include <logpp/logpp.h>
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <typeindex>
-#include <typeinfo>
-#include <unordered_map>
-#include <vector>
 
 #include "simulation.h"
 #include "tracer_codec.h"
+#include "tracer_sink.h"
 
 namespace framework {
-
-   class TraceSink;
-   class TracerBase;
-
-   /// @brief Signal identifier to quickly reference a registered signal
-   struct signal_id_t {
-      friend class TraceSink;
-
-      bool operator==(signal_id_t const&) const = default;
-
-      /// @brief The signal's index, as written into every value-change record.
-      unsigned index() const { return value; }
-
-      /// @brief Hash functor, for using an entity id as an unordered container key.
-      struct hash {
-         std::size_t operator()(signal_id_t id) const { return std::hash<unsigned>{}(id.value); }
-      };
-
-   private:
-      signal_id_t(unsigned v) : value(v) {}
-      unsigned value;
-   };
-
-   /**
-    * Sink for recording traced values and their schemas. It converts the
-    * traced values into an internal representation. These can then be committed
-    * into a file (whichever format you wish to serialize into).
-    *
-    * The body is a flat stream of 8-byte records. This is the one part of a
-    * trace that is not BEVE: a reader must be able to skip a value it does not
-    * care about, and BEVE offers no public "how many bytes did that value take"
-    * API, so each value record carries its own payload length.
-    *
-    *    tick record:  bit 63 set,   bits 62..0  = tick
-    *    value record: bit 63 clear, bits 62..32 = signal id
-    *                                bits 31..0  = payload length in bytes,
-    *                  followed by that many bytes of untagged BEVE
-    */
-   class TraceSink {
-   public:
-      virtual ~TraceSink() = default;
-
-      void write_value_change(signal_id_t, std::string_view data, tag_t tag = default_tag);
-      void write_tick(unsigned tick);
-
-      void register_schema(std::type_info const&, std::string_view data);
-      signal_id_t register_signal(std::type_info const&, std::string name);
-
-      virtual void commit_header() {}
-      virtual void commit_body_data(std::string_view) {}
-      virtual void commit_file_end() {}
-
-      /// @brief Number of bytes in a body record header.
-      static constexpr std::size_t record_header_size = sizeof(uint64_t);
-
-   protected:
-      using schema_id_t = uint32_t;
-      using signal_name_t = std::string;
-      using schema_data_t = std::string;
-
-      /// @brief Serialized schemas, indexed by schema id.
-      std::vector<schema_data_t> const& schemas() const { return m_schemas; }
-
-      /// @brief Registered signals, indexed by signal id.
-      std::vector<std::pair<signal_name_t, schema_id_t>> const& signals() const {
-         return m_signals;
-      }
-
-   private:
-      std::unordered_map<std::type_index, schema_id_t> m_schema_ids{};
-      std::vector<schema_data_t> m_schemas{};
-      std::vector<std::pair<signal_name_t, schema_id_t>> m_signals{};
-
-      // Scratch buffer for composing a record, so each record reaches
-      // commit_body_data() as a single call.
-      std::string m_record{};
-   };
 
    /// @brief Base class for tracers that record changes in values over time.
    class TracerBase {
@@ -105,18 +24,16 @@ namespace framework {
        */
       explicit TracerBase(EntityConfig const& config,
                           std::string_view name,
-                          std::string_view description)
-            : m_simulation{config.simulation}, m_entity_id{config.id}, m_local_name{name} {
-         // FIXME(claude): Use the description for the tracer.
-         (void)description;
-         m_simulation.register_tracer(*this);
-      }
+                          std::string_view description,
+                          bool enabled = true);
 
       virtual ~TracerBase() = default;
 
       // Set the sink for recording traced values. Called by Simulation::build(),
       // once every entity has its fully qualified name.
-      virtual void initialize(TraceSink* sink) { m_sink = sink; }
+      virtual void initialize(TracerSink* sink) {
+         if (m_enabled) m_sink = sink;
+      }
 
       // Reset the tracer to its initial state.
       virtual void reset() = 0;
@@ -132,36 +49,44 @@ namespace framework {
          return name;
       }
 
-      Simulation& m_simulation;
+      /// @brief Wraps m_sink's write_value_change method.
+      void write_value_change(signal_id_t signal_id,
+                              tag_t tag = default_tag,
+                              std::string_view payload = "");
+
+   protected:
       const entity_id_t m_entity_id;
       const std::string m_local_name;
-      TraceSink* m_sink = nullptr;
+      const bool m_enabled;
+
+   private:
+      Simulation& m_simulation;
+      TracerSink* m_sink = nullptr;
    };
 
    /**
     * Tracer class that records changes in values of type T over time. Value
-    * changes are streamed to the `TraceSink` the simulation was built with.
+    * changes are streamed to the `TracerSink` the simulation was built with.
     */
    template <typename T>
    class Tracer : public TracerBase {
    public:
       Tracer(EntityConfig const& config,
              std::string_view name = "",
-             std::string_view description = "")
-            : TracerBase{config, name, description} {}
+             std::string_view description = "",
+             bool enabled = true)
+            : TracerBase{config, name, description, enabled} {}
 
-      void initialize(TraceSink* sink) override {
+      void initialize(TracerSink* sink) override {
          if (!sink) return;
          TracerBase::initialize(sink);
-         m_sink->register_schema(typeid(T), TracerCodec<T>::encode_schema());
-         m_signal_id = m_sink->register_signal(typeid(T), qualified_name());
+         sink->register_schema(typeid(T), TracerCodec<T>::encode_schema());
+         m_signal_id = sink->register_signal(typeid(T), qualified_name());
       }
 
-      virtual void on_value_change(T const& value, tag_t tag = default_tag) {
-         if (!m_sink || !m_signal_id) {
-            return;
-         }
-         m_sink->write_value_change(*m_signal_id, TracerCodec<T>::encode(value), tag);
+      virtual void record(T const& value, tag_t tag = default_tag) {
+         if (!m_signal_id) return;
+         write_value_change(*m_signal_id, tag, TracerCodec<T>::encode(value));
       }
 
       void reset() override {}
@@ -177,10 +102,11 @@ namespace framework {
    public:
       EventTracer(EntityConfig const& config,
                   std::string_view name = "",
-                  std::string_view description = "")
-            : TracerBase{config, name, description} {}
-      void initialize(TraceSink* sink) override;
-      virtual void on_event();
+                  std::string_view description = "",
+                  bool enabled = true)
+            : TracerBase{config, name, description, enabled} {}
+      void initialize(TracerSink* sink) override;
+      virtual void record(tag_t tag = default_tag);
       void reset() override {}
 
    private:

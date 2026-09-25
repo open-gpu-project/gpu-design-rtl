@@ -62,14 +62,17 @@ namespace partitions {
    }
 
    class Fabric : public framework::Entity {
+      using EntityConfig = framework::EntityConfig;
+      using AxiInterfaceHolder = framework::axi3::AxiInterfaceHolder;
+
    public:
-      Fabric(framework::EntityConfig config,
-             framework::axi3::AxiInterfaceHolder& axi_hp_if,
-             framework::axi3::AxiInterfaceHolder& tdsu_if,
-             framework::axi3::AxiInterfaceHolder& upq_if,
-             framework::axi3::AxiInterfaceHolder& tcm_master_if,
-             framework::axi3::AxiInterfaceHolder& tcm_slave_if,
-             framework::axi3::AxiInterfaceHolder& dpq_arb_if,
+      Fabric(EntityConfig config,
+             AxiInterfaceHolder& axi_hp_if,
+             AxiInterfaceHolder& tdsu_if,
+             AxiInterfaceHolder& upq_if,
+             AxiInterfaceHolder& tcm_master_if,
+             AxiInterfaceHolder& tcm_slave_if,
+             AxiInterfaceHolder& dpq_arb_if,
              std::pair<uint32_t, uint32_t> tcm_range)
             : framework::Entity{config},
               m_axi_hp_if{axi_hp_if.get<fabric::AxiHpIfType>()},
