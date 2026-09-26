@@ -25,12 +25,13 @@ node verify/network.mjs
 node verify/docking.mjs
 node verify/trace.mjs
 node verify/selection.mjs
+node verify/objects.mjs
 
 npm run build && npm run preview   # port 4183
 node verify/production.mjs
 ```
 
-`npm run verify` runs all eleven dev suites against an already-running dev server (the count is in
+`npm run verify` runs all twelve dev suites against an already-running dev server (the count is in
 the top-level README). `production.mjs` is not among them: it needs `vite preview` on a different
 port — which also makes it the one suite a green `npm run verify` cannot vouch for, so run it
 whenever the property panel changes.

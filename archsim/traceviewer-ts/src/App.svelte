@@ -20,6 +20,7 @@
     routeConnection,
   } from './lib/scene/route';
   import { shapesInRect } from './lib/scene/bounds';
+  import { outlineOf, outlineRows } from './lib/scene/outline';
   import { movesWith, rerouteAll } from './lib/scene/resolve';
   import {
     autoWaypoints,
@@ -235,6 +236,12 @@
         sorts to the same string rather than rendering ⌘⇧Z.
       */
       __keys: keys,
+      /*
+        The object tree's model, as pure functions, so `verify/objects.mjs` can compare the
+        rendered rows against it and feed it malformed documents -- a cycle, a dangling parent --
+        that the scene would never let it commit.
+      */
+      __outline: { outlineOf, outlineRows },
       /*
         One kind's operations, out of the LIVE registry.
 

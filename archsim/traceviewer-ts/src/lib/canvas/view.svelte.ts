@@ -1,7 +1,7 @@
-import { clampNum } from '../geom/math';
+import { clampNum, expandRect, rectContains } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
 import { computeWorldBounds } from '../scene/bounds';
-import { ZOOM_MAX, ZOOM_MIN } from './theme';
+import { REVEAL_INSET_PX, ZOOM_MAX, ZOOM_MIN } from './theme';
 import { CanvasViewport } from './viewport.svelte';
 
 /**
@@ -73,6 +73,22 @@ export class ViewController extends CanvasViewport {
 
   resetZoom(): void {
     this.zoomTo(1, this.viewportCenter);
+  }
+
+  /**
+   * Pan, never zoom, so `r` is on screen, if it is not already. The diagram's `revealTick`.
+   *
+   * "Already" means inside the viewport inset by `REVEAL_INSET_PX`, and an object already in
+   * view leaves the camera exactly where it was: a click in the object tree that moved the
+   * canvas every time would lose the user's place for nothing. Otherwise recentre rather than
+   * nudge, for the reason `revealTick` gives.
+   */
+  revealRect(r: Rect): void {
+    if (this.cssW <= 0 || this.cssH <= 0) return;
+    if (rectContains(expandRect(this.viewportWorld, -REVEAL_INSET_PX / this.z), r)) return;
+    this.camX = r.x + r.w / 2 - this.cssW / (2 * this.z);
+    this.camY = r.y + r.h / 2 - this.cssH / (2 * this.z);
+    this.clampCamera();
   }
 
   zoomToFit(content: Rect | null, pad = 64): void {

@@ -9,10 +9,10 @@ import {
   type DockPane,
 } from '@svgrid/grid';
 import { panelFor } from '../panels/registry';
-import { DIAGRAM_PANEL, TRACE_PANEL, type PanelId } from '../session.svelte';
+import { DIAGRAM_PANEL, OBJECTS_PANEL, TRACE_PANEL, type PanelId } from '../session.svelte';
 
 /** Bump to invalidate every saved layout after a structural change to the default. */
-const STORAGE_KEY = 'archsim.traceviewer.dock.v2';
+const STORAGE_KEY = 'archsim.traceviewer.dock.v3';
 
 function paneFor(id: PanelId): DockPane {
   const d = panelFor(id);
@@ -23,7 +23,7 @@ function paneFor(id: PanelId): DockPane {
 }
 
 /**
- * Canvas on the left, properties on the right, trace across the bottom.
+ * Canvas on the left, the object tree above properties on the right, trace across the bottom.
  *
  * "Docked at the bottom" is not a distinct concept in the dock model -- it is a `column` group
  * whose second child spans the full width. The trace strip therefore sits under *both* the
@@ -36,7 +36,14 @@ export function defaultWorkspace(): DockManagerState {
       [
         dockGroup(
           'row',
-          [dockTabs([paneFor(DIAGRAM_PANEL)]), dockTabs([paneFor('properties')])],
+          [
+            dockTabs([paneFor(DIAGRAM_PANEL)]),
+            dockGroup(
+              'column',
+              [dockTabs([paneFor(OBJECTS_PANEL)]), dockTabs([paneFor('properties')])],
+              [0.35, 0.65],
+            ),
+          ],
           [0.72, 0.28],
         ),
         dockTabs([paneFor(TRACE_PANEL)]),

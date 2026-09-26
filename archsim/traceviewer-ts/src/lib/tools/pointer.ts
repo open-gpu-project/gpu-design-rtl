@@ -8,6 +8,18 @@ export function modifiersOf(e: MouseEvent | KeyboardEvent): Modifiers {
 }
 
 /**
+ * Whether a press adds to the selection rather than replacing it. The one definition, read by
+ * the pointer tool, the marquee and the object tree.
+ *
+ * ⌘ or Ctrl, the pair `ToolHost.#globalKey` already reads as the command modifier. Not Shift:
+ * holding Shift switches to the Select tool for as long as it is held, so a Shift-click is
+ * already a press in a different tool by the time any tool sees it.
+ */
+export function addsToSelection(m: Modifiers): boolean {
+  return m.meta || m.ctrl;
+}
+
+/**
  * `offsetX`/`offsetY` are relative to whichever element the event happened to hit, so the stage
  * rect is measured explicitly and the caller is responsible for keeping it fresh.
  */

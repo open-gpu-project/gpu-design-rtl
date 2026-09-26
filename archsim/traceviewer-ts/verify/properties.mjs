@@ -388,12 +388,22 @@ t.ok('with no context menu, since there is nothing to act on', !(await menu()).o
 await page.evaluate(() => window.__scene.selectOnly(window.__scene.shapes[0].name));
 await page.waitForTimeout(400);
 
+/*
+  By name. This used to click the page's LAST `Float` button, which has been Trace's ever since
+  the trace panel arrived -- so it floated the trace panel, and ran the menu check below against
+  a Properties pane that was still docked.
+*/
 await page
   .locator('.sv-dock__leaf', { has: page.locator('text=Properties') })
   .last()
   .hover();
-await page.locator('[aria-label^="Float"]').last().click();
+await page.locator('[aria-label="Float Properties"]').click();
 await page.waitForTimeout(700);
+t.ok(
+  'the pane floated is Properties, not whichever Float button happens to come last',
+  (await page.locator('.sv-dockmgr__window [data-panel-id="properties"]').count()) === 1 &&
+    (await page.locator('.sv-dockmgr__window [data-panel-id="trace"]').count()) === 0,
+);
 await row(page, 'label').first().click({ button: 'right' });
 await page.waitForTimeout(350);
 m = await menu();
@@ -527,7 +537,12 @@ t.ok(
 const wanted = await page.evaluate(() =>
   Number(localStorage.getItem('archsim.traceviewer.props.docs.v1')),
 );
-await page.reload({ waitUntil: 'networkidle' });
+// Through the app's own reset, which also cancels a pending debounced save: the float above was
+// persisted, and a reload into it would measure the footer inside a floating window.
+await Promise.all([
+  page.waitForNavigation({ waitUntil: 'networkidle' }),
+  page.evaluate(() => window.__resetLayout()),
+]);
 await page.waitForTimeout(900);
 t.ok(
   'the documentation height survives a reload',

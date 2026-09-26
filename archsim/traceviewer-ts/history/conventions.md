@@ -82,8 +82,17 @@ has the full story.
 - **A window-capture listener registered after the app's observes its `preventDefault`.** That is
   how `verify/file.mjs` proves the browser's own Save/Open dialogs are suppressed; a bubble listener
   would not fire at all from the property panel. (iteration 6)
-- **A new suite is three edits:** the file, `package.json`'s `verify` script, and the assertion
-  count in `README.md`. (iteration 5)
+- **A new suite is four edits:** the file, `package.json`'s `verify` script, the run list and suite
+  count in `verify/README.md`, and the assertion count in `README.md`. (iteration 5, iteration 7)
+- **Checks select some class names page-wide, unscoped:** `.footer`, `.grip`, `.veil`, `.editor`,
+  `.alert`, `.doc` and `[data-path]`. Two more are unscoped within one pane: `.banner` in
+  Properties, and the token `text-[var(--color-ink)]`, taken with `.first()` in the diagram pane
+  by `file.mjs` to find the status-bar hint. A new component must not reuse any of them, and the
+  toolbar must not use that token. `ObjectsView` prefixes every class with `tree-` for this reason.
+  (iteration 7)
+- **A check's cleanup must undo only what the check did.** An unconditional `undo()` after a
+  gesture that committed nothing undoes the seed instead, and every later step then fails for that
+  reason. Undo when the label says the gesture committed. (iteration 7)
 - **If a Vitest suite is ever added, never run rune code under `environment: 'node'`.**
   `vite-plugin-svelte` then compiles in server mode, where `$state` is a plain field and `$derived`
   a one-shot memo: the suite passes while testing nothing. Use `happy-dom` with
@@ -153,6 +162,10 @@ has the full story.
   identity makes the editor re-validate continuously. The cache is keyed on `kind`, so a hot-swapped
   schema would keep the old validator — moot today only because the props files force a full reload.
   (iteration 2, iteration 6)
+- **An effect that follows the canvas selection defers while gesturing and acts only on a new Set.**
+  It tracks `scene.selection` and `host.gestureVersion` and nothing else, bails while
+  `isGesturing()` (the marquee writes the selection on every move), and remembers the last Set in a
+  plain `let`. Collapsing or panning then never re-opens what the user closed. (iteration 7)
 - **The session is owned by the app, not by a panel.** The dock re-mounts a pane's content when it
   is maximised, floated or popped out, so the document, the trace and the cameras live in
   `EditorSession`. (iteration 2)
@@ -344,7 +357,24 @@ has the full story.
   breaks wheel input; the target is structural, so there is no compile error. (iteration 3)
 - **Each canvas panel needs its `acceptsKeys`.** Keyboard listeners are on `window`, so without it
   both panels' arrow keys fire at once; `isEditableTarget` covers inputs but not the JSON tree's
-  tabindex divs, which is why there are three filters. (iteration 3)
+  tabindex divs, which is why there are three filters. The Objects panel deliberately shares the
+  diagram's, and handles only the keys it moves with. (iteration 3, iteration 7)
+- **`setTool` is an explicit choice; the Shift hold switches through `#activate`.** Every caller of
+  `setTool` — the toolbar, a digit, a tool's Escape-to-pointer, a check's `__host.setTool` — ends a
+  hold and wins until Shift comes up. Code that switches tools on the hold's behalf must call
+  `#activate`, or it cancels the hold it is serving. (iteration 7)
+- **Only a bare ⇧ keydown or a ⇧ canvas press may start a hold, and `#reconcileHold` runs on every
+  path that ends a gesture.** Anything showing Shift up may clear it; nothing else may set it. A new
+  way for a gesture to end that skips reconcile leaves the hold waiting for an event that already
+  happened. (iteration 7)
+- **A gesture that ends without a pointer event must still bump `gestureVersion`.** Escape on a
+  pending connection, Escape mid-band and a tool switch mid-drag all end one; `ToolHost`'s
+  `#noteGestureEnd` catches them by comparing `isGesturing()` either side of `onKeyDown` and
+  `setTool`. A new ending path outside those two needs the same, or whatever deferred on
+  `isGesturing()` waits for the next drag. (iteration 7)
+- **Whether a press adds to the selection is `addsToSelection(mods)`, never `mods.shift`.** Shift
+  holds the Select tool, so by the time a tool sees a ⇧-press it is already a Select-tool press.
+  (iteration 7)
 - **The wheel listener is `{ passive: false }` and calls `preventDefault()` on every event.**
   Otherwise macOS rubber-bands the page and Chrome can back-navigate on horizontal deltas. Deltas
   are accumulated and applied once per frame, Safari's `gesturechange` pinch included. (iteration 1,
@@ -366,6 +396,12 @@ has the full story.
 - **Run `dedupeManagerNodeIds` on every restored layout.** The library mints node ids from a
   module-scoped counter that resets on reload, so a restored tree collides with fresh nodes and
   breaks a keyed `{#each}`. (iteration 2)
+- **A pane's `minSize` binds only along its direct parent split.** Nested two splits deep, it
+  floors the inner axis and says nothing about the outer one; only the dock-wide `minSize` does.
+  (iteration 7)
+- **Never `scrollIntoView`, or `focus()` without `{ preventScroll: true }`, inside a pane.** Both
+  scroll the dock's `overflow: hidden` wrappers, which have no scrollbar to scroll back with. Scroll
+  the pane's own box by setting its `scrollTop`. (iteration 7)
 - **`panelFor` returns `undefined` rather than throwing**, so a saved layout naming a deleted panel
   falls back instead of bricking the app. (iteration 2)
 - **Override dock styles as `#app .sv-dock__content`.** The library's rule is scoped (specificity

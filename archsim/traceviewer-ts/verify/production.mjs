@@ -29,7 +29,7 @@ const builtPanels = (
 )
   .sort()
   .join();
-t.ok('every panel present', builtPanels === 'diagram,properties,trace', builtPanels);
+t.ok('every panel present', builtPanels === 'diagram,objects,properties,trace', builtPanels);
 
 const c = await page.evaluate(() => {
   const el = document.querySelector('[data-panel-id="diagram"] canvas');
@@ -61,6 +61,19 @@ t.ok('no dock pane scrollbar', sc.panes);
 
 await drawBlock(page, 120, 120, 320, 260);
 await page.waitForTimeout(250);
+
+// Through the DOM alone, since the built bundle has no hooks: one object row, the new block,
+// shown as selected -- which is the tree reading the scene's selection in a production chunk.
+const listed = await page.evaluate(() =>
+  [...document.querySelectorAll('[data-panel-id="objects"] [role="treeitem"][data-name]')].map(
+    (e) => [e.dataset.name, e.getAttribute('aria-selected')],
+  ),
+);
+t.ok(
+  'the object tree lists the new block, selected',
+  listed.length === 1 && listed[0][1] === 'true',
+  JSON.stringify(listed),
+);
 
 const keys = await page.evaluate(() =>
   [...document.querySelectorAll('[data-path]')]

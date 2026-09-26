@@ -53,146 +53,150 @@
   const hasSelection = $derived(scene.selection.size > 0);
 </script>
 
+<!--
+  Three zones on a `1fr auto 1fr` grid, so the middle one sits on the bar's true centre whatever
+  the two sides hold. Document on the left: the commands that act on the file and its history.
+  Tools in the middle: everything you do on the canvas -- the registry's tool clusters, then the
+  arrange and delete commands, after the tools so the digits still read 1-6 left to right (they
+  come from registry order, never from here). View on the right. Each zone is a labelled group,
+  which is what `verify/input.mjs` reads the layout back through.
+-->
 <div
-  class="flex h-10 shrink-0 items-center border-b border-[var(--color-panel-border)]
-         bg-[var(--color-panel)] text-sm select-none"
+  class="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b
+         border-[var(--color-panel-border)] bg-[var(--color-panel)] text-sm select-none"
 >
-  <!--
-    Driven by the tool registry, so a new tool appears here just by registering itself -- in
-    its own cluster, because which side of the rule it belongs on is something the tool
-    declares rather than something this markup decides.
-  -->
-  {#each host.toolGroups as cluster, i (i)}
-    {#if i > 0}
-      <div class={divider}></div>
-    {/if}
+  <div role="group" aria-label="Document" class="flex items-center justify-self-start">
     <div class={group}>
-      {#each cluster as tool (tool.id)}
-        <button
-          class="{btn} {host.activeToolId === tool.id ? active : ''}"
-          aria-label={tool.label}
-          aria-pressed={host.activeToolId === tool.id}
-          onclick={() => host.setTool(tool.id)}
-          {@attach tip(toolTipText(tool))}
-        >
-          <tool.icon class="h-4 w-4" />
-        </button>
-      {/each}
+      <button
+        class={btn}
+        aria-label="Open diagram"
+        {@attach tip(hint('Open diagram', 'cmd', 'o'))}
+        onclick={() => void session.openDocument()}
+      >
+        <FolderOpen class="h-4 w-4" />
+      </button>
+      <!--
+        Never disabled on an empty scene. Saving an empty diagram is a legitimate thing to want --
+        it is how you clear a file you no longer need the contents of -- and a greyed button with
+        no explanation is a worse answer than a file with no shapes in it.
+      -->
+      <button
+        class={btn}
+        aria-label="Save diagram"
+        {@attach tip(hint('Save diagram', 'cmd', 's'))}
+        onclick={() => session.saveDocument()}
+      >
+        <Save class="h-4 w-4" />
+      </button>
     </div>
-  {/each}
 
-  <!--
-    The file cluster, first among the command clusters so the bar reads File / Edit / Arrange /
-    View. After the tool clusters, never among them: `verify/input.mjs` asserts the first three
-    children of this element are the registry's own groups, which is the regression net for
-    exactly that.
-  -->
-  <div class={divider}></div>
+    <div class={divider}></div>
 
-  <div class={group}>
-    <button
-      class={btn}
-      aria-label="Open diagram"
-      {@attach tip(hint('Open diagram', 'cmd', 'o'))}
-      onclick={() => void session.openDocument()}
-    >
-      <FolderOpen class="h-4 w-4" />
-    </button>
+    <div class={group}>
+      <button
+        class={btn}
+        aria-label="Undo"
+        {@attach tip(
+          () =>
+            `Undo${scene.history.undoLabel ? `: ${scene.history.undoLabel}` : ''} (${keys('cmd', 'z')})`,
+        )}
+        disabled={!scene.history.canUndo}
+        onclick={() => host.undo()}
+      >
+        <Undo class="h-4 w-4" />
+      </button>
+      <button
+        class={btn}
+        aria-label="Redo"
+        {@attach tip(
+          () =>
+            `Redo${scene.history.redoLabel ? `: ${scene.history.redoLabel}` : ''} (${keys('shift', 'cmd', 'z')})`,
+        )}
+        disabled={!scene.history.canRedo}
+        onclick={() => host.redo()}
+      >
+        <Redo class="h-4 w-4" />
+      </button>
+    </div>
+  </div>
+
+  <div role="group" aria-label="Tools" class="flex items-center">
     <!--
-      Never disabled on an empty scene. Saving an empty diagram is a legitimate thing to want --
-      it is how you clear a file you no longer need the contents of -- and a greyed button with
-      no explanation is a worse answer than a file with no shapes in it.
+      Driven by the tool registry, so a new tool appears here just by registering itself -- in
+      its own cluster, because which side of the rule it belongs on is something the tool
+      declares rather than something this markup decides.
     -->
-    <button
-      class={btn}
-      aria-label="Save diagram"
-      {@attach tip(hint('Save diagram', 'cmd', 's'))}
-      onclick={() => session.saveDocument()}
-    >
-      <Save class="h-4 w-4" />
-    </button>
+    {#each host.toolGroups as cluster, i (i)}
+      {#if i > 0}
+        <div class={divider}></div>
+      {/if}
+      <div class={group}>
+        {#each cluster as tool (tool.id)}
+          <button
+            class="{btn} {host.activeToolId === tool.id ? active : ''}"
+            aria-label={tool.label}
+            aria-pressed={host.activeToolId === tool.id}
+            onclick={() => host.setTool(tool.id)}
+            {@attach tip(toolTipText(tool))}
+          >
+            <tool.icon class="h-4 w-4" />
+          </button>
+        {/each}
+      </div>
+    {/each}
+
+    <div class={divider}></div>
+
+    <div class={group}>
+      <button
+        class={btn}
+        aria-label="Bring to front"
+        {@attach tip(hint('Bring to front', 'cmd', ']'))}
+        disabled={!hasSelection}
+        onclick={() => host.bringToFront()}
+      >
+        <LayerArrowUp class="h-4 w-4" />
+      </button>
+      <button
+        class={btn}
+        aria-label="Bring forward"
+        {@attach tip(hint('Bring forward', 'shift', 'cmd', ']'))}
+        disabled={!hasSelection}
+        onclick={() => host.bringForward()}
+      >
+        <LayersArrowUp class="h-4 w-4" />
+      </button>
+      <button
+        class={btn}
+        aria-label="Send backward"
+        {@attach tip(hint('Send backward', 'shift', 'cmd', '['))}
+        disabled={!hasSelection}
+        onclick={() => host.sendBackward()}
+      >
+        <LayersArrowDown class="h-4 w-4" />
+      </button>
+      <button
+        class={btn}
+        aria-label="Send to back"
+        {@attach tip(hint('Send to back', 'cmd', '['))}
+        disabled={!hasSelection}
+        onclick={() => host.sendToBack()}
+      >
+        <LayerArrowDown class="h-4 w-4" />
+      </button>
+      <button
+        class={btn}
+        aria-label="Delete"
+        {@attach tip(hint('Delete', 'del'))}
+        disabled={!hasSelection}
+        onclick={() => host.deleteSelection()}
+      >
+        <Trash class="h-4 w-4" />
+      </button>
+    </div>
   </div>
 
-  <div class={divider}></div>
-
-  <div class={group}>
-    <button
-      class={btn}
-      aria-label="Undo"
-      {@attach tip(
-        () =>
-          `Undo${scene.history.undoLabel ? `: ${scene.history.undoLabel}` : ''} (${keys('cmd', 'z')})`,
-      )}
-      disabled={!scene.history.canUndo}
-      onclick={() => host.undo()}
-    >
-      <Undo class="h-4 w-4" />
-    </button>
-    <button
-      class={btn}
-      aria-label="Redo"
-      {@attach tip(
-        () =>
-          `Redo${scene.history.redoLabel ? `: ${scene.history.redoLabel}` : ''} (${keys('shift', 'cmd', 'z')})`,
-      )}
-      disabled={!scene.history.canRedo}
-      onclick={() => host.redo()}
-    >
-      <Redo class="h-4 w-4" />
-    </button>
-  </div>
-
-  <div class={divider}></div>
-
-  <div class={group}>
-    <button
-      class={btn}
-      aria-label="Bring to front"
-      {@attach tip(hint('Bring to front', 'cmd', ']'))}
-      disabled={!hasSelection}
-      onclick={() => host.bringToFront()}
-    >
-      <LayerArrowUp class="h-4 w-4" />
-    </button>
-    <button
-      class={btn}
-      aria-label="Bring forward"
-      {@attach tip(hint('Bring forward', 'shift', 'cmd', ']'))}
-      disabled={!hasSelection}
-      onclick={() => host.bringForward()}
-    >
-      <LayersArrowUp class="h-4 w-4" />
-    </button>
-    <button
-      class={btn}
-      aria-label="Send backward"
-      {@attach tip(hint('Send backward', 'shift', 'cmd', '['))}
-      disabled={!hasSelection}
-      onclick={() => host.sendBackward()}
-    >
-      <LayersArrowDown class="h-4 w-4" />
-    </button>
-    <button
-      class={btn}
-      aria-label="Send to back"
-      {@attach tip(hint('Send to back', 'cmd', '['))}
-      disabled={!hasSelection}
-      onclick={() => host.sendToBack()}
-    >
-      <LayerArrowDown class="h-4 w-4" />
-    </button>
-    <button
-      class={btn}
-      aria-label="Delete"
-      {@attach tip(hint('Delete', 'del'))}
-      disabled={!hasSelection}
-      onclick={() => host.deleteSelection()}
-    >
-      <Trash class="h-4 w-4" />
-    </button>
-  </div>
-
-  <div class="ml-auto flex items-center gap-1 px-2">
+  <div role="group" aria-label="View" class="{group} justify-self-end">
     <button
       class={btn}
       aria-label="Zoom out"

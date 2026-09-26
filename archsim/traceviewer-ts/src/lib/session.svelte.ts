@@ -10,7 +10,9 @@ import {
   SCENE_FILE_ACCEPT,
   SCENE_FILE_MIME,
 } from './scene/file';
+import { opsFor } from './scene/registry';
 import { SceneStore } from './scene/scene.svelte';
+import type { ShapeName } from './scene/shape';
 import { readDocument, serializeScene, type SceneDoc } from './scene/serialize';
 import { TimelineHost } from './timeline/host.svelte';
 import { TimelineRenderer } from './timeline/renderer';
@@ -27,6 +29,25 @@ export type PanelId = string;
 
 /** The canvas panel. Keyboard ownership starts here so tool shortcuts work before any click. */
 export const DIAGRAM_PANEL: PanelId = 'diagram';
+
+/**
+ * The object tree. Shares the diagram's keyboard: it is read-only, so Delete, undo, copy and
+ * the arrange chords pressed while it is focused all act on the diagram it shows.
+ */
+export const OBJECTS_PANEL: PanelId = 'objects';
+
+/**
+ * One diagram, as the object tree sees it. There is exactly one today; the tree is written
+ * against a list so a second is a new entry here rather than a rewrite there.
+ */
+export interface DiagramEntry {
+  /** The diagram's panel id, which is also the tree's key for its root row. */
+  readonly id: PanelId;
+  readonly title: string;
+  readonly scene: SceneStore;
+  readonly view: ViewController;
+  readonly host: ToolHost;
+}
 
 /** The trace panel. Owns the keyboard while focused, so its arrow keys do not reach the canvas. */
 export const TRACE_PANEL: PanelId = 'trace';
@@ -51,12 +72,23 @@ export class EditorSession {
   readonly timelineRenderer: TimelineRenderer;
 
   /**
-   * Which panel the keyboard belongs to. `ToolHost` refuses keys unless this is the diagram, so
+   * Which panel the keyboard belongs to. `ToolHost` refuses keys unless this is the diagram or
+   * the object tree that shows it, so
    * Delete in the property editor removes a JSON node instead of a block. Tree mode calls
    * `preventDefault` on Delete/Ctrl+A but never `stopPropagation`, so a window-level listener
    * would otherwise fire for both.
    */
   keyboardOwner = $state<PanelId>(DIAGRAM_PANEL);
+
+  readonly diagrams: readonly DiagramEntry[];
+
+  /**
+   * Which rows of the object tree are open, by row key. Roots start open and parents closed.
+   *
+   * Here rather than in `ObjectsView` because a docked pane is remounted when it is floated or
+   * maximized, and a tree that snapped shut every time would be worse than none.
+   */
+  objectTreeOpen = $state.raw<ReadonlySet<string>>(new Set([DIAGRAM_PANEL]));
 
   constructor() {
     // `renderer` is only read from inside these closures, which run well after both are built.
@@ -64,8 +96,11 @@ export class EditorSession {
       this.scene,
       this.view,
       () => this.renderer.requestFrame(),
-      () => this.keyboardOwner === DIAGRAM_PANEL,
+      () => this.keyboardOwner === DIAGRAM_PANEL || this.keyboardOwner === OBJECTS_PANEL,
     );
+    this.diagrams = [
+      { id: DIAGRAM_PANEL, title: 'Diagram', scene: this.scene, view: this.view, host: this.host },
+    ];
     this.renderer = new Renderer(this.view, darkTheme, () => ({
       shapes: this.scene.shapes,
       selection: this.scene.selection,
@@ -214,6 +249,35 @@ export class EditorSession {
   selectSignal(id: SignalId | null): void {
     this.trace.selectedSignal = id;
     if (id !== null) this.scene.clearSelection();
+  }
+
+  setObjectOpen(key: string, open: boolean): void {
+    if (this.objectTreeOpen.has(key) === open) return;
+    const next = new Set(this.objectTreeOpen);
+    if (open) next.add(key);
+    else next.delete(key);
+    this.objectTreeOpen = next;
+  }
+
+  /**
+   * Select an object from the tree: on its own, and brought into view -- or toggled in or out
+   * of the selection, which leaves the camera alone.
+   *
+   * A name the diagram no longer has is ignored rather than trusted: a row can outlive its shape
+   * by a frame. Through the scene's own selection calls, so `onSelectionChanged` clears the trace
+   * selection exactly as a click on the canvas would.
+   */
+  selectObject(id: PanelId, name: ShapeName, mode: 'only' | 'toggle'): void {
+    const d = this.diagrams.find((e) => e.id === id);
+    const shape = d?.scene.shapes.find((s) => s.name === name);
+    if (d === undefined || shape === undefined) return;
+    if (mode === 'toggle') {
+      d.scene.toggleSelected(name);
+    } else {
+      d.scene.selectOnly(name);
+      d.view.revealRect(opsFor(shape).bounds(shape));
+    }
+    d.host.requestFrame();
   }
 
   focusPanel(id: PanelId): void {

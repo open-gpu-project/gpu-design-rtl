@@ -6,7 +6,9 @@ import {
   emptySpot,
   installProbes,
   open,
+  row,
   suite,
+  traceCanvas,
 } from './harness.mjs';
 
 /*
@@ -650,18 +652,77 @@ await leaveToolbar();
     JSON.stringify(bar),
   );
   /*
-    The file commands after the tools, never among them.
+    The three zones, read back by role and label rather than by position in the DOM.
 
-    The slice above is the regression net for that, and this is the other half of it: the
-    document commands are a cluster of their own, first among the command clusters, so the bar
-    reads File / Edit / Arrange / View. A button added inside a tool cluster would shift the
-    digits the registry assigns by POSITION, which is a shortcut the user has learned and a
-    literal `Digit4` several suites press.
+    Everything done on the canvas sits in the centred Tools zone -- the tool clusters, then
+    the arrange commands and Delete, after every tool so the digits still read left to right.
+    The document commands, file and history, sit in their own zone on the left. A button added
+    inside a tool cluster would sit between two digits the registry assigns by ORDER, which is
+    a shortcut the user has learned and a literal `Digit4` several suites press.
   */
+  const zones = await page.evaluate(() => {
+    const bar = document.querySelector(
+      '[data-panel-id="diagram"] [role="group"][aria-label="Tools"]',
+    )?.parentElement;
+    if (bar == null) return null;
+    const read = (label) => {
+      const zone = bar.querySelector(`:scope > [role="group"][aria-label="${label}"]`);
+      if (zone === null) return null;
+      const r = zone.getBoundingClientRect();
+      return {
+        children: [...zone.children].map((el) => {
+          const labels = [...el.querySelectorAll('button')].map((b) =>
+            b.getAttribute('aria-label'),
+          );
+          return labels.length > 0 ? labels : 'rule';
+        }),
+        left: r.left,
+        mid: r.left + r.width / 2,
+      };
+    };
+    const r = bar.getBoundingClientRect();
+    return {
+      order: [...bar.children].map((el) => el.getAttribute('aria-label')),
+      tools: read('Tools'),
+      document: read('Document'),
+      barLeft: r.left,
+      barMid: r.left + r.width / 2,
+    };
+  });
   t.ok(
-    'the file commands come after every tool cluster, as a cluster of their own',
-    JSON.stringify(bar?.slice(3, 5)) === JSON.stringify(['rule', ['Open diagram', 'Save diagram']]),
-    JSON.stringify(bar),
+    'the bar is three zones, Document, Tools and View, in that order',
+    JSON.stringify(zones?.order) === JSON.stringify(['Document', 'Tools', 'View']),
+    JSON.stringify(zones?.order),
+  );
+  t.ok(
+    'the Tools zone holds the tool clusters, then arrange and Delete after a rule',
+    JSON.stringify(zones?.tools?.children) ===
+      JSON.stringify([
+        ['Pointer', 'Select'],
+        'rule',
+        ['Rectangle', 'Connection', 'Queue (FIFO)', 'Fabric'],
+        'rule',
+        ['Bring to front', 'Bring forward', 'Send backward', 'Send to back', 'Delete'],
+      ]),
+    JSON.stringify(zones?.tools?.children),
+  );
+  t.ok(
+    'the Document zone holds the file commands, then undo and redo after a rule',
+    JSON.stringify(zones?.document?.children) ===
+      JSON.stringify([['Open diagram', 'Save diagram'], 'rule', ['Undo', 'Redo']]),
+    JSON.stringify(zones?.document?.children),
+  );
+  t.ok(
+    'the Tools zone is centred on the bar, and Document hugs its left edge',
+    zones !== null &&
+      Math.abs(zones.tools.mid - zones.barMid) <= 1 &&
+      Math.abs(zones.document.left - zones.barLeft) <= 1,
+    JSON.stringify({
+      toolsMid: zones?.tools?.mid,
+      barMid: zones?.barMid,
+      docLeft: zones?.document?.left,
+      barLeft: zones?.barLeft,
+    }),
   );
 }
 
@@ -1044,6 +1105,308 @@ t.ok(
 }
 
 await leaveToolbar();
+
+/*
+  The ⇧ hold (iteration 7).
+
+  Holding Shift in any tool switches to the Select tool for as long as it is held; letting go
+  goes back to the tool it came from. It is a state machine over key and pointer events, so every
+  check here drives real keys and a real pointer through the window listeners -- a check that
+  called `setTool` would skip exactly the part that can break.
+
+  The camera is pinned at the origin at 100%, so a world point is its own canvas coordinate and
+  every position below reads as the geometry it names.
+*/
+{
+  const box = await diagramCanvas(page).boundingBox();
+  const block = (name, x, y) => ({
+    kind: 'rect',
+    name,
+    label: name,
+    subtitle: '',
+    labelMode: 'inset',
+    description: '',
+    position: [x, y],
+    size: [160, 96],
+    interfaces: 0,
+  });
+  await page.evaluate(
+    (list) => {
+      const sc = window.__scene;
+      sc.commit('seed', () => {
+        sc.shapes = window.__doc.deserializeScene({ version: 2, shapes: list });
+        sc.setSelection(new Set());
+      });
+      window.__host.setTool('pointer');
+      window.__view.z = 1;
+      window.__view.camX = 0;
+      window.__view.camY = 0;
+    },
+    [block('hold_a', 64, 64), block('hold_b', 320, 64)],
+  );
+  await page.waitForTimeout(200);
+
+  const st = () =>
+    page.evaluate(() => ({
+      tool: window.__host.activeToolId,
+      cursor: document.querySelector('[data-panel-id="diagram"] canvas').style.cursor,
+      pressed: document
+        .querySelector('[data-panel-id="diagram"] button[aria-label="Select"]')
+        .getAttribute('aria-pressed'),
+    }));
+  const sel = () => page.evaluate(() => [...window.__scene.selection].sort());
+  const cam = () => page.evaluate(() => [window.__view.camX, window.__view.camY]);
+  const at = (x, y, steps = 1) => page.mouse.move(box.x + x, box.y + y, { steps });
+  // Re-pinned before every step that aims at a block, so a step that pans by mistake fails on
+  // its own rather than moving every block out from under the steps after it.
+  const pin = () =>
+    page.evaluate(() => {
+      window.__view.z = 1;
+      window.__view.camX = 0;
+      window.__view.camY = 0;
+    });
+
+  await at(700, 300);
+  await page.keyboard.down('Shift');
+  const held = await st();
+  await page.keyboard.up('Shift');
+  const released = await st();
+  t.ok(
+    'holding ⇧ in the pointer tool switches to Select: pressed in the toolbar, crosshair cursor',
+    held.tool === 'select' && held.pressed === 'true' && held.cursor === 'crosshair',
+    JSON.stringify(held),
+  );
+  t.ok(
+    'and letting go goes back to the pointer tool and its grab cursor',
+    released.tool === 'pointer' && released.pressed === 'false' && released.cursor === 'grab',
+    JSON.stringify(released),
+  );
+
+  await page.keyboard.press('Digit3');
+  await page.keyboard.down('Shift');
+  const fromRect = await st();
+  await page.keyboard.up('Shift');
+  const backToRect = await st();
+  t.ok(
+    'from the rectangle tool too, and letting go goes back to rectangle, not to the pointer',
+    fromRect.tool === 'select' && backToRect.tool === 'rect',
+    `${fromRect.tool} -> ${backToRect.tool}`,
+  );
+  await page.keyboard.press('Digit1');
+
+  const cam0 = await cam();
+  await at(40, 40);
+  await page.keyboard.down('Shift');
+  await page.mouse.down();
+  await at(520, 200, 8);
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  t.ok(
+    'a ⇧-drag on empty canvas sweeps a band instead of panning',
+    JSON.stringify(await sel()) === JSON.stringify(['hold_a', 'hold_b']) &&
+      JSON.stringify(await cam()) === JSON.stringify(cam0),
+    `${JSON.stringify(await sel())} cam ${JSON.stringify(cam0)} -> ${JSON.stringify(await cam())}`,
+  );
+
+  // A move under way when Shift goes down finishes as a move; the hold waits for mouse-up.
+  await pin();
+  await page.evaluate(() => window.__scene.setSelection(new Set()));
+  await at(140, 110);
+  await page.mouse.down();
+  await at(180, 130, 5);
+  await page.keyboard.down('Shift');
+  await at(220, 150, 5);
+  const midMove = await st();
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const atUp = await st();
+  const label = await page.evaluate(() => window.__scene.history.undoLabel);
+  await page.keyboard.up('Shift');
+  const afterMove = await st();
+  t.ok(
+    '⇧ pressed during a move keeps it a move, in the pointer tool',
+    midMove.tool === 'pointer' && label === 'move',
+    `${midMove.tool}, committed as ${label}`,
+  );
+  t.ok(
+    'and the Select tool takes over at mouse-up while ⇧ is still down, until it comes up',
+    atUp.tool === 'select' && afterMove.tool === 'pointer',
+    `${atUp.tool} -> ${afterMove.tool}`,
+  );
+  // Only a move is put back. Undoing unconditionally would take out the seed itself whenever the
+  // press missed the block, and every check after this one would then fail for that reason.
+  if (label === 'move') await page.evaluate(() => window.__host.undo());
+
+  // A click-click connection is one gesture from the first click to the second.
+  await pin();
+  const shapesBefore = await page.evaluate(() => window.__scene.shapes.length);
+  await page.keyboard.press('Digit4');
+  await at(220, 112, 5);
+  await page.waitForTimeout(60);
+  await page.mouse.click(box.x + 224, box.y + 112);
+  await at(280, 300, 5);
+  const pending = await page.evaluate(() => window.__host.tool.pendingFrom);
+  await page.keyboard.down('Shift');
+  const pendingHeld = await st();
+  const stillPending = await page.evaluate(() => window.__host.tool.pendingFrom);
+  await page.keyboard.press('Escape');
+  const afterEsc = await st();
+  await page.keyboard.up('Shift');
+  const afterConn = await st();
+  const shapesAfter = await page.evaluate(() => window.__scene.shapes.length);
+  t.ok(
+    'with a connection pending, ⇧ leaves it pending in the connect tool',
+    pending === 'hold_a' && stillPending === 'hold_a' && pendingHeld.tool === 'connect',
+    `${pending} / ${stillPending} in ${pendingHeld.tool}`,
+  );
+  t.ok(
+    'and Escape cancels the connection, after which the held ⇧ takes effect',
+    afterEsc.tool === 'select' && afterConn.tool === 'connect' && shapesAfter === shapesBefore,
+    `${afterEsc.tool} -> ${afterConn.tool}, ${shapesBefore} -> ${shapesAfter} shapes`,
+  );
+  await page.keyboard.press('Digit1');
+
+  await page.keyboard.down('Shift');
+  await button(page, 'Rectangle').click();
+  await page.keyboard.up('Shift');
+  const stuck = await st();
+  t.ok(
+    'a tool picked from the toolbar during the hold is kept when ⇧ comes up',
+    stuck.tool === 'rect' && stuck.pressed === 'false',
+    stuck.tool,
+  );
+  // Off the button, and out of it: a focused button would take the Space pressed below.
+  await page.evaluate(() => document.activeElement?.blur());
+  await leaveToolbar();
+  await page.keyboard.press('Digit1');
+
+  await page.keyboard.down('Shift');
+  const beforeBlur = await st();
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  const afterBlur = await st();
+  await page.keyboard.up('Shift');
+  t.ok(
+    'losing the window ends the hold, since the ⇧ keyup will go to some other app',
+    beforeBlur.tool === 'select' && afterBlur.tool === 'pointer',
+    `${beforeBlur.tool} -> ${afterBlur.tool}`,
+  );
+
+  await traceCanvas(page).click({ position: { x: 200, y: 80 } });
+  await page.waitForTimeout(150);
+  const owner = await page.evaluate(() => window.__session.keyboardOwner);
+  await pin();
+  await page.keyboard.down('Shift');
+  const traceHeld = await st();
+  await page.evaluate(() => window.__scene.setSelection(new Set()));
+  await at(40, 40);
+  await page.mouse.down();
+  const onPress = await st();
+  await at(520, 200, 8);
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  const traceBand = await sel();
+  const afterTrace = await st();
+  t.ok(
+    'while the trace owns the keyboard, ⇧ on its own leaves the tool alone',
+    owner === 'trace' && traceHeld.tool === 'pointer',
+    `${owner}: ${traceHeld.tool}`,
+  );
+  t.ok(
+    'but a ⇧-press on the canvas still sweeps a band, and letting go still ends the hold',
+    onPress.tool === 'select' &&
+      JSON.stringify(traceBand) === JSON.stringify(['hold_a', 'hold_b']) &&
+      afterTrace.tool === 'pointer',
+    `${onPress.tool}, ${JSON.stringify(traceBand)}, then ${afterTrace.tool}`,
+  );
+
+  await page.evaluate(() => window.__scene.selectOnly('hold_a'));
+  await page.waitForTimeout(400);
+  // A short timeout and a caught miss, so a Properties panel showing something else fails this
+  // check rather than killing the suite, and every suite chained after it, with a TimeoutError.
+  await row(page, 'label')
+    .locator('.jse-value')
+    .first()
+    .dblclick({ timeout: 3000 })
+    .catch(() => {});
+  await page.waitForTimeout(150);
+  const editing = await page.evaluate(() => {
+    const el = document.activeElement;
+    return el?.isContentEditable === true || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA';
+  });
+  await page.keyboard.down('Shift');
+  const caretHeld = await st();
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  t.ok(
+    'nor does ⇧ in a Properties text caret, where it is how text gets selected',
+    editing && caretHeld.tool === 'pointer',
+    `editing=${editing}, ${caretHeld.tool}`,
+  );
+  await page.evaluate(() => {
+    document.activeElement?.blur();
+    window.__session.focusPanel('diagram');
+    window.__scene.setSelection(new Set());
+  });
+  await at(700, 300);
+
+  await page.keyboard.down('Meta');
+  await page.keyboard.down('Shift');
+  const chord = await st();
+  await page.keyboard.up('Shift');
+  await page.keyboard.up('Meta');
+  t.ok(
+    '⌘ then ⇧ is the start of a chord, and leaves the tool alone',
+    chord.tool === 'pointer',
+    chord.tool,
+  );
+
+  await page.evaluate(() => window.__host.setHint('probe'));
+  await page.keyboard.down('Shift');
+  const tapHint = await page.evaluate(() => window.__host.hint);
+  await page.keyboard.up('Shift');
+  const hintAfter = await page.evaluate(() => window.__host.hint);
+  t.ok(
+    'a ⇧ tap puts back the hint that was showing, rather than the tool writing its own',
+    tapHint !== 'probe' && hintAfter === 'probe',
+    `${tapHint} -> ${hintAfter}`,
+  );
+
+  await page.keyboard.down('Space');
+  await page.keyboard.down('Shift');
+  const spaceShift = await st();
+  await page.keyboard.up('Shift');
+  await page.keyboard.up('Space');
+  t.ok(
+    'with Space held the hold still switches tool, but keeps the grab cursor: the next press pans',
+    spaceShift.tool === 'select' && spaceShift.cursor === 'grab',
+    JSON.stringify(spaceShift),
+  );
+
+  // hold_b spans 320..480 x 64..160, so its south-east handle is at (480, 160).
+  await pin();
+  await page.evaluate(() => window.__scene.selectOnly('hold_b'));
+  await page.waitForTimeout(100);
+  await at(480, 160, 3);
+  await page.mouse.down();
+  await at(520, 170, 4);
+  await page.keyboard.down('Shift');
+  await at(560, 180, 4);
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  const sq = await page.evaluate(() => {
+    const s = window.__scene.shapes.find((x) => x.name === 'hold_b');
+    return s === undefined ? null : [s.w, s.h];
+  });
+  t.ok(
+    '⇧ pressed once a corner drag is under way is still the square constraint',
+    sq !== null && sq[0] === sq[1] && sq[0] > 160,
+    JSON.stringify(sq),
+  );
+}
 
 const code = t.report(errors);
 await browser.close();

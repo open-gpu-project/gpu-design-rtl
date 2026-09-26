@@ -16,6 +16,9 @@ exist for future work; each tagged with the iteration that raised it.
 - **`report` does not fail on page errors.** Only a few groups assert that nothing threw. Worth
   making it fail by default, with the known upstream dock error (`reading 'id'`) filtered explicitly
   where it occurs. (iteration 4)
+- **7.0 has had no real-Safari pass.** The manual checks (toolbar centring, the ⇧ hold from every
+  tool, ⌘-click and ⌘-band, tree reveal and keyboard) were run in Edge at dpr 2 only.
+  (iteration 7)
 - **Dock auto-hide is enabled but untested.** Float, maximise and tabs are covered; the edge-strip
   fly-out is not. (iteration 2)
 
@@ -71,8 +74,9 @@ exist for future work; each tagged with the iteration that raised it.
 
 - **Undo is snapshot-based, capacity 200.** If shape counts reach tens of thousands, swap in patches
   behind the same `History` interface; nothing outside `history.svelte.ts` changes. (iteration 1)
-- **No layers panel.** The user asked for user-controllable z-order with a layers panel later; the
-  four restack commands exist, the panel does not. (iteration 1)
+- **The object tree is read-only.** It lists every object topmost first and selects from a click,
+  but has no drag-to-reorder, no rename in place, no type-ahead and no ⇧-range selection; the four
+  restack commands are still the only way to change z-order. (iteration 1, iteration 7)
 - **`size` allows values below `GRID`.** The schema floor is 1 (the user asked for "positive
   non-zero"), and property edits bypass `normalize()`, so a 1×1 block is effectively unclickable and
   the panel is the only way back. Raising the floor is one line in `sizeProp` (`props/common.ts`).
@@ -153,12 +157,32 @@ exist for future work; each tagged with the iteration that raised it.
   (iteration 5)
 - **`aria-keyshortcuts` is not set** on any tool button, though it is the semantically correct home
   for a tool's key. (iteration 5)
+- **A ⇧-press on a corner handle bands instead of resizing square.** The hold engages at the press,
+  so the square constraint is reached only by pressing ⇧ after the corner drag has started.
+  (iteration 7)
+- **A Shift-first ⇧⌘ chord flips the toolbar to Select while it is held.** Shift pressed alone
+  starts the hold before ⌘ arrives; the chord itself still works, and the release puts the tool
+  back. ⌘ first is a chord and never flips. `⇧`+wheel, the forced horizontal pan, shows the same
+  flip. (iteration 7)
 
 ## Panels and the dock
 
 - **Only one diagram pane and one trace pane may exist.** The session owns a single `ViewController`
   and a single `TimelineView`; two panes would fight over `attach()`. Enforced only by
   `closable: false` and by never minting a second pane. (iteration 2, iteration 3)
+- **A second diagram needs more than a second `DiagramEntry`.** The object tree already renders a
+  root per entry, but keys pressed in the tree go to the one diagram `acceptsKeys` names, there is
+  no rule for a selection spanning two diagrams, and selecting in the tree does not activate the
+  pane that shows it. (iteration 7)
+- **The right column has only the dock-wide width floor.** `minSize` binds along a pane's direct
+  parent split, and Objects and Properties now share a column, so Properties' 280 floors its
+  height and nothing but the dock's 200 floors the column's width. (iteration 7)
+- **The toolbar needs 711 CSS px.** In a narrower diagram pane the View zone runs off the right
+  edge and the Tools zone is no longer centred. The single left-packed row it replaced needed the
+  same width and clipped the same way. (iteration 7)
+- **A tree selection made during a pending connection reaches Properties only when that gesture
+  ends.** The canvas and the tree show it at once; the property push is deferred while
+  `isGesturing()`, as it is for every selection. (iteration 7)
 - **Pop-out is disabled** until `CanvasSurface` reads `devicePixelRatio` and `matchMedia` from the
   document it is actually in. (iteration 2)
 - **Bundle size.** `svelte-jsoneditor` statically imports `TextMode`, so CodeMirror ships though

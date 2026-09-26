@@ -194,6 +194,15 @@ export const TAB_FONT = `${TAB_FONT_PX}px ${SANS}`;
 /** Per-character width estimate for a tab label with no canvas to measure against. */
 export const TAB_EST_CHAR_PX = 5.6;
 
+/**
+ * How far inside the viewport's edge a shape must sit to count as in view, in CSS pixels.
+ *
+ * Tied to the tab height because a tab hangs above its block, outside the bounds `revealRect`
+ * is given: a block flush with the top edge would count as in view with its label cut off.
+ * Named apart from the timeline's `REVEAL_MARGIN_PX` so neither is imported for the other.
+ */
+export const REVEAL_INSET_PX = TAB_H_PX + 9;
+
 /* ------------------------------------------------------------------- connections ---- */
 
 /**

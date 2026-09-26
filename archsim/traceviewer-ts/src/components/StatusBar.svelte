@@ -31,6 +31,10 @@
   const subPartLabel = $derived.by(() => {
     const cur = host.subPart;
     if (cur === null) return null;
+    // Only while its shape is the sole selection. The pointer tool re-checks that on every read
+    // of its own copy, but ⌘A, the marquee and the object tree change the selection without
+    // going through it, and would otherwise leave a stale "waypoint 2 / 3" here.
+    if (scene.selection.size !== 1 || !scene.selection.has(cur.shape)) return null;
     const s = scene.shapes.find((x) => x.name === cur.shape);
     if (s === undefined) return null;
     const part = opsFor(s).subPart?.(s, cur.index) ?? null;

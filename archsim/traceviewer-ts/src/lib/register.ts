@@ -14,5 +14,6 @@ import './tools/marquee-tool';
 import './tools/connect-tool';
 import './tools/create-tool';
 import './panels/diagram-panel';
+import './panels/objects-panel';
 import './panels/properties-panel';
 import './panels/trace-panel';

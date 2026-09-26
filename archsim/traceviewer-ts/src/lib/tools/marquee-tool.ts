@@ -6,15 +6,18 @@ import { rectFromPoints } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
 import { shapesInRect } from '../scene/bounds';
 import type { DrawContext, ShapeName } from '../scene/shape';
+import { addsToSelection } from './pointer';
 import { pressTo, registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
 
 interface Band {
   readonly from: Vec2;
   readonly to: Vec2;
-  /** The selection when the press landed, so `Shift` can union and `Escape` can restore. */
+  /** The selection when the press landed, so ⌘ can union and `Escape` can restore. */
   readonly base: ReadonlySet<ShapeName>;
   readonly additive: boolean;
+  /** The shape under the press, for a press that turns out to be a click. */
+  readonly pressed: ShapeName | null;
   readonly downScreen: Vec2;
 }
 
@@ -24,6 +27,9 @@ interface Band {
  * A separate tool rather than a gesture on the select tool, because on this canvas dragging
  * empty space already pans -- that is the primary pan gesture, not a fallback, and a marquee
  * cannot have it without taking it away.
+ *
+ * Also what holding Shift switches to from any other tool, which is why a click here has to
+ * mean something too: it selects what is under it, the way a click in the pointer tool does.
  */
 export class MarqueeTool implements Tool {
   readonly defaultCursor = 'crosshair';
@@ -41,7 +47,9 @@ export class MarqueeTool implements Tool {
     // otherwise still be here on the way back.
     this.#band = null;
     this.#armed = false;
-    c.setHint(`Drag to select. Hold ${keys('shift')} to add.${pressTo('pointer', 'move things')}`);
+    c.setHint(
+      `Drag or click to select. Hold ${keys('cmd')} to add.${pressTo('pointer', 'move things')}`,
+    );
   }
 
   onDeactivate(c: ToolContext): void {
@@ -50,12 +58,19 @@ export class MarqueeTool implements Tool {
 
   onPointerDown(p: PointerInfo, c: ToolContext): void {
     if (p.button !== 0) return;
-    // No hit test: a region tool treats a press on a block exactly like a press on empty space.
+    /*
+      One hit test, at the press, and only for the click this press may turn out to be. A band
+      that arms treats a press on a block exactly like a press on empty space, which is what
+      lets a band start on top of something. A handle counts as its shape: on a click, the
+      thing you pressed the corner of is the thing you meant.
+    */
+    const hit = c.hitTest(p);
     this.#band = {
       from: p.world,
       to: p.world,
       base: c.scene.selection,
-      additive: p.mods.shift,
+      additive: addsToSelection(p.mods),
+      pressed: hit.type === 'empty' ? null : hit.shape.name,
       downScreen: p.screen,
     };
     this.#armed = false;
@@ -81,9 +96,15 @@ export class MarqueeTool implements Tool {
     if (band === null) return;
     this.#band = null;
 
-    // A press that never travelled is a click on empty space: clear, unless adding.
+    // A press that never travelled is a click: on a shape it selects that shape (or toggles
+    // it, when adding), and on empty space it clears, unless adding.
     if (!this.#armed) {
-      if (!band.additive) c.scene.clearSelection();
+      if (band.pressed !== null) {
+        if (band.additive) c.scene.toggleSelected(band.pressed);
+        else c.scene.selectOnly(band.pressed);
+      } else if (!band.additive) {
+        c.scene.clearSelection();
+      }
     }
     c.requestFrame();
   }

@@ -9,7 +9,10 @@ export interface PanelDescriptor {
   readonly component: Component<Record<string, never>>;
   /** A pane the user should not be able to close. Default true (closable). */
   readonly closable?: boolean;
-  /** Floor for this panel's pane, in px along the split axis. */
+  /**
+   * Floor for this panel's pane, in px, along its DIRECT parent split only. A pane nested two
+   * splits deep gets no floor on the outer axis from this; the dock-wide floor is all it has.
+   */
   readonly minSize?: number;
 }
 

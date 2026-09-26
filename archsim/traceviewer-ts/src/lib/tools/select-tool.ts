@@ -9,6 +9,8 @@ import { opsFor } from '../scene/registry';
 import { movesWith, rerouteAll } from '../scene/resolve';
 import { samePoint } from '../scene/route';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
+import { keys } from '../keys';
+import { addsToSelection } from './pointer';
 import { pressTo, registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
 
@@ -93,7 +95,10 @@ export class SelectTool implements Tool {
   }
 
   onActivate(c: ToolContext): void {
-    c.setHint(`Drag to pan.${pressTo('rect', 'draw a block')}`);
+    c.setHint(
+      `Drag to pan. Hold ${keys('shift')} to select by area, ${keys('cmd')}-click to add.` +
+        pressTo('rect', 'draw a block'),
+    );
   }
 
   onDeactivate(c: ToolContext): void {
@@ -176,12 +181,12 @@ export class SelectTool implements Tool {
     this.#setSubPart(c, null);
 
     if (hit.type === 'empty') {
-      if (!p.mods.shift) c.scene.clearSelection();
+      if (!addsToSelection(p.mods)) c.scene.clearSelection();
       c.startPan(p);
       return;
     }
 
-    if (p.mods.shift) {
+    if (addsToSelection(p.mods)) {
       c.scene.toggleSelected(hit.shape.name);
       c.requestFrame();
       return;

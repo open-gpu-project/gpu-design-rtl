@@ -238,16 +238,20 @@ export async function drawConnection(page, x1, y1, x2, y2) {
  * `steps` matters: the band arms only past DRAG_SLOP_PX and applies the selection on move, so
  * a single-jump drag would arm and select in one event and never exercise the live update.
  * Leaves the marquee tool active, the way the real gesture does.
+ *
+ * `keys` are held for the whole gesture, pressed in order and released in reverse -- `['Meta']`
+ * is how a band adds to the selection. It used to be `{ shift }`; Shift now holds the Select
+ * tool rather than adding, so a helper that still spelled "add" as Shift would test nothing.
  */
-export async function marqueeSelect(page, x1, y1, x2, y2, { shift = false } = {}) {
+export async function marqueeSelect(page, x1, y1, x2, y2, { keys = [] } = {}) {
   const box = await diagramCanvas(page).boundingBox();
   await page.keyboard.press('Digit2');
   await page.mouse.move(box.x + x1, box.y + y1);
-  if (shift) await page.keyboard.down('Shift');
+  for (const k of keys) await page.keyboard.down(k);
   await page.mouse.down();
   await page.mouse.move(box.x + x2, box.y + y2, { steps: 8 });
   await page.mouse.up();
-  if (shift) await page.keyboard.up('Shift');
+  for (const k of [...keys].reverse()) await page.keyboard.up(k);
   await page.waitForTimeout(250);
   return box;
 }

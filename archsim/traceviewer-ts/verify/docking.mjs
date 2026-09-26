@@ -112,7 +112,7 @@ await page.waitForTimeout(600);
 h = await health(page);
 t.ok('restore from maximize is healthy', sized(h) && h.painted && h.shapes === 1);
 
-const saved = await page.evaluate(() => localStorage.getItem('archsim.traceviewer.dock.v2'));
+const saved = await page.evaluate(() => localStorage.getItem('archsim.traceviewer.dock.v3'));
 t.ok('the layout is persisted', typeof saved === 'string' && saved.length > 20);
 
 await page.reload({ waitUntil: 'networkidle' });
@@ -124,14 +124,14 @@ const panes = () =>
 const restored = await panes();
 t.ok(
   'every panel resolves after a reload into the saved layout',
-  ['diagram', 'properties', 'trace'].every((id) => restored.includes(id)),
+  ['diagram', 'objects', 'properties', 'trace'].every((id) => restored.includes(id)),
   JSON.stringify(restored),
 );
 t.ok('canvas healthy after reload', sized(await health(page)));
 
 await page.evaluate(() =>
   localStorage.setItem(
-    'archsim.traceviewer.dock.v2',
+    'archsim.traceviewer.dock.v3',
     JSON.stringify({
       main: { type: 'tabs', id: 'x1', panes: [{ id: 'ghost-panel', title: 'Ghost' }], active: 0 },
       floating: [],
@@ -146,7 +146,7 @@ t.ok(
   (await panes()).includes('diagram'),
 );
 
-await page.evaluate(() => localStorage.setItem('archsim.traceviewer.dock.v2', '{not json'));
+await page.evaluate(() => localStorage.setItem('archsim.traceviewer.dock.v3', '{not json'));
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 t.ok('a corrupt saved layout falls back to the default', (await panes()).includes('diagram'));

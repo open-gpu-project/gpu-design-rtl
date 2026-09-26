@@ -3,6 +3,7 @@ import {
   diagramCanvas,
   drawBlock,
   drawConnection,
+  emptySpot,
   marqueeSelect,
   open,
   shapeKinds,
@@ -300,10 +301,10 @@ t.ok(
 );
 
 const before = await selection();
-await marqueeSelect(page, ...(await bandOver([2])), { shift: true });
+await marqueeSelect(page, ...(await bandOver([2])), { keys: ['Meta'] });
 const after = await selection();
 t.ok(
-  'shift-dragging adds to the selection instead of replacing it',
+  '⌘-dragging adds to the selection instead of replacing it',
   after.length === 3 && before.every((n) => after.includes(n)),
   `${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
 );
@@ -338,6 +339,127 @@ t.ok(
   kept.length === 2 && JSON.stringify(await selection()) === JSON.stringify(kept),
   `${JSON.stringify(kept)} -> ${JSON.stringify(await selection())}`,
 );
+
+/* ------------------------------------------------------------ K: clicks, and what adds ---- */
+/*
+  Iteration 7 moved "add to the selection" from Shift to ⌘, because holding Shift now switches
+  to the Select tool. So these read the same three blocks through both tools, with a real
+  pointer and real modifiers: a click in the Select tool selects what is under it, ⌘ toggles
+  it, and Shift, which used to add, now bands instead.
+*/
+{
+  const rectNames = await page.evaluate(() =>
+    window.__scene.shapes.filter((s) => s.kind === 'rect').map((s) => s.name),
+  );
+  const [b0, b1, b2] = rectNames;
+  const centre = (i) =>
+    page.evaluate((idx) => {
+      const v = window.__view;
+      const s = window.__scene.shapes.filter((o) => o.kind === 'rect')[idx];
+      return { x: (s.x + s.w / 2 - v.camX) * v.z, y: (s.y + s.h / 2 - v.camY) * v.z };
+    }, i);
+  const clickAt = async (p, keys = []) => {
+    await page.mouse.move(box.x + p.x, box.y + p.y);
+    for (const k of keys) await page.keyboard.down(k);
+    await page.mouse.down();
+    await page.mouse.up();
+    for (const k of [...keys].reverse()) await page.keyboard.up(k);
+    await page.waitForTimeout(120);
+  };
+  const setSel = (list) => page.evaluate((l) => window.__scene.setSelection(new Set(l)), list);
+  const same = async (want) =>
+    JSON.stringify(await selection()) === JSON.stringify([...want].sort());
+  const empty = emptySpot(box);
+  const emptyAt = { x: empty.x - box.x, y: empty.y - box.y };
+
+  await fit();
+  await page.keyboard.press('Digit2');
+  await setSel([]);
+  await clickAt(await centre(0));
+  const one = await selection();
+  await clickAt(await centre(1));
+  const other = await selection();
+  t.ok(
+    'a click in the Select tool selects the block under it, and only that block',
+    JSON.stringify(one) === JSON.stringify([b0]) && JSON.stringify(other) === JSON.stringify([b1]),
+    `${JSON.stringify(one)} then ${JSON.stringify(other)}`,
+  );
+
+  await clickAt(await centre(0), ['Meta']);
+  const added = await selection();
+  await clickAt(await centre(1), ['Meta']);
+  const removed = await selection();
+  t.ok(
+    'a ⌘-click in the Select tool toggles the block in, and then out again',
+    JSON.stringify(added) === JSON.stringify([b0, b1].sort()) &&
+      JSON.stringify(removed) === JSON.stringify([b0]),
+    `${JSON.stringify(added)} then ${JSON.stringify(removed)}`,
+  );
+
+  await clickAt(emptyAt, ['Meta']);
+  const keptByCmd = await selection();
+  await clickAt(emptyAt);
+  t.ok(
+    'a click on empty space clears the selection, and a ⌘-click there keeps it',
+    JSON.stringify(keptByCmd) === JSON.stringify([b0]) && (await selection()).length === 0,
+    `${JSON.stringify(keptByCmd)} then ${JSON.stringify(await selection())}`,
+  );
+
+  // From the pointer tool: Shift switches to Select for the length of the gesture, and a band
+  // swept that way replaces, since Shift is no longer the adding key.
+  await page.keyboard.press('Digit1');
+  await setSel([b2]);
+  const [sx, sy, sx2, sy2] = await bandOver([0, 1]);
+  await page.mouse.move(box.x + sx, box.y + sy);
+  await page.keyboard.down('Shift');
+  await page.mouse.down();
+  await page.mouse.move(box.x + sx2, box.y + sy2, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(200);
+  t.ok(
+    'a ⇧-band from the pointer tool replaces the selection rather than adding to it',
+    await same([b0, b1]),
+    JSON.stringify(await selection()),
+  );
+
+  await setSel([b0]);
+  await clickAt(await centre(1), ['Meta']);
+  const pAdded = await selection();
+  await clickAt(await centre(1), ['Meta']);
+  t.ok(
+    'a ⌘-click in the pointer tool toggles, where a ⇧-click used to',
+    JSON.stringify(pAdded) === JSON.stringify([b0, b1].sort()) && (await same([b0])),
+    `${JSON.stringify(pAdded)} then ${JSON.stringify(await selection())}`,
+  );
+
+  await setSel([b0]);
+  const cam0 = await page.evaluate(() => [window.__view.camX, window.__view.camY]);
+  await page.mouse.move(empty.x, empty.y);
+  await page.keyboard.down('Meta');
+  await page.mouse.down();
+  await page.mouse.move(empty.x - 60, empty.y - 40, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Meta');
+  await page.waitForTimeout(150);
+  const cam1 = await page.evaluate(() => [window.__view.camX, window.__view.camY]);
+  t.ok(
+    'a ⌘-press on empty space keeps the selection, and still pans',
+    (await same([b0])) && (cam1[0] !== cam0[0] || cam1[1] !== cam0[1]),
+    `${JSON.stringify(await selection())} cam ${JSON.stringify(cam0)} -> ${JSON.stringify(cam1)}`,
+  );
+
+  await fit();
+  await setSel([b0]);
+  await clickAt(await centre(1), ['Shift']);
+  const shiftClicked = await selection();
+  const toolAfter = await page.evaluate(() => window.__host.activeToolId);
+  t.ok(
+    'a ⇧-click in the pointer tool no longer adds: it is a click in the Select tool',
+    JSON.stringify(shiftClicked) === JSON.stringify([b1]) && toolAfter === 'pointer',
+    `${JSON.stringify(shiftClicked)}, back in ${toolAfter}`,
+  );
+}
 
 /* ------------------------------------------------------------- W: the band and the wire ---- */
 /*

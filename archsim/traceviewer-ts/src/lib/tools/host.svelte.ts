@@ -17,11 +17,16 @@ import type { DrawContext, Shape, ShapeName, ShapeTooltip } from '../scene/shape
 import type { SceneStore } from '../scene/scene.svelte';
 import type { SceneDoc } from '../scene/serialize';
 import { bringForward, bringToFront, sendBackward, sendToBack } from '../scene/zorder';
+import { keys } from '../keys';
 import { buildPointerInfo } from './pointer';
 import { allTools, toolDescriptor, toolForShortcut, toolGroups } from './registry';
 import type { PointerInfo, Tool, ToolContext, ToolId } from './tool';
 
 type Restack = (shapes: readonly Shape[], ids: ReadonlySet<ShapeName>) => readonly Shape[];
+
+/** The tool holding Shift switches to, from any other tool, for as long as it is held. */
+const HOLD_TOOL: ToolId = 'select';
+const HOLD_HINT = `Selecting while ${keys('shift')} is held. Drag or click to select, ${keys('cmd')} to add.`;
 
 /** A tooltip and where on the stage to hang it. `x`/`y` are stage CSS pixels. */
 export interface HoverTip extends ShapeTooltip {
@@ -82,6 +87,16 @@ export class ToolHost {
   #ctx: ToolContext;
   #pan: { last: Vec2 } | null = null;
   #spaceHeld = false;
+  /*
+    The Shift hold. `#shiftHeld` is Shift as the last eligible event reported it; `#heldFrom` is
+    the tool the hold switched away from, non-null exactly while a hold is in force; and
+    `#holdRefused` records that a tool was chosen explicitly while Shift was down, which wins
+    until Shift comes up. `#reconcileHold` is the only thing that acts on them.
+  */
+  #shiftHeld = false;
+  #heldFrom: ToolId | null = null;
+  #holdRefused = false;
+  #hintBeforeHold = '';
   #hoverTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Where the pointer was at the last move, in stage CSS pixels and in world units.
@@ -178,14 +193,31 @@ export class ToolHost {
     if (this.#stage !== null) this.#stageRect = this.#stage.getBoundingClientRect();
   }
 
+  /**
+   * An explicit choice of tool: the toolbar, a digit, a tool's Escape-to-pointer.
+   *
+   * Made during a Shift hold, it ends the hold and wins until Shift comes up -- set before the
+   * same-id return in `#activate`, so choosing Select while holding Shift keeps Select after
+   * the release. The hold itself switches through `#activate`, never through here.
+   */
   setTool(id: ToolId): void {
+    this.#heldFrom = null;
+    this.#holdRefused = this.#shiftHeld;
+    const was = this.isGesturing();
+    this.#activate(id);
+    this.#noteGestureEnd(was);
+  }
+
+  #activate(id: ToolId): void {
     if (id === this.activeToolId) return;
     this.#clearHover();
     this.#tool.onDeactivate?.(this.#ctx);
     this.activeToolId = id;
     this.#tool = this.#instance(id);
     this.#tool.onActivate?.(this.#ctx);
-    this.cursor = this.#tool.defaultCursor;
+    // Space still held means the next press pans, whichever tool is now active.
+    this.cursor =
+      this.#pan !== null ? 'grabbing' : this.#spaceHeld ? 'grab' : this.#tool.defaultCursor;
     this.overlayVersion += 1;
     this.invalidate();
   }
@@ -197,6 +229,10 @@ export class ToolHost {
   /* ------------------------------------------------------------------ pointer ---- */
 
   onPointerDown(e: PointerEvent): void {
+    // First, so the press goes to the tool the hold says it should: a Shift-press on the canvas
+    // starts a hold even when a text field owned the Shift keydown.
+    this.#syncShift(e.shiftKey);
+    this.#reconcileHold();
     const p = this.#info(e);
     this.#clearHover();
     this.#canvas?.setPointerCapture(e.pointerId);
@@ -212,6 +248,8 @@ export class ToolHost {
   }
 
   onPointerMove(e: PointerEvent): void {
+    // Can only end a hold, never start one. Catches a Shift keyup the window never saw.
+    if (!e.shiftKey && this.#syncShift(false)) this.#reconcileHold();
     const p = this.#info(e);
     // Only on a real change. This is `$state.raw`, so it compares by identity and a fresh object
     // per event re-rendered the status bar on every single pointermove -- 48 full-document
@@ -243,6 +281,7 @@ export class ToolHost {
   }
 
   onPointerUp(e: PointerEvent): void {
+    if (!e.shiftKey) this.#syncShift(false);
     const p = this.#info(e);
     if (this.#canvas?.hasPointerCapture(e.pointerId) === true) {
       this.#canvas.releasePointerCapture(e.pointerId);
@@ -256,6 +295,8 @@ export class ToolHost {
     } finally {
       // After the tool has cleared its drag, so a reader sees `isGesturing() === false`.
       this.gestureVersion += 1;
+      // Shift pressed or released mid-gesture takes effect now that the gesture is over.
+      this.#reconcileHold();
     }
   }
 
@@ -266,6 +307,7 @@ export class ToolHost {
     this.cursor = this.#tool.defaultCursor;
     this.gestureVersion += 1;
     this.invalidate();
+    this.#reconcileHold();
   }
 
   onPointerLeave(): void {
@@ -296,12 +338,35 @@ export class ToolHost {
   /* ------------------------------------------------------------------ keyboard ---- */
 
   onKeyDown(e: KeyboardEvent): void {
+    // Before the filters: any key that says Shift is up ends a hold, whoever owns the keyboard.
+    if (!e.shiftKey) this.#syncShift(false);
+    const was = this.isGesturing();
+    this.#handleKey(e);
+    this.#noteGestureEnd(was);
+    this.#reconcileHold();
+  }
+
+  /**
+   * A gesture can end without a pointer event: Escape on a pending connection or a band, or a
+   * tool switch that aborts one. Whatever deferred on `isGesturing()` -- the property panel, the
+   * object tree -- waits on `gestureVersion` to look again, so those endings bump it too, the way
+   * `onPointerUp` does. Before this, a selection made from the tree during a pending connection
+   * never reached Properties once Escape cancelled the connection.
+   */
+  #noteGestureEnd(was: boolean): void {
+    if (was && !this.isGesturing()) this.gestureVersion += 1;
+  }
+
+  #handleKey(e: KeyboardEvent): void {
     // Three independent filters, because each one alone has a hole: `acceptsKeys` misses a panel
     // the user drives without ever focusing it, `defaultPrevented` misses keys a widget consumes
     // without preventing, and `isEditableTarget` misses the tabindex divs the JSON tree focuses.
     if (!this.acceptsKeys()) return;
     if (e.defaultPrevented) return;
     if (isEditableTarget(e.target)) return;
+
+    // Only a bare Shift starts a hold. With ⌘, ⌃ or ⌥ down it is the start of a chord.
+    if (e.key === 'Shift' && !e.metaKey && !e.ctrlKey && !e.altKey) this.#syncShift(true);
 
     if (e.code === 'Space' && !e.repeat) {
       this.#spaceHeld = true;
@@ -318,6 +383,8 @@ export class ToolHost {
   }
 
   onKeyUp(e: KeyboardEvent): void {
+    // Ungated, like Space: a hold must end however the keyboard moved while it was down.
+    if (!e.shiftKey && this.#syncShift(false)) this.#reconcileHold();
     if (e.code !== 'Space') return;
     this.#spaceHeld = false;
     if (this.#pan === null) this.cursor = this.#tool.defaultCursor;
@@ -327,11 +394,50 @@ export class ToolHost {
   onWindowBlur(): void {
     this.#clearHover();
     this.#spaceHeld = false;
+    this.#syncShift(false);
     this.#pan = null;
     this.#tool.onPointerCancel?.(this.#ctx);
     this.cursor = this.#tool.defaultCursor;
     this.gestureVersion += 1;
     this.invalidate();
+    this.#reconcileHold();
+  }
+
+  /* ---------------------------------------------------------------------- hold ---- */
+
+  /** Record what an event says about Shift. Returns whether that changed anything. */
+  #syncShift(down: boolean): boolean {
+    const changed = this.#shiftHeld !== down || (!down && this.#holdRefused);
+    this.#shiftHeld = down;
+    if (!down) this.#holdRefused = false;
+    return changed;
+  }
+
+  /**
+   * Bring the active tool into line with the Shift state: enter the hold, or leave it.
+   *
+   * Never mid-gesture. A drag always finishes as the tool it started in, so Shift pressed during
+   * a move keeps the move going, and Shift after a corner drag starts is still the square
+   * constraint; every path that ends a gesture calls this again.
+   */
+  #reconcileHold(): void {
+    if (this.isGesturing()) return;
+    const want = this.#shiftHeld && !this.#holdRefused;
+    if (want && this.#heldFrom === null) {
+      if (this.activeToolId === HOLD_TOOL) return;
+      const from = this.activeToolId;
+      this.#hintBeforeHold = this.hint;
+      this.#activate(HOLD_TOOL);
+      this.#heldFrom = from;
+      this.hint = HOLD_HINT;
+    } else if (!want && this.#heldFrom !== null) {
+      const from = this.#heldFrom;
+      // A hint written during the hold is news; only the hold's own hint is replaced.
+      const showing = this.hint;
+      this.#heldFrom = null;
+      this.#activate(from);
+      if (showing === HOLD_HINT) this.hint = this.#hintBeforeHold;
+    }
   }
 
   /* ------------------------------------------------------------------ commands ---- */
@@ -346,6 +452,11 @@ export class ToolHost {
    */
   setHint(text: string): void {
     this.hint = text;
+  }
+
+  /** Repaint after a change made from outside a tool: the object tree's selection and reveal. */
+  requestFrame(): void {
+    this.invalidate();
   }
 
   /**

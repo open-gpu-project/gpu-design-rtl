@@ -4,7 +4,7 @@ Client-only web app for viewing `archsim` traces. This directory is a standalone
 is deliberately **not** wired into the CMake build.
 
 The app is a dockable workspace: panels can be split, tabbed, dragged onto one another, floated
-into windows, or collapsed to an edge. Three panels exist so far.
+into windows, or collapsed to an edge. Four panels exist so far.
 
 - **Diagram** — the architecture canvas, where the hardware design is laid out. Alongside plain
   blocks it carries **queues**, drawn as a run of cells whose length is the cell count times the
@@ -26,9 +26,17 @@ into windows, or collapsed to an edge. Three panels exist so far.
   `<input type="file">` rather than the File System Access API, which Safari does not implement.
   Hovering a block or a wire raises a tooltip — a block's description, a wire's name and
   description, and in the tabbed modes the subtitle too, since that is the only place it appears,
-  one paragraph per line. Drag a band with the select tool to select several at once, and copy,
-  cut and paste them as a group -- a connection comes along when both of its blocks do, and a pasted copy
+  one paragraph per line. Drag a band with the select tool to select several at once — or hold
+  `⇧` in any tool, which switches to the select tool for as long as it is held — and copy, cut
+  and paste them as a group -- a connection comes along when both of its blocks do, and a pasted copy
   fills the gaps in its own numbering, so copies of `block0, block2` arrive as `block1, block3`.
+  The toolbar centres everything you do on the canvas — the tools, restacking and delete — with
+  the file and history commands on the left and the zoom controls on the right.
+- **Objects** — every object in the diagram as a read-only tree, topmost first, with a fabric's
+  interfaces nested under it. Clicking a row selects that object, which also shows it in
+  Properties, and pans the canvas to centre it if it is not already fully in view; `⌘`-click
+  adds or removes it. Selecting a single object on the canvas opens its parents in the tree and
+  scrolls its row into view.
 - **Properties** — an editable tree view of the selected block, validated live against a JSON
   Schema generated from that object kind's property declaration, with a footer documenting
   whichever key is selected. Keys are ordered `kind`, then the ones you can edit, then the ones
@@ -68,8 +76,8 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see
-[history/conventions.md](history/conventions.md). `npm run verify` is 569 assertions across eleven
-suites, and `verify/production.mjs` adds 16 against the built bundle. Anything touching
+[history/conventions.md](history/conventions.md). `npm run verify` is 633 assertions across twelve
+suites, and `verify/production.mjs` adds 17 against the built bundle. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -82,8 +90,10 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | Mouse wheel, trackpad pinch                           | Zoom at the cursor                                         |
 | `⌘`+wheel / `⇧`+wheel                                 | Force zoom / force horizontal pan                          |
 | `1` / `2` / `3` / `4` / `5` / `6`                     | Pointer / Select / Rectangle / Connection / Queue / Fabric |
+| Hold `⇧`, in any tool                                 | Switch to the select tool until `⇧` is released            |
 | Drag with the select tool                             | Select everything the band touches                         |
-| `⇧`+drag with the select tool                         | Add the band's contents to the selection                   |
+| Click with the select tool                            | Select what is under it; on empty space, clear             |
+| `⌘`+drag with the select tool                         | Add the band's contents to the selection                   |
 | Drag with the rectangle tool                          | Draw a block, snapped to the grid                          |
 | Drag with the queue or fabric tool                    | Draw a FIFO or a switch fabric                             |
 | Drag a network interface                              | Slide it along its parent's border, or onto another        |
@@ -94,9 +104,10 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | Drag a segment of a selected connection               | Reshape its route, pinning it to manual routing            |
 | Drag a round bead on a selected connection            | Slide that end along its edge, or onto another block       |
 | Click a block, then drag its body or handles          | Move or resize                                             |
+| `⇧` once a corner drag has started                    | Keep the block square                                      |
 | Hold the pointer still over a block or wire           | Show its description as a tooltip                          |
 | Hold the pointer still over a toolbar button          | Show its name and keyboard shortcut                        |
-| `⇧`+click                                             | Add to or remove from the selection                        |
+| `⌘`+click                                             | Add to or remove from the selection                        |
 | `⌫`                                                   | Delete the selection                                       |
 | `⌘C` / `⌘X` / `⌘V`                                    | Copy / cut / paste the selection                           |
 | `⌘S` / `⌘O`                                           | Save the diagram to a file / open one                      |
@@ -122,8 +133,20 @@ In the trace panel:
 | `⌘1`, `+` / `-`                                | Fit the whole trace, zoom in / out            |
 | Drag the gutter's right edge                   | Resize the name column                        |
 
+In the objects panel:
+
+| Gesture                         | Action                                                         |
+| ------------------------------- | -------------------------------------------------------------- |
+| Click a row / `⌘`+click a row   | Select that object / add it to or remove it from the selection |
+| Click a twisty, or the root row | Open or close it                                               |
+| `↑` / `↓`                       | Select the previous / next row                                 |
+| `→` / `←`                       | Open / close a parent, or step to its first child / its parent |
+| `Home` / `End`                  | First / last row                                               |
+
 Shortcuts only fire while their panel owns the keyboard, so `⌫` in the property editor
 removes a JSON node rather than a block, and `←` in the trace panel does not reach the canvas.
+The objects panel shares the diagram's: it is read-only, so `⌫`, `⌘Z`, the clipboard, `⌘A`, the
+arrange keys and the tool digits pressed there act on the diagram it shows.
 
 There are no scrollbars anywhere. The canvas is driven by a virtual camera clamped to the content
 bounding box plus a buffer, so panning hard-stops rather than running off into empty space.
@@ -135,7 +158,8 @@ src/lib/geom/      Vec2, Rect, and the small amount of geometry everything else 
 src/lib/canvas/    Camera, renderer, dot grid, hit testing, wheel/trackpad input, text, theme,
                    and what both canvases share: the viewport base, the frame loop, and the
                    surface contract
-src/lib/scene/     The document: shapes, z-order, bounds, history, serialization
+src/lib/scene/     The document: shapes, z-order, bounds, history, serialization, and the
+                   object tree's outline (`outline.ts`)
 src/lib/props/     Property declarations, the JSON Schema generator, projection, validation,
                    and the property editor's context menu
 src/lib/tools/     Tool contract, registry, pointer plumbing, and the six tools (three of them
@@ -149,7 +173,7 @@ src/lib/ui/        Hover tooltips for DOM chrome (one layer, opted into per elem
                    file transport: download and file picker
 src/lib/session.svelte.ts   Scene, camera, tool host and renderer -- owned by the app, not a panel
 src/components/    Dock shell, panel host, canvas surface, toolbar, status bar, tooltips
-src/views/         One component per panel: DiagramView, PropertiesView, TraceView
+src/views/         One component per panel: DiagramView, ObjectsView, PropertiesView, TraceView
 verify/            Playwright checks against a real browser at deviceScaleFactor 2
 ```
 
@@ -203,11 +227,16 @@ Write `src/views/<Name>View.svelte` reading the session from `useSession()`, add
 `src/lib/panels/<name>-panel.ts` calling `registerPanel`, and add the import to
 `src/lib/register.ts`. The dock resolves pane ids through the registry.
 
+That registers the panel; it does not put it on screen. For it to appear by default, add it to
+`defaultWorkspace` in `src/lib/dock/layout.ts` and bump `STORAGE_KEY` there, which resets every
+saved layout once — a saved layout never names a panel it predates. Two checks list every panel
+id, `verify/docking.mjs` and `verify/production.mjs`, and both need the new one.
+
 ### Adding a tool
 
 Write `src/lib/tools/<name>-tool.ts` implementing `Tool`, call `registerTool` at the bottom, and
 add the import to `src/lib/register.ts`. The toolbar renders from the registry, so the button
-appears on its own. A tool that creates a shape by dragging out its two corners is not a new file
+appears on its own, in the centred zone. A tool that creates a shape by dragging out its two corners is not a new file
 at all: it is one `registerCreateTool` call in `tools/create-tool.ts`.
 
 The declaration says which cluster it belongs in (`group`: `tool` for something you do to what is
@@ -252,6 +281,9 @@ several of the defects found so far compile and type-check cleanly and only fail
 - [iter-6-components.md](history/iter-6-components.md) — queues, network interfaces, fabrics and
   curved bus links; the dependency fold that settles; saving and opening a diagram; multi-line
   subtitles; and the text width cache, the shape-count half of the Safari slowdown.
+- [iter-7-autogrouping-and-alignment.md](history/iter-7-autogrouping-and-alignment.md) — in
+  progress. So far (7.0): the toolbar in three zones, holding `⇧` for the select tool with `⌘`
+  taking over as the adding key, and a read-only object tree above Properties.
 
 The unabridged notes for each sub-iteration, and the two Safari measurement reports, are in git
 at commit `e56a67d`.
