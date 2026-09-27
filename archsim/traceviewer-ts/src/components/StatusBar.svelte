@@ -56,11 +56,16 @@
   });
 </script>
 
+<!--
+  One line, always: the bar is a fixed height, and a wrapped readout would spill out of it. When
+  the pane is too narrow for everything, the hint gives way, ellipsised, and the readouts do not.
+-->
 <div
   class="flex h-7 shrink-0 items-center gap-4 border-t border-[var(--color-panel-border)]
-         bg-[var(--color-panel)] px-3 text-xs text-[var(--color-ink-dim)] select-none"
+         bg-[var(--color-panel)] px-3 text-xs whitespace-nowrap text-[var(--color-ink-dim)]
+         select-none"
 >
-  <span class="text-[var(--color-ink)]">{host.hint}</span>
+  <span class="min-w-0 truncate text-[var(--color-ink)]">{host.hint}</span>
 
   {#if draftLabel !== null}
     <span class="text-[var(--color-accent)] tabular-nums">{draftLabel}</span>

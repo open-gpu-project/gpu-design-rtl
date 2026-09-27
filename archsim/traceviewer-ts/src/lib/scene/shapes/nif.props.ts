@@ -23,10 +23,11 @@ const MODPORTS: readonly Modport[] = ['master', 'slave'];
  * `protocol` is the one key here that will mean something outside this editor, once a diagram is
  * checked against RTL. Everything else is geometry or presentation.
  *
- * `position`, `size` and `parent` are absent on purpose. An interface has no position of its own:
- * it has a `side` and an `offset` on a parent, and its box follows from those. Offering an
- * editable `[x, y]` that the next commit overwrites is the read-only-field problem iteration 4
- * spent a whole pass removing.
+ * `position` is absent on purpose. An interface has no position of its own: it has a `side` and
+ * an `offset` on a parent, and its box follows from those. Offering an editable `[x, y]` that the
+ * next commit overwrites is the read-only-field problem iteration 4 spent a whole pass removing.
+ * Its `size` is an along-and-across extent rather than a width and height, and its `parent` is
+ * `fixed` rather than `computed`: an interface is owned, not enclosed, and the owner is saved.
  */
 const props: readonly PropDef<NifShape>[] = [
   kindProp('nif'),

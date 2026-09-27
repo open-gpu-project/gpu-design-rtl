@@ -1,3 +1,4 @@
+import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
 import type { Side } from '../../geom/types';
 import { registerShape } from '../registry';
 import { plainBoxOps } from './plain-box';
@@ -11,14 +12,18 @@ import { rectProps } from './rect.props';
  *
  * Its ports take no links on their inward edge: a wire between two ports across the inside of a
  * block would be describing something the block has not said it has.
+ *
+ * It adopts: a block drawn around other blocks contains them, and a drag carries them.
  */
 const RECT_SIDES: readonly Side[] = ['n', 'e', 's', 'w'];
 
 export const rectOps = plainBoxOps({
   kind: 'rect',
+  icon: RectangleHorizontal,
   props: rectProps,
   sides: RECT_SIDES,
   inward: false,
+  adopts: true,
 });
 
 registerShape(rectOps);

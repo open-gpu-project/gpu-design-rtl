@@ -1,4 +1,5 @@
 import { keys } from '../keys';
+import { hierarchyOf } from '../scene/hierarchy';
 import type { LabelMode, ShapeBase } from '../scene/shape';
 import type { PropContext, PropDef, WriteResult } from './spec';
 
@@ -212,5 +213,22 @@ export function zIndexProp<S extends ShapeBase>(doc?: string): PropDef<S> {
     mode: 'computed',
     type: { type: 'integer', minimum: 0 },
     read: (_s, ctx: PropContext) => ctx.index,
+  };
+}
+
+/**
+ * The block this shape sits in, read off the hierarchy rather than stored: the diagram's nesting
+ * is positional, so there is nothing here to type. Empty at the top level.
+ */
+export function parentProp<S extends ShapeBase>(noun: string, doc?: string): PropDef<S> {
+  return {
+    key: 'parent',
+    title: 'Parent',
+    doc:
+      doc ??
+      `The innermost block around this ${noun}, or empty when there is none. Worked out from where things are rather than stored: drag the ${noun} into or out of a block to change it. Moving that block carries the ${noun} with it.`,
+    mode: 'computed',
+    type: { type: 'string' },
+    read: (s, ctx: PropContext) => hierarchyOf(ctx.shapes).parentOf(s.name) ?? '',
   };
 }

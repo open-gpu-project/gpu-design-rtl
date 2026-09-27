@@ -1,3 +1,5 @@
+import { GRID_DOT_BRIGHTNESS } from '../grid';
+
 /** Colors used by the canvas renderer. DOM chrome is styled with Tailwind, not from here. */
 export interface Theme {
   readonly background: string;
@@ -6,6 +8,17 @@ export interface Theme {
   readonly shapeFill: string;
   readonly shapeStroke: string;
   readonly shapeStrokeSelected: string;
+  /**
+   * A block that contains the selection: every ancestor, while anything inside it is selected.
+   *
+   * Emerald, because every nearby hue already means something here. Amber is selection, blue is
+   * a block's own outline and sky its ghost, violet and sky again are the two modports. Not near
+   * white either, which the label checks in `verify/components.mjs` probe for. The fill is a
+   * faint tint over the body, in place of the usual one, so the group reads as a region; the
+   * outline stays one pixel, quieter than a selected one.
+   */
+  readonly shapeStrokeAncestor: string;
+  readonly shapeFillAncestor: string;
   readonly shapeLabel: string;
   /** The second line of an inset label. Quieter than `shapeLabel`: the label is the subject. */
   readonly shapeSubtitle: string;
@@ -47,15 +60,46 @@ export interface Theme {
    */
   readonly marqueeStroke: string;
   readonly marqueeFill: string;
+  /**
+   * An alignment guide: the line that says what a shape being moved, resized or drawn lines up
+   * with. Rose, because amber, blue, sky, violet and emerald all already mean something here, and
+   * opaque, since it is drawn over shapes. It runs along the aligned edges themselves, over a
+   * selected outline.
+   */
+  readonly alignGuide: string;
+}
+
+const BACKGROUND = '#0f1115';
+
+/**
+ * A grid dot colour: `base` moved away from the background by `GRID_DOT_BRIGHTNESS`, each channel
+ * clipped to 0..255. The result is an opaque `#rrggbb`, because the grid's strips are only exact
+ * for fully opaque colours (`grid-renderer.ts`).
+ */
+function gridDot(base: string): string {
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const bg = rgb(BACKGROUND);
+  return (
+    '#' +
+    rgb(base)
+      .map((c, k) => {
+        const v = Math.round(bg[k]! + (c - bg[k]!) * GRID_DOT_BRIGHTNESS);
+        return Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0');
+      })
+      .join('')
+  );
 }
 
 export const darkTheme: Theme = {
-  background: '#0f1115',
-  gridDotMinor: '#272c36',
-  gridDotMajor: '#404859',
+  background: BACKGROUND,
+  // The colours at brightness 1. Kept rather than retuned, so the dial is the only thing to turn.
+  gridDotMinor: gridDot('#272c36'),
+  gridDotMajor: gridDot('#404859'),
   shapeFill: 'rgba(96, 165, 250, 0.14)',
   shapeStroke: '#60a5fa',
   shapeStrokeSelected: '#fbbf24',
+  shapeStrokeAncestor: 'rgba(52, 211, 153, 0.7)',
+  shapeFillAncestor: 'rgba(52, 211, 153, 0.07)',
   shapeLabel: '#dbe3ef',
   shapeSubtitle: '#93a1b8',
   fifoDivider: 'rgba(96, 165, 250, 0.55)',
@@ -75,6 +119,7 @@ export const darkTheme: Theme = {
   anchorDotStroke: '#0f1115',
   marqueeStroke: '#fbbf24',
   marqueeFill: 'rgba(251, 191, 36, 0.10)',
+  alignGuide: '#fb7185',
 };
 
 /* -------------------------------------------------------------------------- type ---- */
@@ -100,6 +145,17 @@ export const STROKE_HIT_PX = 6;
 
 /** Movement below this (CSS px) is treated as a click, not a drag. */
 export const DRAG_SLOP_PX = 4;
+
+/**
+ * How far, in CSS pixels, alignment snapping reaches for a target.
+ *
+ * Every position alignment may choose is a grid point (`scene/align.ts`), and every grid point
+ * but the nearest lies at least half a step away, so this pulls a landing off the grid's own
+ * answer only while it exceeds `GRID / 2` world units: below z = ALIGN_SNAP_PX / (GRID / 2),
+ * which is 1.25. At z = 1 an aligned position catches the pointer 10 units out instead of 8; zoomed
+ * further out the pull grows, and further in only the guides remain.
+ */
+export const ALIGN_SNAP_PX = 10;
 
 /** Minimum on-screen spacing for minor grid dots before the grid coarsens by MAJOR_EVERY. */
 export const MIN_DOT_PX = 8;

@@ -11,6 +11,7 @@ import {
   readFragment,
   translateAll,
 } from '../scene/fragment';
+import { restackTree, withDescendants } from '../scene/hierarchy';
 import { opsFor } from '../scene/registry';
 import { tabMeasurer } from '../scene/shapes/heading';
 import type { DrawContext, Shape, ShapeName, ShapeTooltip } from '../scene/shape';
@@ -500,19 +501,26 @@ export class ToolHost {
     this.invalidate();
   }
 
+  /** Delete the selection and everything under it: a group goes with its parent. */
   deleteSelection(): void {
-    this.#deleteIds(this.scene.selection, 'delete');
+    this.#deleteIds(withDescendants(this.scene.shapes, this.scene.selection), 'delete');
   }
 
   /**
-   * Put the selection on the clipboard. Commits nothing and pushes no history entry, which is
-   * why it needs no `isGesturing` guard.
+   * Put the selection on the clipboard, with everything under it. Commits nothing and pushes no
+   * history entry, which is why it needs no `isGesturing` guard.
    *
-   * A connection rides along only when both of its blocks do, so the fragment is always a
-   * self-contained diagram rather than a wire dangling off something that was left behind.
+   * Copying a parent copies its group: the blocks inside it, its interfaces, and the wires that
+   * run within it. A connection otherwise rides along only when both of its ends do, so the
+   * fragment is always a self-contained diagram rather than a wire dangling off something that
+   * was left behind.
    */
   copySelection(): void {
-    const doc = copyFragment(this.scene.shapes, this.scene.selection);
+    this.#copy(withDescendants(this.scene.shapes, this.scene.selection));
+  }
+
+  #copy(ids: ReadonlySet<ShapeName>): void {
+    const doc = copyFragment(this.scene.shapes, ids);
     if (doc === null) return;
     this.#clipboard = doc;
     this.#pasteStep = 0;
@@ -530,10 +538,11 @@ export class ToolHost {
 
   cutSelection(): void {
     if (this.isGesturing()) return;
-    const ids = this.scene.selection;
     // An empty cut must not clobber a clipboard that still holds something useful.
-    if (ids.size === 0) return;
-    this.copySelection();
+    if (this.scene.selection.size === 0) return;
+    // Expanded once, so what is copied and what is deleted are the same group.
+    const ids = withDescendants(this.scene.shapes, this.scene.selection);
+    this.#copy(ids);
     /*
       Cut can remove more than it copied: a half-selected connection is excluded from the
       fragment, then cascade-deleted by `pruneOrphans` inside this commit. That is the right
@@ -762,8 +771,10 @@ export class ToolHost {
     const ids = this.scene.selection;
     if (ids.size === 0) return;
     const prev = this.scene.shapes;
-    const next = fn(prev, ids);
-    if (next.length === prev.length && next.every((s, i) => s === prev[i])) return;
+    // Within each sibling list, then re-emitted in the order the commit's seat pass keeps, so
+    // this no-op check sees the order that will actually land.
+    const next = restackTree(prev, ids, fn);
+    if (next === prev) return;
     this.scene.commit(label, () => {
       this.scene.shapes = next;
     });

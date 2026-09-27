@@ -3,17 +3,20 @@ import { DEV_URL, diagramCanvas, dragOn, installProbes, open, row, suite } from 
 /*
   The object tree (iteration 7).
 
-  A read-only tree of every object, under a root row for the diagram, sitting above Properties.
-  Three things can go wrong with it, and each group below is aimed at one:
+  A read-only tree of every object, with wires that lie side by side folded under one row, under a
+  root row for the diagram, docked left of the canvas. Three things can go wrong with it, and each
+  group below is aimed at one:
 
   - It can disagree with the document. The rows are compared against `__outline`, the same pure
     functions the pane renders from, and those are fed malformed documents directly -- a cycle,
-    a dangling parent -- that the scene would never let a check commit.
+    a dangling parent -- that the scene would never let a check commit. The nesting is the
+    hierarchy's, so the same functions are also fed blocks inside blocks, and runs of wires.
   - It can fight the canvas. A click in the tree selects, and a selection on the canvas opens
     the tree to show it; each direction has a way to go wrong that the other hides, so both are
     driven for real.
   - It can cost the canvas. A drag previews a new `shapes` array on every pointermove, and a tree
     that re-rendered for each of them would put DOM work back on the path iteration 3 cleared.
+    Only a drag that carries something across a block's border may change a row.
 */
 
 const t = suite('objects');
@@ -32,6 +35,21 @@ const fabric = (name, x, y, w, h, interfaces) => ({
   position: [x, y],
   size: [w, h],
   interfaces,
+});
+const wire = (name, [from, fromAnchor], [to, toAnchor]) => ({
+  kind: 'conn',
+  name,
+  label: '',
+  description: '',
+  labelOffset: [0, 0],
+  routing: 'auto',
+  path: 'ortho',
+  points: [
+    [0, 0],
+    [0, 16],
+  ],
+  source: [from, fromAnchor],
+  target: [to, toAnchor],
 });
 const block = (name, x, y, w = 160, h = 96, label = name) => ({
   kind: 'rect',
@@ -71,6 +89,7 @@ const rendered = () =>
   );
 const keys = async () => (await rendered()).map((r) => r.key);
 const rowFor = (name) => page.locator(`${PANE} [role="treeitem"][data-name="${name}"]`);
+const keyed = (key) => page.locator(`${PANE} [role="treeitem"][data-key="${key}"]`);
 const rootRow = () => page.locator(`${PANE} [role="treeitem"][data-key="diagram"]`);
 const selection = () => page.evaluate(() => [...window.__scene.selection].sort());
 const focused = () => page.evaluate(() => document.activeElement?.dataset?.key ?? null);
@@ -104,28 +123,31 @@ await seed([
 /* ------------------------------------------------------------------------- layout ---- */
 {
   const g = await page.evaluate(() => {
-    const r = (id) => document.querySelector(`[data-panel-id="${id}"]`).getBoundingClientRect();
-    const [d, o, p] = ['diagram', 'objects', 'properties'].map(r);
-    return {
-      d: { left: d.left, width: d.width },
-      o: { left: o.left, width: o.width, bottom: o.bottom },
-      p: { left: p.left, width: p.width, top: p.top, right: p.right },
+    const r = (id) => {
+      const b = document.querySelector(`[data-panel-id="${id}"]`).getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width };
     };
+    return { o: r('objects'), d: r('diagram'), p: r('properties'), t: r('trace') };
   });
   t.ok(
-    'Objects sits above Properties, on the same left edge and at the same width',
-    Math.abs(g.o.left - g.p.left) <= 1 &&
-      Math.abs(g.o.width - g.p.width) <= 1 &&
-      g.o.bottom <= g.p.top,
+    'Objects sits left of the canvas and level with it, with Properties on the right',
+    g.o.right <= g.d.left &&
+      g.d.right <= g.p.left &&
+      Math.abs(g.o.top - g.d.top) <= 1 &&
+      Math.abs(g.p.top - g.d.top) <= 1,
     JSON.stringify(g),
   );
-  // The diagram keeps its share, which is what keeps every canvas-coordinate check valid.
-  const share = g.d.width / (g.p.right - g.d.left);
   t.ok(
-    'and the diagram keeps its 0.72 share of the width',
-    Math.abs(share - 0.72) < 0.02,
-    share.toFixed(3),
+    'and above the trace, which runs under all three',
+    g.o.bottom <= g.t.top &&
+      g.d.bottom <= g.t.top &&
+      Math.abs(g.t.left - g.o.left) <= 1 &&
+      Math.abs(g.t.right - g.p.right) <= 1,
+    JSON.stringify(g),
   );
+  // The canvas keeps a fixed share, which is what every canvas-coordinate check is written for.
+  const share = g.d.width / (g.p.right - g.o.left);
+  t.ok('and the canvas has 0.6 of the width', Math.abs(share - 0.6) < 0.02, share.toFixed(3));
 }
 
 /* ---------------------------------------------------------------------- structure ---- */
@@ -168,6 +190,68 @@ await seed([
     (await selection()).length === 0,
     JSON.stringify(await selection()),
   );
+
+  // What a row says: its kind's glyph -- the one on the tool that draws it -- then the label.
+  const faces = await page.evaluate((pane) => {
+    const glyph = (svg) =>
+      svg === null
+        ? null
+        : [...svg.classList]
+            .filter((c) => c.startsWith('lucide-') && c !== 'lucide-icon')
+            .sort()
+            .join(' ');
+    const tool = (label) => glyph(document.querySelector(`button[aria-label="${label}"] svg`));
+    const face = (name) => {
+      const el = document.querySelector(`${pane} [data-name="${name}"]`);
+      const label = el?.querySelector('.tree-label') ?? null;
+      const dim = el?.querySelector('.tree-name') ?? null;
+      return {
+        icons: el?.querySelectorAll('svg.lucide').length ?? 0,
+        glyph: glyph(el?.querySelector('.tree-icon svg') ?? null),
+        label: label?.textContent ?? null,
+        name: dim?.textContent ?? null,
+        dimmer:
+          label !== null &&
+          dim !== null &&
+          getComputedStyle(label).color !== getComputedStyle(dim).color,
+        first: label !== null && dim !== null && (label.compareDocumentPosition(dim) & 4) !== 0,
+      };
+    };
+    return {
+      rectTool: tool('Rectangle'),
+      fabricTool: tool('Fabric'),
+      alu: face('alu'),
+      far: face('far'),
+      noc: face('noc'),
+      pin: face('noc.if_1'),
+    };
+  }, PANE);
+  t.ok(
+    "each row shows its kind's glyph, the same one as on the tool that draws that kind",
+    faces.rectTool !== null &&
+      faces.alu.glyph === faces.rectTool &&
+      faces.far.glyph === faces.rectTool &&
+      faces.noc.glyph === faces.fabricTool &&
+      faces.pin.glyph !== null &&
+      faces.pin.glyph !== faces.noc.glyph &&
+      faces.pin.glyph !== faces.rectTool,
+    JSON.stringify(faces),
+  );
+  t.ok(
+    'the label leads, and the name follows it greyed out, only when the two differ',
+    faces.alu.label === 'ALU' &&
+      faces.alu.name === 'alu' &&
+      faces.alu.dimmer &&
+      faces.alu.first &&
+      faces.far.label === 'far' &&
+      faces.far.name === null,
+    JSON.stringify({ alu: faces.alu, far: faces.far }),
+  );
+  t.ok(
+    'an unlabelled object leads with its name instead',
+    faces.pin.label === 'noc.if_1' && faces.pin.name === null,
+    JSON.stringify(faces.pin),
+  );
   await twisty('noc');
 
   // ⌘] with the tree focused: the arrange chords act on the diagram the tree shows.
@@ -186,10 +270,22 @@ await seed([
 /* ------------------------------------------------------------------ the pure model ---- */
 {
   const r = await page.evaluate(() => {
-    const { outlineOf, outlineRows } = window.__outline;
+    const { outlineOf, outlineRows, pathTo } = window.__outline;
     const nif = (name, parent) => ({ kind: 'nif', name, label: '', parent });
     const rect = (name) => ({ kind: 'rect', name, label: name });
-    const flat = (nodes) => nodes.flatMap((n) => [n.name, ...flat(n.children)]);
+    const box = (name, x) => ({ kind: 'rect', name, label: '', x, y: 40, w: 100, h: 80 });
+    const conn = (name, from, to) => ({ kind: 'conn', name, label: '', from, to });
+    const flat = (nodes) =>
+      nodes.flatMap((n) => (n.type === 'wires' ? flat(n.children) : [n.name, ...flat(n.children)]));
+    // A folded row as ['wires', [...]], a parent as [name, [...]], a leaf as its name.
+    const tree = (nodes) =>
+      nodes.map((n) =>
+        n.type === 'wires'
+          ? ['wires', tree(n.children)]
+          : n.children.length > 0
+            ? [n.name, tree(n.children)]
+            : n.name,
+      );
     const once = (shapes) => {
       const names = flat(outlineOf(shapes));
       return names.length === shapes.length && new Set(names).size === shapes.length;
@@ -204,12 +300,52 @@ await seed([
     const relabelled = shapes.map((s) => (s.name === 'far' ? { ...s, label: 'FAR' } : s));
     const restacked = [...shapes].reverse();
 
+    // Two wires inside `outer`, two side by side at the top level, and one with an object on
+    // either side of it. Bottom first, as a scene is.
+    const wired = [
+      { kind: 'rect', name: 'outer', label: '', x: 0, y: 0, w: 400, h: 300 },
+      box('a', 40),
+      box('b', 240),
+      box('c', 600),
+      box('d', 800),
+      conn('in1', 'a', 'b'),
+      conn('in2', 'b', 'a'),
+      conn('x1', 'b', 'c'),
+      conn('x2', 'c', 'd'),
+      box('e', 1000),
+      conn('x3', 'd', 'e'),
+    ];
+    const wiredRoot = { id: 'diagram', title: 'Diagram', nodes: outlineOf(wired) };
+    const wiredOpen = new Set(['diagram', 'diagram:outer', 'diagram/wires:in1']);
+    const wiredRows = (list) =>
+      outlineRows([{ id: 'diagram', title: 'Diagram', nodes: outlineOf(list) }], wiredOpen);
+    const drawnOn = wiredRows([...wired, conn('in3', 'a', 'b')]);
+
     return {
       cycle: once([nif('a', 'b'), nif('b', 'a'), rect('r')]),
       missing: once([nif('n', 'ghost'), rect('r')]),
       empty: once([nif('n', ''), rect('r')]),
       self: once([nif('n', 'n')]),
       topMissing: outlineOf([nif('n', 'ghost')]).map((n) => n.name),
+      // Ownership is one level deep: an owner that is itself owned does not count.
+      ownedByOwned: outlineOf([nif('a', 'b'), nif('b', 'c'), rect('c')]).map((n) => [
+        n.name,
+        n.children.map((c) => c.name),
+      ]),
+      nested: outlineOf([
+        { kind: 'rect', name: 'outer', label: '', x: 0, y: 0, w: 400, h: 300 },
+        { kind: 'rect', name: 'inner', label: '', x: 40, y: 40, w: 100, h: 80 },
+      ]).map((n) => [n.name, n.children.map((c) => c.name)]),
+      wiredOnce: once(wired),
+      wired: tree(wiredRoot.nodes),
+      wiredRows: wiredRows(wired).map((r) => [r.key, r.level, r.role, r.name, r.count]),
+      drawnOn: drawnOn.filter((r) => r.role === 'wires').map((r) => [r.key, r.expanded, r.count]),
+      paths: [
+        pathTo(wiredRoot, 'in2'),
+        pathTo(wiredRoot, 'b'),
+        pathTo(wiredRoot, 'x3'),
+        pathTo(wiredRoot, 'ghost'),
+      ],
       moved: outlineRows(roots(moved), open, prev) === prev,
       renamed: outlineRows(roots(renamed), open, prev) !== prev,
       relabelled: outlineRows(roots(relabelled), open, prev) !== prev,
@@ -226,7 +362,74 @@ await seed([
     JSON.stringify(r.topMissing) === JSON.stringify(['n']),
   );
   t.ok(
-    'a translated scene gives back the previous rows by reference, so a drag re-renders nothing',
+    'an interface claiming an owner that is itself owned sits at the top level',
+    JSON.stringify(r.ownedByOwned) ===
+      JSON.stringify([
+        ['c', ['b']],
+        ['a', []],
+      ]),
+    JSON.stringify(r.ownedByOwned),
+  );
+  t.ok(
+    'a block inside a block nests under it',
+    JSON.stringify(r.nested) === JSON.stringify([['outer', ['inner']]]),
+    JSON.stringify(r.nested),
+  );
+  t.ok(
+    'wires side by side fold under one row, in their places; a wire between two objects does not',
+    r.wiredOnce &&
+      JSON.stringify(r.wired) ===
+        JSON.stringify([
+          'x3',
+          'e',
+          ['wires', ['x2', 'x1']],
+          'd',
+          'c',
+          ['outer', [['wires', ['in2', 'in1']], 'b', 'a']],
+        ]),
+    JSON.stringify(r.wired),
+  );
+  t.ok(
+    'a folded row is keyed by its bottom-most wire, carries the count, and opens like a parent',
+    JSON.stringify(r.wiredRows) ===
+      JSON.stringify([
+        ['diagram', 1, 'diagram', null, 0],
+        ['diagram:x3', 2, 'object', 'x3', 0],
+        ['diagram:e', 2, 'object', 'e', 0],
+        ['diagram/wires:x1', 2, 'wires', null, 2],
+        ['diagram:d', 2, 'object', 'd', 0],
+        ['diagram:c', 2, 'object', 'c', 0],
+        ['diagram:outer', 2, 'object', 'outer', 0],
+        ['diagram/wires:in1', 3, 'wires', null, 2],
+        ['diagram:in2', 4, 'object', 'in2', 0],
+        ['diagram:in1', 4, 'object', 'in1', 0],
+        ['diagram:b', 3, 'object', 'b', 0],
+        ['diagram:a', 3, 'object', 'a', 0],
+      ]),
+    JSON.stringify(r.wiredRows),
+  );
+  t.ok(
+    'so drawing another wire on top of an open run keeps it open, one wire longer',
+    JSON.stringify(r.drawnOn) ===
+      JSON.stringify([
+        ['diagram/wires:x1', false, 2],
+        ['diagram/wires:in1', true, 3],
+      ]),
+    JSON.stringify(r.drawnOn),
+  );
+  t.ok(
+    'pathTo gives every row that must open to show an object, a folded one included',
+    JSON.stringify(r.paths) ===
+      JSON.stringify([
+        ['diagram', 'diagram:outer', 'diagram/wires:in1'],
+        ['diagram', 'diagram:outer'],
+        ['diagram'],
+        null,
+      ]),
+    JSON.stringify(r.paths),
+  );
+  t.ok(
+    'a translated scene gives back the previous rows by reference, so a drag that crosses no border re-renders nothing',
     r.moved,
   );
   t.ok(
@@ -339,7 +542,9 @@ await seed([
     (await rendered()).find((r) => r.key === 'diagram:noc')?.expanded === 'false',
   );
 
-  // Live, not at mouse-up: the rows read the selection, not the gesture's end.
+  // Live, not at mouse-up: the rows read the selection, not the gesture's end. The camera first,
+  // because the pan above moved it and a band takes only what it wholly covers.
+  await setCamera(0, 0, 1);
   await page.keyboard.press('Digit2');
   await page.mouse.move(box.x + 40, box.y + 40);
   await page.mouse.down();
@@ -614,6 +819,315 @@ await seed([
     found.length === 0,
     JSON.stringify(found),
   );
+}
+
+/* ------------------------------------------------------------------------ nesting ---- */
+/*
+  The rows nest by the hierarchy: a block under the block it lies in, an interface under its
+  owner, a wire under the block both its ends lie in. Driven with the real pointer, because the
+  two ways it can go wrong
+  are both gestures -- a drag inside a group that re-renders the tree, and a drag that re-parents
+  the selection without the tree following it there.
+*/
+{
+  await seed([
+    block('cluster', 64, 64, 480, 320),
+    block('alu', 96, 128, 160, 96),
+    fabric('noc', 304, 128, 224, 160, 2),
+    {
+      kind: 'conn',
+      name: 'link',
+      label: '',
+      description: '',
+      labelOffset: [0, 0],
+      routing: 'auto',
+      path: 'ortho',
+      points: [
+        [256, 176],
+        [304, 176],
+      ],
+      source: ['alu', 'e'],
+      target: ['noc', 'w'],
+    },
+    block('pen', 608, 64, 288, 256),
+  ]);
+  await setCamera(0, 0, 1);
+  await page.evaluate(() => window.__host.setTool('pointer'));
+  await page.evaluate(() => {
+    window.__session.objectTreeOpen = new Set(['diagram']);
+  });
+  await page.waitForTimeout(150);
+  const box = await diagramCanvas(page).boundingBox();
+  const levels = async () => (await rendered()).map((r) => [r.key, r.level]);
+
+  await twisty('cluster');
+  await twisty('noc');
+  const want = await page.evaluate(() => {
+    const { outlineOf, outlineRows } = window.__outline;
+    const s = window.__session;
+    const roots = s.diagrams.map((d) => ({
+      id: d.id,
+      title: d.title,
+      nodes: outlineOf(d.scene.shapes),
+    }));
+    return outlineRows(roots, s.objectTreeOpen).map((r) => [r.key, r.level]);
+  });
+  const got = await levels();
+  t.ok(
+    'nested, the rendered rows are still exactly the ones the outline model gives',
+    JSON.stringify(got) === JSON.stringify(want),
+    JSON.stringify(got),
+  );
+  t.ok(
+    'a block lists what lies inside it, topmost first: the wire, the fabric with its interfaces, then alu',
+    JSON.stringify(got) ===
+      JSON.stringify([
+        ['diagram', 1],
+        ['diagram:pen', 2],
+        ['diagram:cluster', 2],
+        ['diagram:link', 3],
+        ['diagram:noc', 3],
+        ['diagram:noc.if_2', 4],
+        ['diagram:noc.if_1', 4],
+        ['diagram:alu', 3],
+      ]),
+    JSON.stringify(got),
+  );
+  await twisty('noc');
+  await twisty('cluster');
+
+  await page.evaluate(() => window.__scene.selectOnly('link'));
+  await page.waitForTimeout(250);
+  const wired = await rendered();
+  t.ok(
+    'selecting a wire inside a closed group opens the group, with the wire row selected',
+    wired.find((r) => r.key === 'diagram:cluster')?.expanded === 'true' &&
+      wired.find((r) => r.key === 'diagram:link')?.selected === 'true',
+    JSON.stringify(wired),
+  );
+  await page.evaluate(() => window.__scene.setSelection(new Set()));
+  await twisty('cluster');
+
+  // Canvas to tree: the ancestors that open are the enclosing blocks.
+  await page.mouse.move(box.x + 176, box.y + 176);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const opened = await rendered();
+  t.ok(
+    'clicking a block inside a group on the canvas opens the group and highlights the row',
+    opened.find((r) => r.key === 'diagram:cluster')?.expanded === 'true' &&
+      opened.find((r) => r.key === 'diagram:alu')?.selected === 'true',
+    JSON.stringify(opened),
+  );
+
+  // Dragging the group: its children and its wire travel with it, and no row changes.
+  await page.evaluate(() => window.__scene.selectOnly('cluster'));
+  await page.waitForTimeout(250);
+  await page.evaluate(
+    (pane) =>
+      window.__watch(pane, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      }),
+    PANE,
+  );
+  await page.mouse.move(box.x + 100, box.y + 350);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 132, box.y + 382, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const mutations = await page.evaluate(() => window.__unwatch());
+  const dragged = await page.evaluate(() => ({
+    label: window.__scene.history.undoLabel,
+    alu: window.__scene.shapes.find((s) => s.name === 'alu')?.x,
+  }));
+  t.ok(
+    'a 20-step drag of a group moves what it contains and makes no DOM mutation in the pane',
+    mutations === 0 && dragged.label === 'move' && dragged.alu === 128,
+    `${mutations} mutations, ${JSON.stringify(dragged)}`,
+  );
+  if (dragged.label === 'move') await press('Meta+z');
+
+  // An already-selected block dragged into a closed group: the Set does not change, the
+  // block's ancestors do, and the tree has to follow it in.
+  await page.evaluate(() => window.__scene.selectOnly('alu'));
+  await page.waitForTimeout(250);
+  const penBefore = (await rendered()).find((r) => r.key === 'diagram:pen')?.expanded ?? null;
+  await dragOn(page, box, { x: 176, y: 176 }, { x: 720, y: 176 }, { steps: 12, settle: 300 });
+  const moved = await rendered();
+  const penAt = moved.findIndex((r) => r.key === 'diagram:pen');
+  t.ok(
+    'dragging the selected block into a closed group opens it, with the row there and selected',
+    penBefore === null &&
+      moved[penAt]?.expanded === 'true' &&
+      moved[penAt + 1]?.key === 'diagram:alu' &&
+      moved[penAt + 1]?.level === 3 &&
+      moved[penAt + 1]?.selected === 'true',
+    JSON.stringify(moved),
+  );
+  if ((await page.evaluate(() => window.__scene.history.undoLabel)) === 'move') {
+    await press('Meta+z');
+  }
+
+  // Deleting a group from the tree takes everything under it, and undo puts it all back.
+  await rowFor('cluster').click();
+  await page.waitForTimeout(150);
+  if ((await rendered()).find((r) => r.key === 'diagram:cluster')?.expanded !== 'true') {
+    await twisty('cluster');
+  }
+  const rowsBefore = await keys();
+  const orderBefore = await page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+  await press('Backspace');
+  const rowsGone = await keys();
+  const left = await page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+  await press('Meta+z');
+  const rowsBack = await keys();
+  const orderBack = await page.evaluate(() => window.__scene.shapes.map((s) => s.name));
+  t.ok(
+    '⌫ on a group in the tree deletes it with everything inside it, and ⌘Z restores the same rows',
+    JSON.stringify(rowsGone) === JSON.stringify(['diagram', 'diagram:pen']) &&
+      JSON.stringify(left) === JSON.stringify(['pen']) &&
+      JSON.stringify(rowsBack) === JSON.stringify(rowsBefore) &&
+      JSON.stringify(orderBack) === JSON.stringify(orderBefore),
+    `${JSON.stringify(rowsGone)} / ${JSON.stringify(left)} -> ${JSON.stringify(rowsBack)}`,
+  );
+}
+
+/* ------------------------------------------------------------------- folded wires ---- */
+/*
+  Wires side by side in one parent's list share a row. It is a container, like the diagram's root
+  row: a click opens it, the keyboard focuses it, and neither selects the wires inside.
+*/
+{
+  await seed([
+    block('a', 64, 64),
+    block('b', 384, 64),
+    block('c', 64, 320),
+    wire('ab', ['a', 'e'], ['b', 'w']),
+    wire('ba', ['b', 's'], ['a', 's']),
+    block('d', 384, 320),
+    wire('cd', ['c', 'e'], ['d', 'w']),
+  ]);
+  await setCamera(0, 0, 1);
+  await page.evaluate(() => {
+    window.__session.objectTreeOpen = new Set(['diagram']);
+  });
+  await page.waitForTimeout(150);
+  const FOLD = 'diagram/wires:ab';
+
+  const want = await page.evaluate(() => {
+    const { outlineOf, outlineRows } = window.__outline;
+    const s = window.__session;
+    const roots = s.diagrams.map((d) => ({
+      id: d.id,
+      title: d.title,
+      nodes: outlineOf(d.scene.shapes),
+    }));
+    return outlineRows(roots, s.objectTreeOpen).map((r) => r.key);
+  });
+  t.ok(
+    'the two wires side by side share a row, and the one between two blocks keeps its own',
+    JSON.stringify(await keys()) === JSON.stringify(want) &&
+      JSON.stringify(want) ===
+        JSON.stringify([
+          'diagram',
+          'diagram:cd',
+          'diagram:d',
+          FOLD,
+          'diagram:c',
+          'diagram:b',
+          'diagram:a',
+        ]),
+    JSON.stringify(await keys()),
+  );
+
+  const face = await page.evaluate(
+    ([pane, key]) => {
+      const glyph = (svg) =>
+        svg === null
+          ? null
+          : [...svg.classList]
+              .filter((c) => c.startsWith('lucide-') && c !== 'lucide-icon')
+              .sort()
+              .join(' ');
+      const el = document.querySelector(`${pane} [data-key="${key}"]`);
+      const one = document.querySelector(`${pane} [data-name="cd"]`);
+      return {
+        tool: glyph(document.querySelector('button[aria-label="Connection"] svg')),
+        glyph: glyph(el?.querySelector('.tree-icon svg') ?? null),
+        wire: glyph(one?.querySelector('.tree-icon svg') ?? null),
+        label: el?.querySelector('.tree-label')?.textContent ?? null,
+        count: el?.querySelector('.tree-kind')?.textContent ?? null,
+        expanded: el?.getAttribute('aria-expanded') ?? null,
+        selectable: el?.hasAttribute('aria-selected') ?? null,
+      };
+    },
+    [PANE, FOLD],
+  );
+  t.ok(
+    'the folded row shows the wire glyph, "wires" and how many, and is closed and not selectable',
+    face.tool !== null &&
+      face.glyph === face.tool &&
+      face.wire === face.tool &&
+      face.label === 'wires' &&
+      face.count === '2' &&
+      face.expanded === 'false' &&
+      face.selectable === false,
+    JSON.stringify(face),
+  );
+
+  await keyed(FOLD).click();
+  await page.waitForTimeout(150);
+  const opened = await rendered();
+  const at = opened.findIndex((r) => r.key === FOLD);
+  const inside = opened.slice(at + 1, at + 3).map((r) => [r.key, r.level]);
+  const picked = await selection();
+  await keyed(FOLD).click();
+  await page.waitForTimeout(150);
+  t.ok(
+    'a click opens it onto its wires, topmost first, selecting nothing, and a second closes it',
+    opened[at]?.expanded === 'true' &&
+      JSON.stringify(inside) ===
+        JSON.stringify([
+          ['diagram:ba', 3],
+          ['diagram:ab', 3],
+        ]) &&
+      picked.length === 0 &&
+      (await rendered()).find((r) => r.key === FOLD)?.expanded === 'false',
+    JSON.stringify({ inside, picked }),
+  );
+
+  await page.evaluate(() => window.__scene.selectOnly('ab'));
+  await page.waitForTimeout(250);
+  const followed = await rendered();
+  t.ok(
+    'selecting a folded wire on the canvas opens its row, with the wire row selected',
+    followed.find((r) => r.key === FOLD)?.expanded === 'true' &&
+      followed.find((r) => r.key === 'diagram:ab')?.selected === 'true',
+    JSON.stringify(followed),
+  );
+
+  await rowFor('d').click();
+  await page.waitForTimeout(150);
+  await press('ArrowDown');
+  const onFold = [await selection(), await focused()];
+  await press('ArrowLeft');
+  const shut = (await rendered()).find((r) => r.key === FOLD)?.expanded;
+  await press('ArrowRight');
+  await press('ArrowRight');
+  const stepped = [await selection(), await focused()];
+  t.ok(
+    '↓ onto a folded row focuses it and keeps the selection; ← closes it, → opens it and steps in',
+    JSON.stringify(onFold) === JSON.stringify([['d'], FOLD]) &&
+      shut === 'false' &&
+      JSON.stringify(stepped) === JSON.stringify([['ba'], 'diagram:ba']),
+    JSON.stringify({ onFold, shut, stepped }),
+  );
+  await page.evaluate(() => window.__scene.setSelection(new Set()));
+  await page.waitForTimeout(150);
 }
 
 /* ------------------------------------------------------------------------ remount ---- */

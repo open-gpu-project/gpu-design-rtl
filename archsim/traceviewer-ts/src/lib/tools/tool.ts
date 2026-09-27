@@ -66,7 +66,7 @@ export interface Tool {
   /** Return true when the key was consumed, so the host skips its global bindings. */
   onKeyDown?(e: KeyboardEvent, c: ToolContext): boolean;
 
-  /** Drawn after all shapes, before the draft ghost. `dc.ctx` is in world space. */
+  /** Drawn after all shapes and the draft ghost. `dc.ctx` is in world space. */
   drawOverlay?(dc: DrawContext, c: ToolContext): void;
 
   /** True while a gesture is mid-flight. Undo and redo are refused during one. */

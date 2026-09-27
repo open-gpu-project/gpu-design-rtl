@@ -340,6 +340,18 @@ t.ok(
   `${JSON.stringify(kept)} -> ${JSON.stringify(await selection())}`,
 );
 
+// Wholly inside, not overlapping: the same band stopped short of the second block's far edge.
+{
+  const [x0, y0, x1, y1] = await bandOver([0, 1]);
+  await marqueeSelect(page, x0, y0, x1 - 24, y1);
+  const short = await selection();
+  t.ok(
+    'a band that crosses a block without covering it leaves that block out',
+    short.length === 1,
+    JSON.stringify(short),
+  );
+}
+
 /* ------------------------------------------------------------ K: clicks, and what adds ---- */
 /*
   Iteration 7 moved "add to the selection" from Shift to ⌘, because holding Shift now switches
@@ -463,9 +475,10 @@ t.ok(
 
 /* ------------------------------------------------------------- W: the band and the wire ---- */
 /*
-  The `intersects` seam. A connection's bounds is the box around its whole route, so for an
-  L-shaped wire that box covers a large region the wire does not occupy. A band dropped in the
-  empty corner must not select it; a band across the run must.
+  A band takes what lies wholly inside it, and a wire's bounds come from its drawn route -- so
+  it takes a wire only when it covers all of the wire's ink. A band across one run of an L, or
+  dropped in the empty corner of its bounding box, takes nothing; one around the whole route
+  takes it.
 */
 await page.evaluate(() => {
   window.__scene.commit('reset', () => {
@@ -517,7 +530,28 @@ const runHit = await page.evaluate(() => {
   const band = { x: mid.x - 4, y: mid.y - 4, w: 8, h: 8 };
   return window.__bounds.shapesInRect(window.__scene.shapes, band).some((s) => s.kind === 'conn');
 });
-t.ok('a band across an actual run does select the wire', runHit === true, String(runHit));
+t.ok('a band across one run of the wire does not select it', runHit === false, String(runHit));
+
+const wholeHit = await page.evaluate(() => {
+  const conn = window.__scene.shapes.find((s) => s.kind === 'conn');
+  const xs = conn.points.map((p) => p.x);
+  const ys = conn.points.map((p) => p.y);
+  const band = {
+    x: Math.min(...xs) - 4,
+    y: Math.min(...ys) - 4,
+    w: Math.max(...xs) - Math.min(...xs) + 8,
+    h: Math.max(...ys) - Math.min(...ys) + 8,
+  };
+  return window.__bounds
+    .shapesInRect(window.__scene.shapes, band)
+    .filter((s) => s.kind === 'conn')
+    .map((s) => s.name);
+});
+t.ok(
+  'a band around the whole route selects the wire',
+  wholeHit.length === 1,
+  JSON.stringify(wholeHit),
+);
 
 /* ------------------------------------------------------------------------ G: group move ---- */
 /*

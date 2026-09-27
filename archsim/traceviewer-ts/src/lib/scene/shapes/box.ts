@@ -5,7 +5,7 @@ import type { Anchor, Modifiers, Rect, Side, Vec2 } from '../../geom/types';
 import { snap } from '../../grid';
 import type { DrawContext, Handle, HandleId, HitContext, RenderFlags } from '../shape';
 import type { Headed } from '../shape';
-import { drawHeading, type DeviceBox } from './heading';
+import { drawHeading, strokeColor, strokeRole, type DeviceBox } from './heading';
 
 /**
  * Everything an axis-aligned box kind shares: its handles, its resize arithmetic, its perimeter
@@ -184,17 +184,37 @@ export function boxHandles(r: Rect, axes: 'both' | 'x' | 'y' = 'both'): readonly
   ];
 }
 
+/** One axis of a box handle: -1 moves the low edge, 1 the high edge, 0 neither. */
+export type EdgeMove = -1 | 0 | 1;
+
+const BOX_HANDLE = /^([ns]?)([ew]?)$/;
+
+/**
+ * Which edge a box handle moves on each axis, or null for an id that is not one of the eight.
+ *
+ * The one reading of the handle grammar: `resizeBox` moves edges by it, and alignment snapping
+ * asks it which of a box's edges follow the pointer.
+ */
+export function resizeAxes(handle: HandleId): { x: EdgeMove; y: EdgeMove } | null {
+  const m = BOX_HANDLE.exec(String(handle));
+  if (m === null || m[0] === '') return null;
+  return {
+    x: m[2] === 'w' ? -1 : m[2] === 'e' ? 1 : 0,
+    y: m[1] === 'n' ? -1 : m[1] === 's' ? 1 : 0,
+  };
+}
+
 /**
  * Only the dragged edges move; the opposite ones stay pinned. Flipping past the far edge is
  * allowed and produces negative w/h, which the kind's `normalize` folds back on commit --
  * clamping here instead would make the box stick to the cursor.
  */
 export function resizeBox(r: Rect, handle: HandleId, p: Vec2, mods: Modifiers): Rect {
-  const h = String(handle);
-  const movesN = h.includes('n');
-  const movesS = h.includes('s');
-  const movesW = h.includes('w');
-  const movesE = h.includes('e');
+  const axes = resizeAxes(handle) ?? { x: 0, y: 0 };
+  const movesN = axes.y === -1;
+  const movesS = axes.y === 1;
+  const movesW = axes.x === -1;
+  const movesE = axes.x === 1;
 
   const ox1 = r.x;
   const oy1 = r.y;
@@ -247,8 +267,13 @@ export function drawBoxBody(
   plate = false,
 ): void {
   const { ctx, theme } = dc;
+  const role = strokeRole(flags);
 
-  ctx.fillStyle = flags.ghost ? theme.ghostFill : theme.shapeFill;
+  ctx.fillStyle = flags.ghost
+    ? theme.ghostFill
+    : role === 'ancestor'
+      ? theme.shapeFillAncestor
+      : theme.shapeFill;
   ctx.fillRect(body.x, body.y, body.w, body.h);
 
   const restore = dc.toDeviceSpace();
@@ -266,16 +291,12 @@ export function drawBoxBody(
   };
 
   ctx.lineWidth = wDev;
-  ctx.strokeStyle = flags.ghost
-    ? theme.ghostStroke
-    : flags.selected
-      ? theme.shapeStrokeSelected
-      : theme.shapeStroke;
+  ctx.strokeStyle = flags.ghost ? theme.ghostStroke : strokeColor(theme, role);
   if (flags.ghost) ctx.setLineDash([4 * dc.dpr, 4 * dc.dpr]);
   ctx.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
   ctx.setLineDash([]);
 
   inner?.(d);
-  if (!flags.ghost) drawHeading(s, body, dc, d, flags.selected, plate);
+  if (!flags.ghost) drawHeading(s, body, dc, d, role, plate);
   restore();
 }

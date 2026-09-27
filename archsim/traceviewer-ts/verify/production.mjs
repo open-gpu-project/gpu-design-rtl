@@ -83,12 +83,13 @@ const keys = await page.evaluate(() =>
 t.ok(
   'property panel populated, in canonical order: kind, then editable, then generated',
   keys.join() ===
-    '/kind,/description,/interfaces,/label,/labelMode,/name,/position,/size,/subtitle,/zIndex',
+    '/kind,/description,/interfaces,/label,/labelMode,/name,/position,/size,/subtitle,/parent,/zIndex',
   JSON.stringify(keys),
 );
 t.ok(
   'read-only rows are marked',
   (await page.locator('[data-path="%2FzIndex"].archsim-readonly').count()) === 1 &&
+    (await page.locator('[data-path="%2Fparent"].archsim-readonly').count()) === 1 &&
     (await page.locator('[data-path="%2Fkind"].archsim-readonly').count()) === 1,
 );
 

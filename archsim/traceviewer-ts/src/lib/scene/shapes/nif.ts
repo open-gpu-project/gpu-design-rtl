@@ -1,3 +1,4 @@
+import EthernetPort from '@lucide/svelte/icons/ethernet-port';
 import { alignStroke } from '../../canvas/pixel';
 import { fitText } from '../../canvas/text';
 import {
@@ -6,7 +7,7 @@ import {
   NIF_LABEL_MIN_PX,
   NIF_LABEL_PAD_PX,
 } from '../../canvas/theme';
-import { dist2, expandRect, pointInRect, rectsIntersect } from '../../geom/math';
+import { dist2, expandRect, pointInRect } from '../../geom/math';
 import type { Anchor, Rect, Side } from '../../geom/types';
 import { opsFor, registerShape } from '../registry';
 import type { NifShape, Shape, ShapeName, ShapeOps } from '../shape';
@@ -61,6 +62,7 @@ export function makeNif(name: ShapeName, parent: ShapeName, side: Side, offset: 
 
 export const nifOps: ShapeOps<NifShape> = {
   kind: 'nif',
+  icon: EthernetPort,
   props: nifProps,
 
   blank(name) {
@@ -68,8 +70,6 @@ export const nifOps: ShapeOps<NifShape> = {
   },
 
   bounds: box,
-
-  intersects: (s, r) => rectsIntersect(box(s), r),
 
   hitTest: (s, p) => pointInRect(p, box(s)),
 

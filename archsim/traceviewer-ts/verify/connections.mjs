@@ -596,21 +596,21 @@ t.ok(
 );
 
 /*
-  The gate itself, straight from the module. A second module instance under HMR is harmless
-  here in a way it is not for the registry: these are pure functions over a schema built at
-  import time, and the read-only pass rejects before any writer -- so `opsFor`, the one thing
-  in this file that would need the app's own registry, is never reached.
+  The gate itself: `applyDocument` from its module, over the schema the LIVE registry holds.
+
+  `project.ts` is pure and safe to import by URL. The schema is not: projecting a document reads
+  every property, and `parent` reads the hierarchy, which reaches `opsFor`. Imported by URL,
+  `conn.props.ts` would bring a second, empty copy of the registry the moment HMR had
+  invalidated the app's own -- see `__ops`.
 */
 const gate = await page.evaluate(async (name) => {
-  const [proj, schema] = await Promise.all([
-    import('/src/lib/props/project.ts'),
-    import('/src/lib/scene/shapes/conn.props.ts'),
-  ]);
+  const proj = await import('/src/lib/props/project.ts');
+  const connProps = window.__ops('conn').props;
   const shapes = window.__scene.shapes;
   const index = shapes.findIndex((s) => s.name === name);
   const ctx = { shapes, index };
   const s = shapes[index];
-  const doc = proj.projectShape(schema.connProps, s, ctx);
+  const doc = proj.projectShape(connProps, s, ctx);
   const edits = {
     points: [
       [0, 0],
@@ -621,10 +621,10 @@ const gate = await page.evaluate(async (name) => {
   };
   const refused = {};
   for (const key of Object.keys(edits)) {
-    const r = proj.applyDocument(schema.connProps, s, { ...doc, [key]: edits[key] }, ctx);
+    const r = proj.applyDocument(connProps, s, { ...doc, [key]: edits[key] }, ctx);
     refused[key] = r.ok ? null : r.error;
   }
-  const clean = proj.applyDocument(schema.connProps, s, { ...doc, label: 'x' }, ctx);
+  const clean = proj.applyDocument(connProps, s, { ...doc, label: 'x' }, ctx);
   return { refused, clean: clean.ok ? clean.changed.join() : `refused: ${clean.error}` };
 }, connName);
 

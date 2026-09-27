@@ -12,11 +12,12 @@ let h = await health(page);
 t.ok('baseline canvas healthy', sized(h) && h.painted && h.shapes === 1, JSON.stringify(h));
 const baseW = h.want[0];
 
+// The first splitter is the one between the object tree and the canvas, on the canvas's left.
 const sep = page.locator('.sv-dock__splitter').first();
 const sb = await sep.boundingBox();
 await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2);
 await page.mouse.down();
-await page.mouse.move(sb.x - 200, sb.y + sb.height / 2, { steps: 10 });
+await page.mouse.move(sb.x + 200, sb.y + sb.height / 2, { steps: 10 });
 await page.mouse.up();
 await page.waitForTimeout(500);
 h = await health(page);
@@ -99,7 +100,11 @@ await page.evaluate(() => {
   window.__view.camX = 77;
   window.__view.camY = 88;
 });
-await page.locator('[aria-label="Maximize panel"]:visible').first().click();
+// The canvas's own button: the first one on the page belongs to the object tree, left of it.
+const maximize = page
+  .locator('.sv-dock__leaf', { has: page.locator('[data-panel-id="diagram"]') })
+  .locator('[aria-label="Maximize panel"]:visible');
+await maximize.click();
 await page.waitForTimeout(600);
 h = await health(page);
 t.ok(
@@ -107,12 +112,12 @@ t.ok(
   sized(h) && h.painted && h.shapes === 1,
 );
 t.ok('camera survives a pane re-mount', h.cam[0] === 77 && h.cam[1] === 88, JSON.stringify(h.cam));
-await page.locator('[aria-label="Maximize panel"]:visible').first().click();
+await maximize.click();
 await page.waitForTimeout(600);
 h = await health(page);
 t.ok('restore from maximize is healthy', sized(h) && h.painted && h.shapes === 1);
 
-const saved = await page.evaluate(() => localStorage.getItem('archsim.traceviewer.dock.v3'));
+const saved = await page.evaluate(() => localStorage.getItem('archsim.traceviewer.dock.v4'));
 t.ok('the layout is persisted', typeof saved === 'string' && saved.length > 20);
 
 await page.reload({ waitUntil: 'networkidle' });
@@ -131,7 +136,7 @@ t.ok('canvas healthy after reload', sized(await health(page)));
 
 await page.evaluate(() =>
   localStorage.setItem(
-    'archsim.traceviewer.dock.v3',
+    'archsim.traceviewer.dock.v4',
     JSON.stringify({
       main: { type: 'tabs', id: 'x1', panes: [{ id: 'ghost-panel', title: 'Ghost' }], active: 0 },
       floating: [],
@@ -146,7 +151,7 @@ t.ok(
   (await panes()).includes('diagram'),
 );
 
-await page.evaluate(() => localStorage.setItem('archsim.traceviewer.dock.v3', '{not json'));
+await page.evaluate(() => localStorage.setItem('archsim.traceviewer.dock.v4', '{not json'));
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 t.ok('a corrupt saved layout falls back to the default', (await panes()).includes('diagram'));

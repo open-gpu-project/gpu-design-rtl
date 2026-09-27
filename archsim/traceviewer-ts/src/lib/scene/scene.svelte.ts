@@ -1,13 +1,23 @@
-import type { Rect } from '../geom/types';
+import type { Rect, Vec2 } from '../geom/types';
 import { unionBounds } from './bounds';
 import { expandChildren } from './expand';
+import { seatByHierarchy } from './hierarchy';
 import { History } from './history.svelte';
 import { nextIndexedName } from './names';
 import { opsFor } from './registry';
-import { resolveDependencies } from './resolve';
+import { movesWith, resolveDependencies } from './resolve';
 import type { Shape, ShapeName } from './shape';
 
 const EMPTY_SELECTION: ReadonlySet<ShapeName> = new Set();
+
+/** The translation from `prev` to `next`, when the edit moved the shape and did not resize it. */
+function rigidMove(prev: Shape, next: Shape): Vec2 | null {
+  const a = opsFor(prev).bounds(prev);
+  const b = opsFor(next).bounds(next);
+  if (a.w !== b.w || a.h !== b.h) return null;
+  const d = { x: b.x - a.x, y: b.y - a.y };
+  return d.x === 0 && d.y === 0 ? null : d;
+}
 
 /**
  * The document.
@@ -17,7 +27,10 @@ const EMPTY_SELECTION: ReadonlySet<ShapeName> = new Set();
  * and an identity trap, since a proxied shape and the raw one it wraps are not `===`.
  */
 export class SceneStore {
-  /** The z-order. Index 0 is the bottom of the stack; a layers panel will show this directly. */
+  /**
+   * The z-order. Index 0 is the bottom of the stack. Every commit seats it by the hierarchy, so
+   * a child is always above its parent; the object tree reads it topmost first.
+   */
   shapes = $state.raw<readonly Shape[]>([]);
   selection = $state.raw<ReadonlySet<ShapeName>>(EMPTY_SELECTION);
   /** An uncommitted preview (the rect being drawn). Never part of `shapes`. */
@@ -110,17 +123,27 @@ export class SceneStore {
    * Rename is a structural change here, not a field assignment, because identity is the name:
    * the selection has to follow, and every other shape gets a chance to rewrite references via
    * `renameRef`. Doing that inside the single `commit` keeps it to one history entry.
+   *
+   * An edit that moves the shape without resizing it -- a `position` typed into the panel -- is
+   * a move like a drag is, and carries the same things with it: whatever `movesWith` says a drag
+   * of this shape alone would translate. That is its children, and the wires inside the group,
+   * which travel rigidly rather than having their ends patched. The set is worked out against
+   * the document as it was, under the old name, and translated before any `renameRef`, so a
+   * rename made in the same edit is handled like any other.
    */
   replaceShape(prev: Shape, next: Shape, label: string): void {
     const index = this.shapes.indexOf(prev);
     if (index < 0) return;
     const renamedFrom = prev.name !== next.name ? prev.name : null;
+    const d = rigidMove(prev, next);
+    const carried = d === null ? EMPTY_SELECTION : movesWith(this.shapes, new Set([prev.name]));
 
     this.commit(label, () => {
       this.shapes = this.shapes.map((s, i) => {
         if (i === index) return next;
-        if (renamedFrom === null) return s;
-        return opsFor(s).renameRef?.(s, renamedFrom, next.name) ?? s;
+        const t = d !== null && carried.has(s.name) ? opsFor(s).translate(s, d) : s;
+        if (renamedFrom === null) return t;
+        return opsFor(t).renameRef?.(t, renamedFrom, next.name) ?? t;
       });
       if (renamedFrom !== null && this.selection.has(renamedFrom)) {
         const sel = new Set(this.selection);
@@ -150,6 +173,9 @@ export class SceneStore {
     // `rerouteAll` rather than flashing at the origin for a frame. Deliberately NOT inside
     // `resolveDependencies` -- see `expandChildren` for why that has to stay pure.
     this.#expandChildren();
+    // After the children exist and before anything reroutes: the sweep's single pass relies on
+    // every child already sitting above what it depends on.
+    this.#seatByHierarchy();
     this.#resolveDependencies();
 
     if (this.shapes !== before) {
@@ -199,6 +225,17 @@ export class SceneStore {
    */
   #expandChildren(): void {
     const next = expandChildren(this.shapes);
+    if (next !== this.shapes) this.shapes = next;
+  }
+
+  /**
+   * Put every child above its parent: interfaces straight after their owner, then the subtrees
+   * of what the parent groups. `seatByHierarchy` is the identity on anything already seated.
+   *
+   * The same load-bearing identity guard.
+   */
+  #seatByHierarchy(): void {
+    const next = seatByHierarchy(this.shapes);
     if (next !== this.shapes) this.shapes = next;
   }
 

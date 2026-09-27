@@ -7,6 +7,7 @@ import {
   labelModeProp,
   labelProp,
   nameProp,
+  parentProp,
   positionProp,
   subtitleProp,
   zIndexProp,
@@ -138,6 +139,7 @@ const props: readonly PropDef<FifoShape>[] = [
   subtitleProp('queue'),
   labelModeProp('queue'),
   descriptionProp('what this queue carries and what fills or drains it'),
+  parentProp('queue'),
   zIndexProp(),
 ];
 

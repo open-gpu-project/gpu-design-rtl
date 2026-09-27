@@ -30,6 +30,11 @@ interface Band {
  *
  * Also what holding Shift switches to from any other tool, which is why a click here has to
  * mean something too: it selects what is under it, the way a click in the pointer tool does.
+ *
+ * A band takes what lies wholly inside it (`shapesInRect`), which makes it the way to select
+ * inside a group: a press there in the pointer tool lands on the block around the group and
+ * drags the whole of it, while a band swept there takes the children and not the block it
+ * crosses.
  */
 export class MarqueeTool implements Tool {
   readonly defaultCursor = 'crosshair';

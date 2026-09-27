@@ -12,10 +12,13 @@ has the full story.
   `deviceScaleFactor: 2`.** Three of iteration 1's nine bugs were invisible at dpr 1 and the primary
   machine is a Retina Mac, and the one that threw on first load had compiled and type-checked.
   Compiling is not running. (iteration 1)
-- **Restart `npm run dev` before a verify run, and never run one while anything under `src/` is
-  being written.** An HMR full reload mid-suite wipes the scene the suite built, and the failure
-  looks like a product bug; after any hot update a module imported by URL can also load as a second
-  copy (next item). (iteration 4)
+- **Restart `npm run dev` before a verify run, and never run one while anything in the project is
+  being written -- the docs included.** An HMR full reload mid-suite wipes the scene the suite
+  built, and the failure looks like a product bug; after any hot update a module imported by URL
+  can also load as a second copy (next item). Tailwind's scanner reads every file in the project,
+  so editing a markdown file under `history/` reloads the page too: in 7.2 that emptied the scene
+  under `input.mjs` twice, once as a crash and once as three unrelated failures. (iteration 4,
+  iteration 7)
 - **Never import `scene/registry.ts` by URL inside `page.evaluate` — use `window.__ops` and
   `window.__doc`.** After an HMR update the app's copy sits behind a versioned `?t=` URL, so a bare
   specifier mints a second, empty registry and every `opsFor` throws; it passes on a cold server and
@@ -93,6 +96,9 @@ has the full story.
 - **A check's cleanup must undo only what the check did.** An unconditional `undo()` after a
   gesture that committed nothing undoes the seed instead, and every later step then fails for that
   reason. Undo when the label says the gesture committed. (iteration 7)
+- **In a gesture check, press on a grid point.** A move's delta is measured from the snapped press,
+  so a press half-way between two grid points -- the centre of an 80-wide block -- leaves the start
+  cell to sub-pixel rounding of the pointer, and the landing to that. (iteration 7)
 - **If a Vitest suite is ever added, never run rune code under `environment: 'node'`.**
   `vite-plugin-svelte` then compiles in server mode, where `$state` is a plain field and `$derived`
   a one-shot memo: the suite passes while testing nothing. Use `happy-dom` with
@@ -162,10 +168,12 @@ has the full story.
   identity makes the editor re-validate continuously. The cache is keyed on `kind`, so a hot-swapped
   schema would keep the old validator — moot today only because the props files force a full reload.
   (iteration 2, iteration 6)
-- **An effect that follows the canvas selection defers while gesturing and acts only on a new Set.**
-  It tracks `scene.selection` and `host.gestureVersion` and nothing else, bails while
-  `isGesturing()` (the marquee writes the selection on every move), and remembers the last Set in a
-  plain `let`. Collapsing or panning then never re-opens what the user closed. (iteration 7)
+- **An effect that follows the canvas selection defers while gesturing and acts only on a new Set,
+  or on a seen one whose object now has different ancestors.** It tracks `scene.selection` and
+  `host.gestureVersion` and nothing else, bails while `isGesturing()` (the marquee writes the
+  selection on every move), and remembers the last Set and ancestor chain in a plain `let`.
+  Collapsing or panning then never re-opens what the user closed, and dragging a selected block
+  into a closed group still opens it: that drag keeps the same Set. (iteration 7)
 - **The session is owned by the app, not by a panel.** The dock re-mounts a pane's content when it
   is maximised, floated or popped out, so the document, the trace and the cameras live in
   `EditorSession`. (iteration 2)
@@ -240,6 +248,9 @@ has the full story.
   can rely on the font it leaves behind. Adding a web font means clearing on `document.fonts.ready`.
   (iteration 6)
 - **A ghost draws its body but not its text.** `inner` runs; the heading does not. (iteration 6)
+- **The tool overlay is drawn after the draft ghost.** The create tool's alignment guide runs down
+  the ghost's own aligned edge, and drawn first it was dashed over by the ghost's outline.
+  (iteration 7)
 - **A theme fill drawn over a shape rather than the background must be opaque.** `theme.shapeFill`
   is translucent, so an opaque plate the colour of a box body is two fills: `background`, then
   `shapeFill`. One fill composites and looks almost right, and fails exactly where something is
@@ -288,6 +299,26 @@ has the full story.
   body rectangle as a parameter rather than reading `x/y/w/h`, because a FIFO's drawn box is derived
   and its stored `w` is not the answer. (iteration 6)
 - **`shapes` array order is the z-order**, index 0 at the bottom. (iteration 1)
+- **The hierarchy is derived, never stored.** `hierarchyOf(shapes)` works every parent out from
+  where things are; nothing on a shape records one, so undo, load and paste need nothing. Adding a
+  field that caches a parent would give the document two answers. (iteration 7)
+- **No half-built or later-mutated array may reach `hierarchyOf`.** It is memoised on array
+  identity. `deserializeScene` fills its array in place while hydrating, so no property's `write`
+  may call it; a finished array, including the one `deserializeScene` returns, is fine.
+  (iteration 7)
+- **A shape's role in the hierarchy is read off `childOf` and `dependsOn`; `adopts` is the only
+  seam autogrouping added.** Owned if its kind has `childOf`, a link if it has dependencies and
+  no `childOf`, placed by its bounds otherwise. A kind with `childOf` is never a link, even with
+  no valid owner, and a wire between one shape's own interfaces is that shape's, adopting or not.
+  A new kind decides only whether it adopts. (iteration 7)
+- **Ownership is one level deep.** `hierarchyOf` ignores an owner that is itself owned, the rule
+  `expandChildren` already enforces by never emitting a child's child. It is what makes the
+  hierarchy a forest over any input, a malformed one included. (iteration 7)
+- **Every commit seats the array by the hierarchy, and a restack emits through the same pass.**
+  `seatByHierarchy` puts each child above its parent, with interfaces straight after their owner.
+  A reorder that ignores it is put back by the next commit, after recording an undo entry for a
+  move that did not happen; `restackTree` applies a transform per sibling list for that reason.
+  (iteration 7)
 - **Put a new property anywhere in its array; `propSchema` sorts it.** The canonical order is
   `kind`, then editable keys, then the rest, each alphabetical. (iteration 4)
 - **A property's `doc` string is user-facing panel text, and a default it does not state is one a
@@ -372,6 +403,20 @@ has the full story.
   `#noteGestureEnd` catches them by comparing `isGesturing()` either side of `onKeyDown` and
   `setTool`. A new ending path outside those two needs the same, or whatever deferred on
   `isGesturing()` waits for the next drag. (iteration 7)
+- **Alignment may choose only a position the grid-only gesture could produce.** A grid multiple for
+  a move's delta, a grid point for a resize's or a create's pointer. It picks among those
+  (`magnet`), never solves for an exact one, so it cannot make a fractional position or leave the
+  grid. (iteration 7)
+- **A move's raw coordinate is `p.world - drag.start`, where `start` is the snapped press.**
+  Rounding it is then exactly the grid-only `p.snapped - start`. Measured from the raw press, an
+  aligned landing would sit on the press's grid and every other one on the world's. (iteration 7)
+- **A snap distance of half a grid step or less, in world units, never moves a landing.** Every
+  grid point but the nearest is at least that far from the pointer. `ALIGN_SNAP_PX` is 10 so that
+  it pulls below z = 1.25, 100 % included. (iteration 7)
+- **Alignment guides are read off the real geometry at the answer, never off the candidate.** A
+  kind may put its edge somewhere other than the pointer -- a FIFO rounding its cells, an unbounded
+  one at its minimum length, a ⇧ corner squaring -- so every candidate is checked through the
+  gesture's own `geometryAt`, and the guides come from the bounds it settles on. (iteration 7)
 - **Whether a press adds to the selection is `addsToSelection(mods)`, never `mods.shift`.** Shift
   holds the Select tool, so by the time a tool sees a ⇧-press it is already a Select-tool press.
   (iteration 7)
@@ -402,6 +447,13 @@ has the full story.
 - **Never `scrollIntoView`, or `focus()` without `{ preventScroll: true }`, inside a pane.** Both
   scroll the dock's `overflow: hidden` wrappers, which have no scrollbar to scroll back with. Scroll
   the pane's own box by setting its `scrollTop`. (iteration 7)
+- **A check that means one pane looks inside that pane's leaf; it never takes the page's first or
+  last splitter, Maximize or Float.** Which pane owns the first of each changes whenever the default
+  layout does: moving the tree left of the canvas made both of the canvas checks' "first" the
+  tree's. (iteration 7)
+- **A diagram's panel id contains neither `:` nor `/`.** Object tree rows are keyed `${id}`,
+  `${id}:${name}` and `${id}/wires:${name}`, and a name may contain anything, so the id's alphabet
+  is all that keeps them apart. (iteration 7)
 - **`panelFor` returns `undefined` rather than throwing**, so a saved layout naming a deleted panel
   falls back instead of bricking the app. (iteration 2)
 - **Override dock styles as `#app .sv-dock__content`.** The library's rule is scoped (specificity
@@ -418,6 +470,8 @@ has the full story.
   is above the canvas" is false here, and a three-line probe says so. (iteration 5)
 - **Chrome tooltips come from the `tip()` attachment, never a `title` attribute.** The checks assert
   that no control in either pane carries a native one. (iteration 5)
+- **A kind's icon is declared once, as `ShapeOps.icon`.** The object tree shows it and the tool that
+  draws the kind reads it from the kind's ops, so the two cannot disagree. (iteration 7)
 - **Toolbar icons are Lucide components, deep-imported per icon; never hand-written path data, and
   never change an `aria-label`.** Every button's `aria-label` is the checks' selector, so changing
   one is changing a test fixture. (iteration 6)

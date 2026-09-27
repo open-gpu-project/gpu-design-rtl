@@ -1,4 +1,3 @@
-import Spline from '@lucide/svelte/icons/spline';
 import { anchorHitTest, type AnchorHit } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
 import { ANCHOR_DOT_R_PX } from '../canvas/theme';
@@ -28,7 +27,7 @@ const HINT_SELF = 'A connection needs two different blocks.';
  * First, the preview does NOT go through `scene.setDraft`. `draft` is `$state.raw` and the
  * canvas repaint effect reads it, so assigning it per pointermove is a reactive write at input
  * frequency -- exactly the cost iteration 3 measured and removed for `host.pointer`. Painting
- * from `drawOverlay` instead is visually identical (the overlay runs immediately before the
+ * from `drawOverlay` instead is visually identical (the overlay runs immediately after the
  * draft would) and touches no signal. It also cannot desync: `commit` nulls `draft` on its way
  * past, which would erase a ghost this tool still believed it owned.
  *
@@ -169,7 +168,7 @@ export class ConnectTool implements Tool {
 
   drawOverlay(dc: DrawContext): void {
     const ghost = this.#ghost;
-    if (ghost !== null) connOps.draw(ghost, dc, { selected: false, ghost: true });
+    if (ghost !== null) connOps.draw(ghost, dc, { selected: false, ghost: true, ancestor: false });
 
     const hover = this.#hover;
     if (hover === null) return;
@@ -295,6 +294,6 @@ registerTool({
   label: 'Connection',
   group: 'shape',
   order: 1,
-  icon: Spline,
+  icon: connOps.icon,
   make: () => new ConnectTool(),
 });

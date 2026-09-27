@@ -33,8 +33,8 @@ export function copyFragment(
   const keep = pruneOrphans(shapes.filter((s) => ids.has(s.name)));
   if (keep.length === 0) return null;
   // In z-order, as selected: the loader is two-pass, so a wire may precede its blocks. Safe over a
-  // sub-array: the only property that reads its `PropContext` is the computed `zIndex`, and
-  // `serializeShape` skips computed keys.
+  // sub-array: the only properties that read their `PropContext` are the computed ones, `zIndex`
+  // and `parent`, and `serializeShape` skips computed keys.
   return serializeScene(keep);
 }
 

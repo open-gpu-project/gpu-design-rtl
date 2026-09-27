@@ -1,11 +1,6 @@
+import Columns3 from '@lucide/svelte/icons/columns-3';
 import { alignStroke } from '../../canvas/pixel';
-import {
-  clampNum,
-  normalizeRect,
-  pointInRect,
-  rectFromPoints,
-  rectsIntersect,
-} from '../../geom/math';
+import { clampNum, normalizeRect, pointInRect, rectFromPoints } from '../../geom/math';
 import type { Rect, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import { registerShape } from '../registry';
@@ -104,6 +99,7 @@ function drawDividers(
 
 export const fifoOps: ShapeOps<FifoShape> = {
   kind: 'fifo',
+  icon: Columns3,
   props: fifoProps,
 
   blank(name) {
@@ -132,8 +128,6 @@ export const fifoOps: ShapeOps<FifoShape> = {
   },
 
   bounds: fifoBox,
-
-  intersects: (s, r) => rectsIntersect(fifoBox(s), r),
 
   hitTest: (s, p, hc) => pointInRect(p, fifoBox(s)) || headingHit(s, fifoBox(s), p, hc),
 

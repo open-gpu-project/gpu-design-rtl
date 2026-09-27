@@ -26,15 +26,17 @@ node verify/docking.mjs
 node verify/trace.mjs
 node verify/selection.mjs
 node verify/objects.mjs
+node verify/groups.mjs
+node verify/align.mjs
 
 npm run build && npm run preview   # port 4183
 node verify/production.mjs
 ```
 
-`npm run verify` runs all twelve dev suites against an already-running dev server (the count is in
-the top-level README). `production.mjs` is not among them: it needs `vite preview` on a different
-port — which also makes it the one suite a green `npm run verify` cannot vouch for, so run it
-whenever the property panel changes.
+`npm run verify` runs all fourteen dev suites against an already-running dev server (the count is
+in the top-level README). `production.mjs` is not among them: it needs `vite preview` on a
+different port — which also makes it the one suite a green `npm run verify` cannot vouch for, so
+run it whenever the property panel changes.
 
 Restart `npm run dev` before a run. After a hot reload, a module a check imports by URL can load
 as a second copy with none of the app's state in it; the suites reach the app's own modules

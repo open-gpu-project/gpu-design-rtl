@@ -9,12 +9,13 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { tick, untrack } from 'svelte';
   import {
-    ancestorsOf,
     outlineOf,
     outlineRows,
+    pathTo,
     type OutlineRoot,
     type OutlineRow,
   } from '../lib/scene/outline';
+  import { opsForKind } from '../lib/scene/registry';
   import type { ShapeName } from '../lib/scene/shape';
   import { useSession, type DiagramEntry } from '../lib/session.svelte';
   import { addsToSelection, modifiersOf } from '../lib/tools/pointer';
@@ -76,7 +77,7 @@
     reveal(key);
   }
 
-  /** Move to a row: it takes focus, and an object row is selected. A root row only focuses. */
+  /** Move to a row: it takes focus, and an object row is selected. Any other row only focuses. */
   function moveTo(i: number): void {
     const row = rows[i];
     if (row === undefined) return;
@@ -143,10 +144,22 @@
 
     Tracks the selection and the gesture counter and nothing else. Deferred while a gesture is
     in flight, because the marquee writes the selection on every move. Acts only on a Set it has
-    not seen, so collapsing a parent -- or a pan, which ends a gesture without selecting -- never
-    re-opens what the user just closed.
+    not seen, or on a seen one whose object now has different ancestors, so collapsing a parent
+    -- or a pan, which ends a gesture without selecting -- never re-opens what the user just
+    closed. The second half is for a drag: moving an already-selected block into a collapsed
+    group keeps the same Set, and the row would otherwise vanish into the closed parent.
+
+    What opens is every row on the way down, a folded run of wires included, so a wire selected
+    on the canvas shows up in the tree however many others it is folded with.
   */
-  const seen = new Map<string, ReadonlySet<ShapeName>>();
+  interface Seen {
+    readonly sel: ReadonlySet<ShapeName>;
+    /** The keys `pathTo` gave, or empty for no single object. */
+    readonly path: readonly string[];
+  }
+  const seen = new Map<string, Seen>();
+  const samePath = (a: readonly string[], b: readonly string[]): boolean =>
+    a.length === b.length && a.every((k, i) => k === b[i]);
   $effect(() => {
     for (const d of session.diagrams) {
       void d.scene.selection;
@@ -160,12 +173,14 @@
   async function follow(d: DiagramEntry): Promise<void> {
     if (d.host.isGesturing()) return;
     const sel = d.scene.selection;
-    if (seen.get(d.id) === sel) return;
-    seen.set(d.id, sel);
-    if (sel.size !== 1) return;
-    const name = sel.values().next().value as ShapeName;
-    const keys = [d.id, ...ancestorsOf(d.scene.shapes, name).map((a) => `${d.id}:${a}`)];
-    for (const k of keys) {
+    const name = sel.size === 1 ? (sel.values().next().value as ShapeName) : null;
+    const root = roots.find((r) => r.id === d.id);
+    const path = (name === null || root === undefined ? null : pathTo(root, name)) ?? [];
+    const last = seen.get(d.id);
+    if (last !== undefined && last.sel === sel && samePath(last.path, path)) return;
+    seen.set(d.id, { sel, path });
+    if (name === null || path.length === 0) return;
+    for (const k of path) {
       if (!session.objectTreeOpen.has(k)) session.setObjectOpen(k, true);
     }
     const key = `${d.id}:${name}`;
@@ -186,7 +201,7 @@
     {#each rows as row, i (row.key)}
       <div
         class="tree-row"
-        class:tree-root={row.name === null}
+        class:tree-root={row.role === 'diagram'}
         class:tree-selected={isSelected(row)}
         role="treeitem"
         tabindex={row.key === tabKey ? 0 : -1}
@@ -208,14 +223,22 @@
             <ChevronRight class="h-3.5 w-3.5" />
           {/if}
         </span>
-        {#if row.name === null}
+        {#if row.role === 'diagram'}
           <span class="tree-title">{row.label}</span>
         {:else}
-          <span class="tree-name">{row.name}</span>
-          {#if row.label !== '' && row.label !== row.name}
-            <span class="tree-label">{row.label}</span>
+          {@const Icon = opsForKind(row.kind!).icon}
+          <span class="tree-icon"><Icon class="h-3.5 w-3.5" /></span>
+          {#if row.role === 'wires'}
+            <span class="tree-label">wires</span>
+            <span class="tree-kind">{row.count}</span>
+          {:else}
+            <!-- The label is what the canvas draws, so it leads; an empty one draws the name. -->
+            <span class="tree-label">{row.label === '' ? row.name : row.label}</span>
+            {#if row.label !== '' && row.label !== row.name}
+              <span class="tree-name">{row.name}</span>
+            {/if}
+            <span class="tree-kind">{row.kind}</span>
           {/if}
-          <span class="tree-kind">{row.kind}</span>
         {/if}
       </div>
     {/each}
@@ -291,13 +314,23 @@
     font-weight: 600;
   }
 
-  .tree-name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  .tree-icon {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--color-ink-dim);
   }
 
   .tree-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tree-name {
+    min-width: 0;
     overflow: hidden;
     color: var(--color-ink-dim);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     text-overflow: ellipsis;
   }
 

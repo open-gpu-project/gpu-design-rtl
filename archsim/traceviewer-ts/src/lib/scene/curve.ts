@@ -152,10 +152,11 @@ function cubicTangent(s: CubicSpan, t: number): Vec2 {
 /**
  * The curve as a polyline.
  *
- * **One sampling feeds `bounds`, `hitTest` and `intersects`**, which is the point. Centripetal
- * Catmull-Rom can bulge outside its control polygon, so a bounding box taken from the control
- * points under-reports: the renderer would cull the bulge and the hit test's bbox pre-filter
- * would reject clicks inside it.
+ * **One sampling feeds `bounds` and `hitTest`**, which is the point. Centripetal Catmull-Rom can
+ * bulge outside its control polygon, so a bounding box taken from the control points
+ * under-reports: the renderer would cull the bulge, the hit test's bbox pre-filter would reject
+ * clicks inside it, and the marquee, which asks for containment of `bounds`, would take a curve
+ * whose bulge the band does not cover.
  */
 export function flattenCurve(points: readonly Vec2[], steps = FLATTEN_STEPS): readonly Vec2[] {
   if (points.length < 2) return points;

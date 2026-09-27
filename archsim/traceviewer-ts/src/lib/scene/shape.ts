@@ -1,3 +1,4 @@
+import type { LucideIcon } from '@lucide/svelte';
 import type { PropSchema } from '../props/spec';
 import type { Theme } from '../canvas/theme';
 import type { Anchor, Modifiers, Rect, Side, Vec2 } from '../geom/types';
@@ -364,6 +365,11 @@ export interface RenderFlags {
   readonly selected: boolean;
   /** An uncommitted preview: draw it dashed and faint. */
   readonly ghost: boolean;
+  /**
+   * Something this shape contains is selected. A faint cue, so the group a selection sits in is
+   * visible; `selected` and `ghost` both outrank it.
+   */
+  readonly ancestor: boolean;
 }
 
 /**
@@ -372,6 +378,14 @@ export interface RenderFlags {
  */
 export interface ShapeOps<S extends ShapeBase = Shape> {
   readonly kind: S['kind'];
+
+  /**
+   * The kind's glyph: what the object tree shows beside its rows, and the toolbar on the tool
+   * that draws it. Declared here, once, so the two cannot disagree -- the tools read it from the
+   * kind rather than importing a glyph of their own. Required, so a new kind cannot arrive
+   * without one; an interface, which has no tool, still has a row.
+   */
+  readonly icon: LucideIcon;
 
   /** Geometric bounds in world units, excluding stroke width. */
   bounds(s: S): Rect;
@@ -419,16 +433,6 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
   blank(name: ShapeName): S;
 
   /* ---------------- optional seams: a kind implements only what it has ---------------- */
-
-  /**
-   * Does this shape overlap the world-space rectangle `r`? Used by the marquee.
-   *
-   * Optional, and the fallback is `rectsIntersect(bounds(s), r)`. A kind implements it when its
-   * bounding box is a poor stand-in for its ink: a connection's `bounds` is the box around its
-   * whole route, so an L-shaped wire's box covers a large region it does not occupy, and a
-   * band dropped in that empty corner would select a wire it never touched.
-   */
-  intersects?(s: S, r: Rect): boolean;
 
   /**
    * Rewrite references to a shape that was just renamed. A connection updates its endpoints.
@@ -496,6 +500,17 @@ export interface ShapeOps<S extends ShapeBase = Shape> {
    * it.
    */
   childOf?(s: S): ShapeName | null;
+
+  /**
+   * Whether this shape takes what lies inside it as its children. Omitted means it does not.
+   *
+   * The one seam autogrouping adds; every other role in `hierarchy.ts` is read off `childOf` and
+   * `dependsOn`. A block adopts. A fabric does not: a block drawn over a crossbar is not inside
+   * it in any sense the diagram means, and a FIFO is a queue rather than a container. A fabric
+   * still parents the wires between its own interfaces, which is a rule about what a wire joins
+   * and needs nothing from this seam.
+   */
+  adopts?(s: S): boolean;
 
   /**
    * The children this shape must be accompanied by, reconciled on every commit.

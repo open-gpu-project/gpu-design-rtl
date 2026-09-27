@@ -49,8 +49,8 @@ const CAM_Y = 91.13;
   through an argument about clipping, premultiplication and `globalAlpha`.
 
   The constants are imported by URL, which is safe for these two modules and would not be for
-  most: neither imports anything at runtime, so a second module instance after a hot reload is
-  indistinguishable from the first. The LoD math is copied rather than imported on purpose --
+  most: neither holds any state, and theme.ts's one runtime import is grid.ts's brightness dial,
+  so a second module instance after a hot reload is indistinguishable from the first. The LoD math is copied rather than imported on purpose --
   it is part of what is being checked.
 */
 await page.evaluate(async () => {

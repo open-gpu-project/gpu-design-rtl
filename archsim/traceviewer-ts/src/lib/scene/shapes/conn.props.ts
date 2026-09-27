@@ -8,6 +8,7 @@ import {
   kindProp,
   labelProp,
   nameProp,
+  parentProp,
   zIndexProp,
 } from '../../props/common';
 import {
@@ -260,6 +261,10 @@ const props: readonly PropDef<ConnectionShape>[] = [
   descriptionProp(
     'what this connection carries',
     'Free-text note describing what this connection carries. Not drawn on the canvas — it appears as a tooltip when you hover the wire, under the connection’s name, so it can be as long as it needs to be without crowding the diagram.',
+  ),
+  parentProp(
+    'connection',
+    'The innermost block that both ends of this connection lie inside, or empty when they share none — or, when it joins two interfaces of one block or fabric, that block or fabric. Worked out from where its ends are rather than stored, so it follows the blocks it joins. Moving that parent carries the connection with it.',
   ),
   zIndexProp(
     'Position in the drawing stack, 0 being the bottom. Computed from the order of the scene rather than stored. For a connection this also decides which other connections it may bundle onto: it can only join the route of something below it in the stack.',

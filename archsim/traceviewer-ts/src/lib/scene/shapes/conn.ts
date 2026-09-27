@@ -1,3 +1,4 @@
+import Spline from '@lucide/svelte/icons/spline';
 import { alignStroke } from '../../canvas/pixel';
 import {
   ANCHOR_DOT_R_PX,
@@ -11,7 +12,7 @@ import {
   SANS,
   STROKE_HIT_PX,
 } from '../../canvas/theme';
-import { expandRect, pointInRect, rectsIntersect, segmentIntersectsRect } from '../../geom/math';
+import { expandRect, pointInRect } from '../../geom/math';
 import type { Anchor, Vec2 } from '../../geom/types';
 import {
   autoWaypoints,
@@ -65,9 +66,9 @@ function isCurve(s: ConnectionShape): boolean {
  * The drawn polyline.
  *
  * For a curve this is a FLATTENING, not the control polygon -- centripetal Catmull-Rom bulges
- * outside its control points, so `bounds`, `hitTest` and `intersects` all taking their answer
- * from here is what stops the renderer culling the bulge and the hit test rejecting clicks
- * inside it.
+ * outside its control points, so `bounds` and `hitTest` both taking their answer from here is
+ * what stops the renderer culling the bulge, the hit test rejecting clicks inside it, and the
+ * marquee selecting a curve whose bulge pokes out of the band.
  */
 function drawnPoints(s: ConnectionShape): readonly Vec2[] {
   return isCurve(s) ? flattenCurve(s.points) : s.points;
@@ -183,6 +184,7 @@ function appendRoutePath(ctx: CanvasRenderingContext2D, dev: readonly Vec2[], rD
 
 export const connOps: ShapeOps<ConnectionShape> = {
   kind: 'conn',
+  icon: Spline,
   props: connProps,
 
   /** Unbound and degenerate. `normalize` drops it, which is what an incomplete import deserves. */
@@ -207,22 +209,6 @@ export const connOps: ShapeOps<ConnectionShape> = {
    * margin, `CULL_MARGIN_PX` of world at every zoom, which always exceeds them.
    */
   bounds: (s) => routeBounds(drawnPoints(s)),
-
-  /**
-   * Any run touching the band, not the bounding box of the whole route.
-   *
-   * An L-shaped wire's box is mostly empty, so a bbox test would hand the marquee every wire
-   * whose corner happened to span the band -- wires the band visibly never crossed.
-   */
-  intersects(s, r) {
-    const pts = drawnPoints(s);
-    if (!rectsIntersect(routeBounds(pts), r)) return false;
-    for (let i = 1; i < pts.length; i++) {
-      if (segmentIntersectsRect(pts[i - 1]!, pts[i]!, r)) return true;
-    }
-    // A degenerate one-point route still has a position worth catching.
-    return pts.length === 1 && pointInRect(pts[0]!, r);
-  },
 
   hitTest(s, p, hc) {
     const pts = drawnPoints(s);

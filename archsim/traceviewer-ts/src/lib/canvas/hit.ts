@@ -27,6 +27,12 @@ export interface HitScene {
  * with a resize zone, and a press meant for a port silently resizes the fabric instead -- the
  * port becomes ungrabbable until you deselect its parent. So a selected shape's handles yield at
  * points its own children occupy, and the body pass below picks the child, which sits above it.
+ *
+ * **Owned children only, never the blocks a parent encloses.** A block inside a selected group
+ * does not cover the group's handles. A child can have exactly its parent's bounds, and yielding
+ * to it would disable every handle the parent has. The exception is about a port sitting in a
+ * border's grab zone, and nothing but a port does that. Pressing the body of a child inside a
+ * selected parent still selects the child, because the child sits above it.
  */
 export function hitTest(scene: HitScene, world: Vec2, hc: HitContext): HitResult {
   // A screen-pixel tolerance converted to world units, so the grab zone feels the same at

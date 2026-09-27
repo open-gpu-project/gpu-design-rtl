@@ -20,7 +20,8 @@ import {
 } from '../../canvas/theme';
 import { pointInRect } from '../../geom/math';
 import type { Rect, Vec2 } from '../../geom/types';
-import type { DrawContext, Headed, HitContext, ShapeTooltip } from '../shape';
+import type { Theme } from '../../canvas/theme';
+import type { DrawContext, Headed, HitContext, RenderFlags, ShapeTooltip } from '../shape';
 
 /** The text a box shows as its heading. Empty labels fall back to the identifier. */
 export function headline(s: Headed): string {
@@ -568,7 +569,7 @@ function drawInsetLabel(s: Headed, dc: DrawContext, d: DeviceBox, plate: boolean
  * shape, so the tab reads as attached rather than as a box parked on top of a line. `fill()`
  * closes the subpath for filling and `stroke()` does not, which is exactly the asymmetry wanted.
  */
-function drawTab(s: Headed, body: Rect, dc: DrawContext, selected: boolean): void {
+function drawTab(s: Headed, body: Rect, dc: DrawContext, role: StrokeRole): void {
   const { ctx, theme } = dc;
   const tab = tabRect(s, body, dc.worldPerPx, tabMeasurer(ctx));
   if (tab === null) return;
@@ -589,8 +590,8 @@ function drawTab(s: Headed, body: Rect, dc: DrawContext, selected: boolean): voi
   // Opaque, so the dot grid does not show through the tab.
   ctx.fillStyle = theme.background;
   ctx.fill();
-  ctx.lineWidth = selected ? 2 : 1;
-  ctx.strokeStyle = selected ? theme.shapeStrokeSelected : theme.shapeStroke;
+  ctx.lineWidth = role === 'selected' ? 2 : 1;
+  ctx.strokeStyle = strokeColor(theme, role);
   ctx.stroke();
 
   // `fitText` assigns the font, and caches the whole-string probe. One tab label per tabbed box
@@ -619,9 +620,26 @@ export function drawHeading(
   body: Rect,
   dc: DrawContext,
   d: DeviceBox,
-  selected: boolean,
+  role: StrokeRole,
   plate = false,
 ): void {
   if (s.labelMode === 'inset') drawInsetLabel(s, dc, d, plate);
-  else drawTab(s, body, dc, selected);
+  else drawTab(s, body, dc, role);
+}
+
+/**
+ * Which outline a box and its tab get, strongest first: selected, then containing the
+ * selection, then plain. Here rather than in `box.ts` because the tab is drawn here and has to
+ * match the body it hangs from; a ghost is drawn from its own colours and never asks.
+ */
+export type StrokeRole = 'normal' | 'selected' | 'ancestor';
+
+export function strokeRole(flags: RenderFlags): StrokeRole {
+  if (flags.selected) return 'selected';
+  return flags.ancestor ? 'ancestor' : 'normal';
+}
+
+export function strokeColor(theme: Theme, role: StrokeRole): string {
+  if (role === 'selected') return theme.shapeStrokeSelected;
+  return role === 'ancestor' ? theme.shapeStrokeAncestor : theme.shapeStroke;
 }

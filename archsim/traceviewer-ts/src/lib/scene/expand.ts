@@ -25,6 +25,11 @@ const EMPTY: readonly Shape[] = [];
  * re-seated immediately after their parent on every commit, which makes their position a
  * consequence of ownership rather than of gesture history.
  *
+ * The commit's next pass, `seatByHierarchy`, re-seats the whole hierarchy by the same rule --
+ * owned children straight after their owner, then the subtrees of what the owner encloses -- so
+ * the re-seat here is that pass's owned-children case. It stays because a freshly minted child
+ * has to be emitted somewhere, and this is where it is minted.
+ *
  * A child whose parent is gone is dropped here. `pruneOrphans` would drop it a moment later
  * anyway, through `dependsOn`; doing it in the same sweep just avoids emitting it and then
  * removing it.

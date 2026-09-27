@@ -19,16 +19,14 @@ exist for future work; each tagged with the iteration that raised it.
 - **7.0 has had no real-Safari pass.** The manual checks (toolbar centring, the ⇧ hold from every
   tool, ⌘-click and ⌘-band, tree reveal and keyboard) were run in Edge at dpr 2 only.
   (iteration 7)
+- **7.1 has had one short hand pass, and its follow-up none.** The user's first pass produced the
+  round of tree and fabric changes; those were checked by automated checks and dpr-2 screenshots
+  only. There has been no Safari pass. (iteration 7)
+- **7.2 has had no hand pass.** Alignment is covered by `verify/align.mjs` and one dpr-2
+  screenshot, in Edge. Whether 10 px is the right reach at the zooms the user works at is a
+  question for a hand pass. (iteration 7)
 - **Dock auto-hide is enabled but untested.** Float, maximise and tabs are covered; the edge-strip
   fly-out is not. (iteration 2)
-
-## Measuring Safari
-
-- **The Properties panel's repaint while visually static is unexplained.** In the Safari measurement
-  three quarters of all painting landed in that panel, and why WebKit escalates a status-bar text
-  change into repainting every JSON tree row could not be reproduced in Playwright's WebKit. The
-  readouts that dirtied the document at input frequency have since been fixed; whether anything
-  remains needs a real Safari recording. (iteration 3) (unconfirmed)
 
 ## Canvas and text
 
@@ -74,9 +72,29 @@ exist for future work; each tagged with the iteration that raised it.
 
 - **Undo is snapshot-based, capacity 200.** If shape counts reach tens of thousands, swap in patches
   behind the same `History` interface; nothing outside `history.svelte.ts` changes. (iteration 1)
-- **The object tree is read-only.** It lists every object topmost first and selects from a click,
-  but has no drag-to-reorder, no rename in place, no type-ahead and no ⇧-range selection; the four
-  restack commands are still the only way to change z-order. (iteration 1, iteration 7)
+- **A folded wires row selects nothing.** Clicking it only opens it, so taking a whole run of wires
+  takes a ⌘-click on each. Its key is its bottom-most wire, so deleting or restacking that one
+  closes the row. (iteration 7)
+- **The object tree is read-only.** It lists every object topmost first, runs of wires folded,
+  nested by the hierarchy, and selects from a click, but has no drag-to-reorder, no
+  drag-to-reparent, no rename in place, no type-ahead and no ⇧-range selection; the four restack
+  commands are still the only way to change z-order, and moving a block on the canvas the only way
+  to change its parent. (iteration 1, iteration 7)
+- **Rectangles that overlap without nesting cannot form a tree.** A shape inside two blocks that
+  only partly overlap each other goes to the smaller one, and dragging the larger does not carry
+  it. A stack of identical blocks is a chain by z-order, so restacking cannot swap two of them.
+  (iteration 7)
+- **The placed-parent search is quadratic.** Each placed shape tests every adopting shape; fine at
+  hundreds, and memoised per array, but a large scene dragging would want a broadphase in
+  `hierarchy.ts`. Alignment adds a `parentFor`, linear in the adopters, per pointer move and per
+  candidate that lines up, and rebuilds its index once per gesture. (iteration 7)
+- **A copied box's interfaces keep their old prefix.** Pasting a copy of `fab_1` gives `fab_2`
+  owning `fab_1.if_3` and `fab_1.if_4`: `readFragment` renames each name on its own, and an
+  interface's name is only a name. Correct, confusing; copying a group brings more of them along
+  than it used to. (iteration 7)
+- **A mid-drag preview is not seated.** Dragging a block into a group that sits above it in z draws
+  it under the group's translucent fill and tab until release, when the commit seats it above.
+  (iteration 7)
 - **`size` allows values below `GRID`.** The schema floor is 1 (the user asked for "positive
   non-zero"), and property edits bypass `normalize()`, so a 1×1 block is effectively unclickable and
   the panel is the only way back. Raising the floor is one line in `sizeProp` (`props/common.ts`).
@@ -160,6 +178,19 @@ exist for future work; each tagged with the iteration that raised it.
 - **A ⇧-press on a corner handle bands instead of resizing square.** The hold engages at the press,
   so the square constraint is reached only by pressing ⇧ after the corner drag has started.
   (iteration 7)
+- **Alignment cannot be suspended.** There is no modifier that turns it off for one gesture.
+  Zoomed out, where its reach is several cells, a grid position next to a target cannot be reached
+  without zooming in first. (iteration 7)
+- **Only siblings are alignment targets.** A child does not snap to its parent's edges or centre
+  lines, so centring a block in its group means typing a position; nor does a block snap to its
+  own children when resized. (iteration 7)
+- **Only the pressed shape of a multi-selection aligns.** The others follow by the same delta; the
+  selection's bounding box does not snap. (iteration 7)
+- **A resize aligns against the hierarchy it started with.** A sibling the resized block comes to
+  enclose is still offered as a target, although it is now a child. A child the resize leaves
+  outside is not offered, although it is now a sibling. (iteration 7)
+- **A ⇧ corner resize shows no guides.** It is left to the grid, since the square constraint would
+  override a snap, and so draws nothing even where it happens to line up. (iteration 7)
 - **A Shift-first ⇧⌘ chord flips the toolbar to Select while it is held.** Shift pressed alone
   starts the hold before ⌘ arrives; the chord itself still works, and the release puts the tool
   back. ⌘ first is a chord and never flips. `⇧`+wheel, the forced horizontal pan, shows the same
@@ -174,12 +205,10 @@ exist for future work; each tagged with the iteration that raised it.
   root per entry, but keys pressed in the tree go to the one diagram `acceptsKeys` names, there is
   no rule for a selection spanning two diagrams, and selecting in the tree does not activate the
   pane that shows it. (iteration 7)
-- **The right column has only the dock-wide width floor.** `minSize` binds along a pane's direct
-  parent split, and Objects and Properties now share a column, so Properties' 280 floors its
-  height and nothing but the dock's 200 floors the column's width. (iteration 7)
 - **The toolbar needs 711 CSS px.** In a narrower diagram pane the View zone runs off the right
   edge and the Tools zone is no longer centred. The single left-packed row it replaced needed the
-  same width and clipped the same way. (iteration 7)
+  same width and clipped the same way. With the tree left of the canvas, the default layout gives
+  the canvas 0.6 of the window, so any window under about 1200 px clips it. (iteration 7)
 - **A tree selection made during a pending connection reaches Properties only when that gesture
   ends.** The canvas and the tree show it at once; the property push is deferred while
   `isGesturing()`, as it is for every selection. (iteration 7)

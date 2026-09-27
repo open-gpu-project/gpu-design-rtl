@@ -1,4 +1,5 @@
-import { normalizeRect, pointInRect, rectFromPoints, rectsIntersect } from '../../geom/math';
+import type { LucideIcon } from '@lucide/svelte';
+import { normalizeRect, pointInRect, rectFromPoints } from '../../geom/math';
 import type { Rect, Side, Vec2 } from '../../geom/types';
 import { GRID } from '../../grid';
 import type { PropSchema } from '../../props/spec';
@@ -47,11 +48,14 @@ export function makePlainBox<K extends PlainBoxKind>(
 
 export interface PlainBoxKindSpec<K extends PlainBoxKind> {
   readonly kind: K;
+  readonly icon: LucideIcon;
   readonly props: PropSchema<PlainBoxShape<K>>;
   /** The borders interfaces may sit on. New ones are laid out along the first. */
   readonly sides: readonly Side[];
   /** Whether this kind's ports take links on their inward edge; see `interfaceInward`. */
   readonly inward: boolean;
+  /** Whether what lies inside this kind becomes its children; see `adopts`. */
+  readonly adopts: boolean;
 }
 
 export function plainBoxOps<K extends PlainBoxKind>(
@@ -60,19 +64,13 @@ export function plainBoxOps<K extends PlainBoxKind>(
   const { kind, sides } = spec;
   return {
     kind,
+    icon: spec.icon,
     props: spec.props,
 
     /** One grid cell at the origin. An import overwrites whatever it carries onto this. */
     blank: (name) => makePlainBox(kind, { x: 0, y: 0 }, { x: GRID, y: GRID }, name),
 
     bounds: box,
-
-    /**
-     * The body only, deliberately -- the tab is excluded for the same reason `bounds` excludes
-     * it. The tab is screen-sized and this signature has no `worldPerPx` to size it with, so a
-     * band's answer would otherwise depend on the zoom it was drawn at.
-     */
-    intersects: (s, r) => rectsIntersect(box(s), r),
 
     /** The body, or the tab above it. */
     hitTest: (s, p, hc) => pointInRect(p, box(s)) || headingHit(s, box(s), p, hc),
@@ -102,6 +100,8 @@ export function plainBoxOps<K extends PlainBoxKind>(
     interfaceSides: () => sides,
 
     ...(spec.inward ? { interfaceInward: () => true } : {}),
+
+    ...(spec.adopts ? { adopts: () => true } : {}),
 
     expand: (s, existing, mint) =>
       expandInterfaces(s.name, box(s), sides[0]!, s.interfaces, existing, mint),

@@ -1,3 +1,4 @@
+import { hierarchyOf, withDescendants } from './hierarchy';
 import { opsFor } from './registry';
 import { CorridorIndex } from './route';
 import type { Shape, ShapeName } from './shape';
@@ -40,8 +41,9 @@ export function pruneOrphans(shapes: readonly Shape[]): readonly Shape[] {
  * graph is deeper than one level (`conn -> nif -> fabric`), and resolving one level per pass is
  * why a wire glued to a port used to lag the fabric the port sits on: live while dragging a
  * block, correct only at the next commit. Reading back resolves that whole chain in a single
- * sweep whenever the array is already in dependency order, which `expandChildren` guarantees
- * for parents and children by re-seating every child immediately above its parent.
+ * sweep whenever the array is already in dependency order, which the commit's seat pass
+ * (`seatByHierarchy`) guarantees for owners and their interfaces by putting every interface
+ * immediately above its owner.
  *
  * What ordering cannot guarantee is a connection the user pushed BELOW its own ports with
  * `sendToBack`. Under the line above that connection would read them stale permanently rather
@@ -194,7 +196,8 @@ function sweepCap(shapes: readonly Shape[]): number {
 /**
  * Which shapes a gesture should translate BODILY, given what the user selected.
  *
- * The select tool used to translate exactly the selection, and that is wrong at both ends.
+ * Moving a shape moves everything under it in the hierarchy -- the blocks it encloses, the wires
+ * it is the container of, and its interfaces -- but not all of those by translation.
  *
  * A shape that will be re-glued by `reroute` must not also be moved by hand, or it moves twice:
  * select a fabric together with one of its own ports and drag, and the port slides along the
@@ -208,10 +211,16 @@ function sweepCap(shapes: readonly Shape[]): number {
  * its ends exactly where its ports arrive, so `patchStart`/`patchEnd` then find them already
  * correct and return by reference.
  *
- *   follows   = children, transitively, of anything in the selection  -- moved by reroute
- *   carried   = has dependencies, has no parent, and every dependency
- *               is in the selection or in `follows`                   -- moved bodily
- *   result    = (selection \ follows) ∪ carried
+ *   moving    = the selection and all its descendants, transitively
+ *   follows   = what is owned by something in `moving`      -- placed by its owner's reroute
+ *   carried   = has dependencies, has no owner, and every
+ *               dependency is in `moving`                    -- moved bodily
+ *   result    = (moving \ follows) ∪ carried
+ *
+ * A wire inside a group always has both ends inside it (that is what makes the group its
+ * container), so it is always carried and travels rigidly. A port dragged on its own is not
+ * owned by anything moving, and stays the whole answer. Resizing is not a move: a parent resized
+ * leaves its children where they are, and this is never asked.
  *
  * **Why this is here and not inside `conn.reroute`.** The tempting version compares each end's
  * new anchor against the point it replaced and translates when the two deltas agree. It cannot
@@ -219,10 +228,10 @@ function sweepCap(shapes: readonly Shape[]): number {
  * drag, so the rule reads the user's own gesture as a rigid move and undoes it. Geometry alone
  * cannot tell "my endpoints moved" from "I was moved" -- only the tool knows which it is.
  *
- * **Two things this deliberately does not cover.** Moving a fabric by typing into the property
- * panel is not a gesture, so a hand-drawn route between its ports still deforms there. And a
- * rigid translation can split a bundle that patching would have held together -- which is the
- * better trade, since patching a route whose ends both moved a thousand units is far worse.
+ * **One thing this deliberately does not cover.** A rigid translation can split a bundle that
+ * patching would have held together -- which is the better trade, since patching a route whose
+ * ends both moved a thousand units is far worse. A move typed into the property panel goes
+ * through here too (`SceneStore.replaceShape`), so it carries a group exactly as a drag does.
  */
 export function movesWith(
   shapes: readonly Shape[],
@@ -230,39 +239,20 @@ export function movesWith(
 ): ReadonlySet<ShapeName> {
   if (selection.size === 0) return selection;
 
-  const moving = new Set(selection);
-  const follows = new Set<ShapeName>();
-  /*
-    Children by parent, which is a walk rather than a lookup: a port's port would follow its
-    grandparent too. In practice the depth is one, and building the index costs the same walk
-    `expandChildren` already does on every commit.
-  */
-  const childrenOf = new Map<ShapeName, ShapeName[]>();
-  for (const s of shapes) {
-    const parent = opsFor(s).childOf?.(s) ?? null;
-    if (parent === null || parent === '') continue;
-    const list = childrenOf.get(parent);
-    if (list === undefined) childrenOf.set(parent, [s.name]);
-    else list.push(s.name);
-  }
-
-  const queue = [...selection];
-  while (queue.length > 0) {
-    for (const child of childrenOf.get(queue.pop()!) ?? []) {
-      if (follows.has(child)) continue;
-      follows.add(child);
-      moving.add(child);
-      queue.push(child);
-    }
-  }
+  const h = hierarchyOf(shapes);
+  const moving = withDescendants(shapes, selection);
 
   const out = new Set<ShapeName>();
-  for (const name of selection) if (!follows.has(name)) out.add(name);
+  for (const name of moving) {
+    const parent = h.parentOf(name);
+    if (h.isOwned(name) && parent !== null && moving.has(parent)) continue;
+    out.add(name);
+  }
   for (const s of shapes) {
     const ops = opsFor(s);
-    const parent = ops.childOf?.(s) ?? null;
-    // A child is placed by its parent, never carried: that is what `follows` already covers.
-    if (parent !== null && parent !== '') continue;
+    const owner = ops.childOf?.(s) ?? null;
+    // An owned shape is placed by its owner, never carried: that is what `follows` covers.
+    if (owner !== null && owner !== '') continue;
     const deps = ops.dependsOn?.(s);
     if (deps === undefined || deps.length === 0) continue;
     if (deps.every((id) => moving.has(id))) out.add(s.name);

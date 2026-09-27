@@ -1,5 +1,6 @@
 import { expandRect, rectsIntersect } from '../geom/math';
 import type { Rect, Vec2 } from '../geom/types';
+import { ancestorsOf } from '../scene/hierarchy';
 import { opsFor } from '../scene/registry';
 import type { DrawContext, Shape, ShapeName } from '../scene/shape';
 import { FrameLoop } from './frame-loop';
@@ -7,12 +8,17 @@ import { DotGrid } from './grid-renderer';
 import { CULL_MARGIN_PX, type Theme } from './theme';
 import type { ViewController } from './view.svelte';
 
+const NONE: ReadonlySet<ShapeName> = new Set();
+
 export interface RenderInput {
   readonly shapes: readonly Shape[];
   readonly selection: ReadonlySet<ShapeName>;
-  /** Uncommitted preview, drawn above everything as a ghost. */
+  /** Uncommitted preview, drawn above every shape as a ghost. */
   readonly draft: Shape | null;
-  /** The active tool's overlay: selection handles, marquees. Drawn in world space. */
+  /**
+   * The active tool's overlay: selection handles, marquees, alignment guides. Drawn in world
+   * space, last, above the draft.
+   */
   readonly overlay: ((dc: DrawContext) => void) | null;
 }
 
@@ -117,20 +123,31 @@ export class Renderer {
     // geometric bounds. See CULL_MARGIN_PX for what it has to clear.
     const cull = expandRect(viewport, CULL_MARGIN_PX * worldPerPx);
 
+    /*
+      Everything that contains the selection, faintly outlined. From `input.shapes`, which is the
+      mid-drag preview while a gesture is in flight, so the outline follows a block dragged out
+      of its group or into another one live. Memoised on the array inside `hierarchyOf`, so a
+      frame that only panned pays for a lookup.
+    */
+    const ancestors = input.selection.size > 0 ? ancestorsOf(input.shapes, input.selection) : NONE;
+
     for (const s of input.shapes) {
       const ops = opsFor(s);
       if (!rectsIntersect(ops.bounds(s), cull)) continue;
       ops.draw(s, dc, {
         selected: input.selection.has(s.name),
         ghost: false,
+        ancestor: ancestors.has(s.name),
       });
     }
 
-    input.overlay?.(dc);
-
     if (input.draft !== null) {
-      opsFor(input.draft).draw(input.draft, dc, { selected: false, ghost: true });
+      opsFor(input.draft).draw(input.draft, dc, { selected: false, ghost: true, ancestor: false });
     }
+
+    // After the draft, so a create tool's alignment guide is not dashed over by the ghost's own
+    // outline along the edge it aligns.
+    input.overlay?.(dc);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }

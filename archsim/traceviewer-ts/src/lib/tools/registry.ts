@@ -27,6 +27,9 @@ export interface ToolDeclaration {
    * icons filled and every hand-written button stroked, and `fifo` and `fabric` were authored as
    * stroke data under the fill rule, so they rendered as thin filled slivers. One component type
    * makes that class of mismatch unrepresentable.
+   *
+   * A tool that draws a kind takes the kind's own `ShapeOps.icon`, which is the glyph the object
+   * tree shows beside every row of that kind.
    */
   readonly icon: LucideIcon;
   readonly group: ToolGroup;

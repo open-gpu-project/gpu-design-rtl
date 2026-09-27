@@ -4,6 +4,7 @@ import {
   labelModeProp,
   labelProp,
   nameProp,
+  parentProp,
   positionProp,
   sizeProp,
   subtitleProp,
@@ -31,6 +32,7 @@ const props: readonly PropDef<FabricShape>[] = [
   subtitleProp('fabric'),
   labelModeProp('fabric'),
   descriptionProp('what this fabric routes, and between what'),
+  parentProp('fabric'),
   zIndexProp(),
 ];
 

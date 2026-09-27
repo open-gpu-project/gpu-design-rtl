@@ -19,8 +19,16 @@
     ROUTE_MAX_SEGMENTS,
     routeConnection,
   } from './lib/scene/route';
+  import { alignIndex, alignSnap, featuresOf, guidesFor, magnet } from './lib/scene/align';
   import { shapesInRect } from './lib/scene/bounds';
-  import { outlineOf, outlineRows } from './lib/scene/outline';
+  import { outlineOf, outlineRows, pathTo } from './lib/scene/outline';
+  import {
+    ancestorsOf,
+    hierarchyOf,
+    restackTree,
+    seatByHierarchy,
+    withDescendants,
+  } from './lib/scene/hierarchy';
   import { movesWith, rerouteAll } from './lib/scene/resolve';
   import {
     autoWaypoints,
@@ -155,6 +163,18 @@
         catch up on the second.
       */
       __resolve: { rerouteAll, movesWith },
+      /*
+        The derived hierarchy, for `verify/groups.mjs`. Here for the same reason as `__resolve`:
+        `hierarchy.ts` imports the registry, so a check must never import it by URL.
+      */
+      __hierarchy: { hierarchyOf, withDescendants, ancestorsOf, seatByHierarchy, restackTree },
+      /*
+        Alignment snapping's pure half, for `verify/align.mjs`: the per-parent index, the features
+        a gesture moves, the magnet, the guides, and the one entry point the tools call. It
+        imports the registry through `hierarchy.ts`, so, as there, a check must never import it by
+        URL.
+      */
+      __align: { alignIndex, featuresOf, magnet, guidesFor, alignSnap },
       __anchor: {
         anchorAt: (s: Shape, p: Vec2, worldPerPx: number) =>
           opsFor(s).anchorAt?.(s, p, { worldPerPx }) ?? null,
@@ -241,7 +261,7 @@
         rendered rows against it and feed it malformed documents -- a cycle, a dangling parent --
         that the scene would never let it commit.
       */
-      __outline: { outlineOf, outlineRows },
+      __outline: { outlineOf, outlineRows, pathTo },
       /*
         One kind's operations, out of the LIVE registry.
 

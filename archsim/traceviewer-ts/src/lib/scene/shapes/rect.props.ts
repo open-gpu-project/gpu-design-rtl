@@ -4,6 +4,7 @@ import {
   labelModeProp,
   labelProp,
   nameProp,
+  parentProp,
   positionProp,
   sizeProp,
   subtitleProp,
@@ -36,6 +37,7 @@ const props: readonly PropDef<RectShape>[] = [
   subtitleProp('block'),
   labelModeProp('block'),
   descriptionProp('what this hardware block does'),
+  parentProp('block'),
   zIndexProp(),
 ];
 

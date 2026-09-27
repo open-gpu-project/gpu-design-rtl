@@ -25,6 +25,17 @@ export const BUFFER = 1024;
 export const MIN_WORLD_W = 2048;
 export const MIN_WORLD_H = 1536;
 
+/**
+ * How bright the grid dots are: the one dial for the grid's contrast.
+ *
+ * It scales how far each dot colour sits from the canvas background, channel by channel. At 1
+ * the dots are the original faint slate, at 2 they stand twice as far from the background, and
+ * at 0 the grid disappears. Both tiers scale together, so a major dot stays brighter than a
+ * minor one. The major dots reach white in their blue channel first, at about 3.4, and anything
+ * past that only flattens them towards grey. The colours are worked out in `canvas/theme.ts`.
+ */
+export const GRID_DOT_BRIGHTNESS = 2;
+
 /** Snap to the nearest grid point. */
 export function snap(v: number): number {
   return Math.round(v / GRID) * GRID;

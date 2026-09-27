@@ -1,15 +1,19 @@
 import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2';
 import { anchorHitTest } from '../canvas/hit';
 import { alignStroke } from '../canvas/pixel';
-import { DRAG_SLOP_PX, HANDLE_SIZE_PX } from '../canvas/theme';
-import type { Vec2 } from '../geom/types';
+import { ALIGN_SNAP_PX, DRAG_SLOP_PX, HANDLE_SIZE_PX } from '../canvas/theme';
+import type { Rect, Vec2 } from '../geom/types';
 import { serializeShape } from '../props/project';
 import type { PropContext } from '../props/spec';
+import { alignIndex, alignSnap, type AlignIndex, type Guide } from '../scene/align';
+import { hierarchyOf, withDescendants } from '../scene/hierarchy';
 import { opsFor } from '../scene/registry';
 import { movesWith, rerouteAll } from '../scene/resolve';
 import { samePoint } from '../scene/route';
 import type { DrawContext, Handle, Shape, ShapeName } from '../scene/shape';
+import { resizeAxes } from '../scene/shapes/box';
 import { keys } from '../keys';
+import { drawGuides } from './guides';
 import { addsToSelection } from './pointer';
 import { pressTo, registerTool } from './registry';
 import type { PointerInfo, Tool, ToolContext } from './tool';
@@ -24,8 +28,10 @@ type Drag =
        * at the end of it move the same set.
        */
       readonly ids: ReadonlySet<ShapeName>;
+      /** A grid point: the snapped press. The move's delta is measured from it. */
       readonly start: Vec2;
       readonly downScreen: Vec2;
+      readonly align: MoveAlign | null;
     }
   | {
       readonly kind: 'resize';
@@ -33,7 +39,73 @@ type Drag =
       readonly name: ShapeName;
       readonly handle: Handle;
       readonly downScreen: Vec2;
+      readonly align: ResizeAlign | null;
     };
+
+/** What a move aligns: one shape, against the index built at press. Null when it cannot. */
+interface MoveAlign {
+  readonly index: AlignIndex;
+  /** The source's bounds before the drag. */
+  readonly source: Rect;
+  readonly sourceIndex: number;
+}
+
+/** What a resize aligns: the axes that follow the pointer, and the edge each holds still. */
+interface ResizeAlign {
+  readonly index: AlignIndex;
+  readonly sourceIndex: number;
+  readonly axes: { readonly x: boolean; readonly y: boolean };
+  readonly pins: { readonly x: number | null; readonly y: number | null };
+}
+
+const NO_GUIDES: readonly Guide[] = [];
+const BOTH_AXES = { x: true, y: true } as const;
+const NO_PINS = { x: null, y: null } as const;
+
+/**
+ * The shape a move aligns, which is the pressed one -- or, when what it lies in is moving too,
+ * the outermost of those, since the group is what moves against its surroundings. Null unless
+ * that is a placed shape: a wire or an interface aligns with nothing.
+ *
+ * The rest of the move set follows by the same delta. Everything it moves is left out of the
+ * index, so nothing aligns to itself or to what travels with it.
+ */
+function moveAlign(
+  shapes: readonly Shape[],
+  pressed: ShapeName,
+  ids: ReadonlySet<ShapeName>,
+): MoveAlign | null {
+  const h = hierarchyOf(shapes);
+  let name = pressed;
+  for (let p = h.parentOf(name); p !== null && ids.has(p); p = h.parentOf(p)) name = p;
+  if (!ids.has(name) || !h.isPlaced(name)) return null;
+  const sourceIndex = shapes.findIndex((s) => s.name === name);
+  const source = shapes[sourceIndex]!;
+  return { index: alignIndex(shapes, ids), source: opsFor(source).bounds(source), sourceIndex };
+}
+
+/**
+ * A resize aligns the edges its handle moves, and the median between them and the pinned edge.
+ * Only a placed shape's box handles do: anything else has no edge that follows the pointer.
+ *
+ * The shape's own descendants are left out as well as the shape, so none of them can be taken
+ * for its parent when it shrinks.
+ */
+function resizeAlign(shapes: readonly Shape[], shape: Shape, handle: Handle): ResizeAlign | null {
+  if ((handle.role ?? 'reshape') !== 'reshape') return null;
+  const axes = resizeAxes(handle.id);
+  if (axes === null || !hierarchyOf(shapes).isPlaced(shape.name)) return null;
+  const b = opsFor(shape).bounds(shape);
+  return {
+    index: alignIndex(shapes, withDescendants(shapes, new Set([shape.name]))),
+    sourceIndex: shapes.findIndex((s) => s.name === shape.name),
+    axes: { x: axes.x !== 0, y: axes.y !== 0 },
+    pins: {
+      x: axes.x === 0 ? null : axes.x === 1 ? b.x : b.x + b.w,
+      y: axes.y === 0 ? null : axes.y === 1 ? b.y : b.y + b.h,
+    },
+  };
+}
 
 const CORNER_CURSOR: Record<string, string> = {
   nw: 'nwse-resize',
@@ -89,6 +161,8 @@ export class SelectTool implements Tool {
    * because the fields here are plain rather than runes.
    */
   #subPart: { shape: ShapeName; index: number } | null = null;
+  /** What the drag in flight lines up with, drawn by `drawOverlay`. Empty between drags. */
+  #guides: readonly Guide[] = NO_GUIDES;
 
   isGesturing(): boolean {
     return this.#drag !== null;
@@ -153,6 +227,7 @@ export class SelectTool implements Tool {
               name: made.name,
               handle: knob,
               downScreen: p.screen,
+              align: null,
             };
             this.#armed = false;
           }
@@ -172,6 +247,7 @@ export class SelectTool implements Tool {
         name: hit.shape.name,
         handle: hit.handle,
         downScreen: p.screen,
+        align: resizeAlign(c.scene.shapes, hit.shape, hit.handle),
       };
       this.#armed = false;
       return;
@@ -196,12 +272,14 @@ export class SelectTool implements Tool {
     // other editor does. Settled in iteration 1: selecting and moving are not two gestures.
     if (!c.scene.selection.has(hit.shape.name)) c.scene.selectOnly(hit.shape.name);
 
+    const ids = movesWith(c.scene.shapes, c.scene.selection);
     this.#drag = {
       kind: 'move',
       snapshot: c.scene.shapes,
-      ids: movesWith(c.scene.shapes, c.scene.selection),
+      ids,
       start: p.snapped,
       downScreen: p.screen,
+      align: moveAlign(c.scene.shapes, hit.shape.name, ids),
     };
     this.#armed = false;
     c.setCursor('move');
@@ -233,8 +311,7 @@ export class SelectTool implements Tool {
     // Always recompute from the original snapshot. Applying each move incrementally
     // accumulates snap error and the shape drifts away from the cursor.
     if (drag.kind === 'move') {
-      const dx = p.snapped.x - drag.start.x;
-      const dy = p.snapped.y - drag.start.y;
+      const { x: dx, y: dy } = this.#moveDelta(drag, p, c);
       // Re-route inside the preview, not just on commit: `previewShapes` deliberately bypasses
       // `#resolveDependencies`, so without this every connection would trail a cell behind its
       // block for the whole drag and snap into place only on release.
@@ -272,7 +349,8 @@ export class SelectTool implements Tool {
     } else {
       const original = drag.snapshot.find((s) => s.name === drag.name);
       if (original === undefined) return;
-      const next = opsFor(original).resize(original, drag.handle.id, p.snapped, p.mods);
+      const at = this.#resizePoint(drag, original, p, c);
+      const next = opsFor(original).resize(original, drag.handle.id, at, p.mods);
       c.scene.previewShapes(
         rerouteAll(drag.snapshot.map((s) => (s.name === drag.name ? next : s))),
       );
@@ -298,6 +376,7 @@ export class SelectTool implements Tool {
   }
 
   onPointerUp(_p: PointerInfo, c: ToolContext): void {
+    this.#guides = NO_GUIDES;
     const drag = this.#drag;
     if (drag === null) return;
     this.#drag = null;
@@ -412,7 +491,66 @@ export class SelectTool implements Tool {
     c.setSubPart(next);
   }
 
+  /**
+   * A move's delta: the grid's, unless a grid multiple nearby lines the source up with a sibling.
+   *
+   * Measured from `drag.start`, which is a grid point, so rounding it gives exactly the delta a
+   * grid-only move would -- `snap(world - start)` is `snapped - start` -- and a move keeps its
+   * shape's offset from the grid, aligned or not.
+   */
+  #moveDelta(drag: Extract<Drag, { kind: 'move' }>, p: PointerInfo, c: ToolContext): Vec2 {
+    const a = drag.align;
+    if (a === null) return { x: p.snapped.x - drag.start.x, y: p.snapped.y - drag.start.y };
+    const r = alignSnap({
+      index: a.index,
+      sourceIndex: a.sourceIndex,
+      q: { x: p.world.x - drag.start.x, y: p.world.y - drag.start.y },
+      tol: ALIGN_SNAP_PX * c.view.worldPerPx,
+      axes: BOTH_AXES,
+      pins: NO_PINS,
+      geometryAt: (g) => ({ ...a.source, x: a.source.x + g.x, y: a.source.y + g.y }),
+    });
+    this.#guides = r.guides;
+    return r.at;
+  }
+
+  /**
+   * Where a resize handle goes: the grid point under the pointer, unless one nearby lines a
+   * moving edge or the median up with a sibling.
+   *
+   * Every candidate is checked against the shape's own `resize`, so a kind that puts an edge
+   * somewhere other than the pointer -- an unbounded FIFO held at its minimum length -- is snapped
+   * only where it really lines up. A ⇧ corner drag is left to the grid: the square constraint
+   * rewrites one axis from the other, and would override the snap anyway.
+   */
+  #resizePoint(
+    drag: Extract<Drag, { kind: 'resize' }>,
+    original: Shape,
+    p: PointerInfo,
+    c: ToolContext,
+  ): Vec2 {
+    const a = drag.align;
+    if (a === null || (p.mods.shift && a.axes.x && a.axes.y)) {
+      this.#guides = NO_GUIDES;
+      return p.snapped;
+    }
+    const ops = opsFor(original);
+    const r = alignSnap({
+      index: a.index,
+      sourceIndex: a.sourceIndex,
+      q: p.world,
+      tol: ALIGN_SNAP_PX * c.view.worldPerPx,
+      axes: a.axes,
+      pins: a.pins,
+      geometryAt: (g) => ops.bounds(ops.resize(original, drag.handle.id, g, p.mods)),
+    });
+    this.#guides = r.guides;
+    return r.at;
+  }
+
   drawOverlay(dc: DrawContext, c: ToolContext): void {
+    drawGuides(dc, this.#guides);
+
     const selection = c.scene.selection;
     if (selection.size === 0) return;
 
@@ -484,6 +622,7 @@ export class SelectTool implements Tool {
   }
 
   #abort(c: ToolContext): void {
+    this.#guides = NO_GUIDES;
     const drag = this.#drag;
     if (drag === null) return;
     this.#drag = null;

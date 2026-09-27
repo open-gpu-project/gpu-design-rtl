@@ -26,22 +26,42 @@ into windows, or collapsed to an edge. Four panels exist so far.
   `<input type="file">` rather than the File System Access API, which Safari does not implement.
   Hovering a block or a wire raises a tooltip — a block's description, a wire's name and
   description, and in the tabbed modes the subtitle too, since that is the only place it appears,
-  one paragraph per line. Drag a band with the select tool to select several at once — or hold
-  `⇧` in any tool, which switches to the select tool for as long as it is held — and copy, cut
-  and paste them as a group -- a connection comes along when both of its blocks do, and a pasted copy
-  fills the gaps in its own numbering, so copies of `block0, block2` arrive as `block1, block3`.
+  one paragraph per line. Drag a band with the select tool to select what lies wholly inside it —
+  or hold `⇧` in any tool, which switches to the select tool for as long as it is held — and
+  copy, cut and paste them as a group -- a connection comes along when both of its blocks do, and
+  a pasted copy fills the gaps in its own numbering, so copies of `block0, block2` arrive as
+  `block1, block3`.
+  **Blocks nest by position.** A block drawn around other things contains them, and there is
+  nothing to group by hand: move something into a block or out of it and its parent changes.
+  Dragging, deleting, cutting or copying a block takes everything inside it; selecting something
+  faintly outlines, in green, every block it lies in; and a connection belongs to the innermost
+  block both of its ends share — or, when it joins two interfaces of one fabric, to that fabric.
+  Fabrics and queues contain no blocks.
+  **Shapes align with their neighbours.** A block, queue or fabric being moved, resized or drawn
+  snaps its edges to the edges, and its centre lines to the centre lines, of the blocks, queues
+  and fabrics that share its parent, and a rose line shows each alignment — one line per
+  coordinate, however many shapes lie on it. The grid still decides: alignment only picks among
+  the positions the grid offers, so it pulls hardest zoomed out, and at 100 % and closer it
+  mostly just shows what already lines up.
   The toolbar centres everything you do on the canvas — the tools, restacking and delete — with
   the file and history commands on the left and the zoom controls on the right.
-- **Objects** — every object in the diagram as a read-only tree, topmost first, with a fabric's
-  interfaces nested under it. Clicking a row selects that object, which also shows it in
-  Properties, and pans the canvas to centre it if it is not already fully in view; `⌘`-click
-  adds or removes it. Selecting a single object on the canvas opens its parents in the tree and
-  scrolls its row into view.
+- **Objects** — every object in the diagram as a read-only tree, docked left of the canvas,
+  topmost first, nested the way the diagram nests: a block under the block it lies in, an
+  interface under its owner, a connection under the block both its ends lie in. Connections that
+  sit next to each other in one list fold under a single **wires** row, in the place they would
+  have had, showing how many it holds; one on its own between two objects keeps its own row. Each
+  row shows its kind's icon, its label, and its name greyed out after it when the two differ.
+  Clicking a wires row opens or closes it and selects nothing. Clicking any other row selects
+  that object, which also shows it in Properties, and pans the canvas to centre it if it is not
+  already fully in view; `⌘`-click adds or removes it. Selecting a single object on the canvas —
+  or dragging a selected one into another block — opens its parents in the tree, and the wires
+  row it is folded into, and scrolls its row into view.
 - **Properties** — an editable tree view of the selected block, validated live against a JSON
   Schema generated from that object kind's property declaration, with a footer documenting
   whichever key is selected. Keys are ordered `kind`, then the ones you can edit, then the ones
   the app derives, each group alphabetical. Rows the app owns rather than you — the draw
-  order, and a connection's route and two endpoints, which the canvas sets — are greyed and
+  order, the `parent` block an object lies in, and a connection's route and two endpoints,
+  which the canvas sets — are greyed and
   refuse to be typed into; the footer says which, and a refusal says where to change it
   instead. The footer is never shorter than the text in it;
   drag the divider above it (or focus it and use the arrow keys, `⇧` for a coarser step) to
@@ -60,8 +80,9 @@ versa, so the Properties panel always describes one thing. Selecting a flag puts
 it; moving the cursor onto a flag of the selected row selects that flag.
 
 Value-change signals are in the data model but are not drawn yet; they get span lanes later.
-The layout is saved to `localStorage`; in a dev build, `window.__resetLayout()` restores the
-default.
+By default Objects, the canvas and Properties sit side by side, left to right, with Trace across
+the bottom of all three. The layout is saved to `localStorage`; in a dev build,
+`window.__resetLayout()` restores the default.
 
 ## Running
 
@@ -76,8 +97,8 @@ npm run verify     # browser checks, against a running dev server
 ```
 
 `npm run check` passing means very little here; see
-[history/conventions.md](history/conventions.md). `npm run verify` is 633 assertions across twelve
-suites, and `verify/production.mjs` adds 17 against the built bundle. Anything touching
+[history/conventions.md](history/conventions.md). `npm run verify` is 734 assertions across
+fourteen suites, and `verify/production.mjs` adds 17 against the built bundle. Anything touching
 the canvas, the camera, DPI, or the property round trip has to be run in a real browser at
 `deviceScaleFactor: 2`. `verify/` is what does that.
 
@@ -91,10 +112,11 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | `⌘`+wheel / `⇧`+wheel                                 | Force zoom / force horizontal pan                          |
 | `1` / `2` / `3` / `4` / `5` / `6`                     | Pointer / Select / Rectangle / Connection / Queue / Fabric |
 | Hold `⇧`, in any tool                                 | Switch to the select tool until `⇧` is released            |
-| Drag with the select tool                             | Select everything the band touches                         |
+| Drag with the select tool                             | Select everything wholly inside the band                   |
+| `⇧`+drag inside a block                               | Select what is inside it, rather than moving the block     |
 | Click with the select tool                            | Select what is under it; on empty space, clear             |
 | `⌘`+drag with the select tool                         | Add the band's contents to the selection                   |
-| Drag with the rectangle tool                          | Draw a block, snapped to the grid                          |
+| Drag with the rectangle tool                          | Draw a block, snapped to the grid and to its neighbours    |
 | Drag with the queue or fabric tool                    | Draw a FIFO or a switch fabric                             |
 | Drag a network interface                              | Slide it along its parent's border, or onto another        |
 | Click two network interfaces with the connection tool | Draw a bus link between them, straight where it can be     |
@@ -103,12 +125,12 @@ the canvas, the camera, DPI, or the property round trip has to be run in a real 
 | Click two block edges with the connection tool        | Draw an arrow between them                                 |
 | Drag a segment of a selected connection               | Reshape its route, pinning it to manual routing            |
 | Drag a round bead on a selected connection            | Slide that end along its edge, or onto another block       |
-| Click a block, then drag its body or handles          | Move or resize                                             |
+| Click a block, then drag its body or handles          | Move it with everything inside it, or resize it            |
 | `⇧` once a corner drag has started                    | Keep the block square                                      |
 | Hold the pointer still over a block or wire           | Show its description as a tooltip                          |
 | Hold the pointer still over a toolbar button          | Show its name and keyboard shortcut                        |
 | `⌘`+click                                             | Add to or remove from the selection                        |
-| `⌫`                                                   | Delete the selection                                       |
+| `⌫`                                                   | Delete the selection, with everything inside it            |
 | `⌘C` / `⌘X` / `⌘V`                                    | Copy / cut / paste the selection                           |
 | `⌘S` / `⌘O`                                           | Save the diagram to a file / open one                      |
 | `⌘Z` / `⇧⌘Z`                                          | Undo / redo                                                |
@@ -158,8 +180,9 @@ src/lib/geom/      Vec2, Rect, and the small amount of geometry everything else 
 src/lib/canvas/    Camera, renderer, dot grid, hit testing, wheel/trackpad input, text, theme,
                    and what both canvases share: the viewport base, the frame loop, and the
                    surface contract
-src/lib/scene/     The document: shapes, z-order, bounds, history, serialization, and the
-                   object tree's outline (`outline.ts`)
+src/lib/scene/     The document: shapes, z-order, bounds, history, serialization, the
+                   derived parent/child hierarchy (`hierarchy.ts`), and the object tree's
+                   outline (`outline.ts`)
 src/lib/props/     Property declarations, the JSON Schema generator, projection, validation,
                    and the property editor's context menu
 src/lib/tools/     Tool contract, registry, pointer plumbing, and the six tools (three of them
@@ -184,7 +207,8 @@ when it is maximized, floated or popped out, and the document must not be able t
 
 Write `src/lib/scene/shapes/<kind>.ts` implementing `ShapeOps` and `<kind>.props.ts` declaring its
 properties, call `registerShape` at the bottom, widen the `Shape` union in `shape.ts`, and add the
-import to `src/lib/register.ts`. Nothing else switches on `kind`.
+import to `src/lib/register.ts`. Nothing else switches on `kind`. `ShapeOps.icon` is required: it
+is the kind's row icon in the object tree, and a tool that draws the kind takes the same one.
 
 **If the props file needs anything from the kind file, put it in a third module.** The kind file
 is what `register.ts` imports, so `<kind>.props.ts` importing back from `<kind>.ts` closes a
@@ -197,7 +221,13 @@ A kind that is nothing but a headed box carrying interfaces is one `plainBoxOps`
 `shapes/plain-box.ts` — that is all `rect` and `fabric` are. Any other kind that draws an
 axis-aligned box should delegate to `shapes/box.ts` for its handles, resize arithmetic, perimeter
 anchors and body, to `shapes/heading.ts` for its label, and to
-`props/common.ts` for the nine properties every box repeats.
+`props/common.ts` for the properties every box repeats.
+
+A new kind takes part in nesting without asking. Its role in `scene/hierarchy.ts` is read off
+the seams it already has — an owner through `childOf`, ends through `dependsOn`, otherwise it is
+placed by its `bounds` — and the one thing to decide is `adopts`: whether what lies inside it
+becomes its children. Omit it and the kind contains nothing, as a fabric and a queue do. A wire
+between a kind's own interfaces is that kind's child either way.
 
 ### Adding a property
 
@@ -282,8 +312,14 @@ several of the defects found so far compile and type-check cleanly and only fail
   curved bus links; the dependency fold that settles; saving and opening a diagram; multi-line
   subtitles; and the text width cache, the shape-count half of the Safari slowdown.
 - [iter-7-autogrouping-and-alignment.md](history/iter-7-autogrouping-and-alignment.md) — in
-  progress. So far (7.0): the toolbar in three zones, holding `⇧` for the select tool with `⌘`
-  taking over as the adding key, and a read-only object tree above Properties.
+  progress. 7.0: the toolbar in three zones, holding `⇧` for the select tool with `⌘` taking
+  over as the adding key, and a read-only object tree above Properties. 7.1: autogrouping —
+  blocks nest by position, a drag, delete or copy takes the group, the band takes what it
+  wholly covers, and the tree and a `parent` row show the nesting. After a first hand pass the
+  tree gained kind icons and leads with the label, and a fabric took its internal routing as
+  its children. After a second, wires side by side fold under one row, and the tree moved to
+  the left of the canvas. 7.2: alignment — a moved, resized or drawn shape snaps its edges and
+  centre lines to its siblings', within what the grid allows, with a guide for each.
 
 The unabridged notes for each sub-iteration, and the two Safari measurement reports, are in git
 at commit `e56a67d`.
