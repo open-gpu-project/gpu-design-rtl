@@ -2,9 +2,9 @@
 
 namespace partitions {
 
-   class GCE : framework::Entity {
+   class GCE : public framework::Entity {
    public:
-      GCE(framework::EntityConfig config) : framework::Entity{config} {}
+      explicit GCE(framework::EntityConfig config) : framework::Entity{config} {}
    };
 
 } // namespace partitions

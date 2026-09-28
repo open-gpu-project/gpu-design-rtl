@@ -1,6 +1,7 @@
 /**
  * This file contains the unit tests for simulation.cc/h
- * - entity/clock registration
+ * - clock edges and naming
+ * - entity registration
  * - driver loop
  * - entitiy callback firing
  * - simulation throwing/error
@@ -133,7 +134,7 @@ namespace {
     */
    Registered add_test_entity(Simulation& sim,
                               std::string_view name,
-                              clock_id_t clock,
+                              Clock clock,
                               std::optional<entity_id_t> parent = std::nullopt,
                               OrderLog* log = nullptr) {
       auto [id, entity] = sim.add_entity<TestEntity>(name, clock, parent, std::string{name}, log);
@@ -150,36 +151,35 @@ namespace {
       MultiDriverDetector detector;
 
       DetectorFixture()
-            : owner{*add_test_entity(sim, "owner", sim.add_clock("clk")).entity}, detector{owner} {}
+            : owner{*add_test_entity(sim, "owner", Clock{1, 0}).entity}, detector{owner} {}
    };
 
 } // namespace
 
 TEST_CASE("simulation: Clocks fire on the ticks where tick % period == phase") {
    struct Row {
-      int period;
-      int phase;
-      std::vector<unsigned> expected_edges; // within ticks 1..8
+      unsigned period;
+      unsigned phase;
+      std::vector<unsigned> expected_edges; // within ticks 0..8
    };
 
+   // Tick 0 is included: a phase-zero clock reads as a rising edge there
    auto const rows = std::vector<Row>{
-         {1, 0, {1, 2, 3, 4, 5, 6, 7, 8}},
-         {2, 0, {2, 4, 6, 8}},
+         {1, 0, {0, 1, 2, 3, 4, 5, 6, 7, 8}},
+         {2, 0, {0, 2, 4, 6, 8}},
          {2, 1, {1, 3, 5, 7}},
          {3, 2, {2, 5, 8}},
+         {4, 3, {3, 7}},
    };
 
    for (auto const& row : rows) {
       CAPTURE(row.period, row.phase);
 
-      Simulation sim;
-      auto clk = sim.add_clock("clk", row.period, row.phase);
+      Clock clk{row.period, row.phase};
 
       std::vector<unsigned> edges;
-      for (unsigned tick = 1; tick <= 8; ++tick) {
-         sim.run(1);
-         REQUIRE(sim.current_tick() == tick);
-         if (sim.get_clock(clk).rising_edge()) {
+      for (unsigned tick = 0; tick <= 8; ++tick) {
+         if (clk.rising_edge(tick)) {
             edges.push_back(tick);
          }
       }
@@ -188,42 +188,49 @@ TEST_CASE("simulation: Clocks fire on the ticks where tick % period == phase") {
    }
 }
 
-TEST_CASE("simulation: A clock at rest reads as a rising edge when its phase is zero") {
-   Simulation sim;
-   auto phase0 = sim.add_clock("phase0", 2, 0);
-   auto phase1 = sim.add_clock("phase1", 2, 1);
+TEST_CASE("simulation: Clocks are identified by their period and phase") {
+   Clock clk{2, 1};
+   Clock same{2, 1};
+   Clock other_phase{2, 0};
+   Clock other_period{3, 1};
 
-   // Nothing has ticked yet, so the clock's cycle is 0 and 0 % 2 == 0
-   REQUIRE(sim.get_clock(phase0).rising_edge());
-   REQUIRE_FALSE(sim.get_clock(phase1).rising_edge());
+   REQUIRE(clk == same);
+   REQUIRE(Clock::hash{}(clk) == Clock::hash{}(same));
 
-   SECTION("and again once the simulation is reset") {
-      sim.run(3);
-      sim.reset();
-
-      REQUIRE(sim.get_clock(phase0).rising_edge());
-      REQUIRE_FALSE(sim.get_clock(phase1).rising_edge());
-   }
+   REQUIRE_FALSE(clk == other_phase);
+   REQUIRE_FALSE(clk == other_period);
 }
 
-TEST_CASE("simulation: add_clock rejects an invalid period or phase") {
+TEST_CASE("simulation: Clock names are looked up by the clock's period and phase") {
    Simulation sim;
+   Clock fast{1, 0};
+   Clock slow{3, 0};
+   sim.set_clock_name("fast", fast);
+   sim.set_clock_name("slow", slow);
 
-   REQUIRE_THROWS_AS(sim.add_clock("zero_period", 0), SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("negative_period", -1), SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("phase_at_period", 2, 2), SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("phase_past_period", 2, 5), SimulationException);
-   REQUIRE_THROWS_AS(sim.add_clock("negative_phase", 2, -1), SimulationException);
+   REQUIRE(sim.get_clock_name(fast) == "fast");
+   REQUIRE(sim.get_clock_name(slow) == "slow");
 
-   SECTION("but accepts the boundary cases") {
-      REQUIRE_NOTHROW(sim.add_clock("unit", 1, 0));
-      REQUIRE_NOTHROW(sim.add_clock("last_phase", 4, 3));
+   SECTION("so a separately constructed but equal clock shares the name") {
+      Clock also_slow{3, 0};
+      REQUIRE(sim.get_clock_name(also_slow) == "slow");
+   }
+
+   SECTION("and naming a clock again replaces its previous name") {
+      sim.set_clock_name("slow_renamed", slow);
+      REQUIRE(sim.get_clock_name(slow) == "slow_renamed");
+      REQUIRE(sim.get_clock_name(fast) == "fast");
+   }
+
+   SECTION("but a clock that was never named has no name to look up") {
+      Clock unnamed{3, 1};
+      REQUIRE_THROWS_AS(sim.get_clock_name(unnamed), std::out_of_range);
    }
 }
 
 TEST_CASE("simulation: An entity is evaluated, ticked, then after-ticked on every cycle") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto* entity = add_test_entity(sim, "dut", clk).entity;
 
    sim.run(3);
@@ -247,7 +254,7 @@ TEST_CASE("simulation: Only on_tick is gated on the clock edge") {
    Simulation sim;
 
    SECTION("on a period-3 phase-0 clock") {
-      auto clk = sim.add_clock("slow", 3, 0);
+      Clock clk{3, 0};
       auto* entity = add_test_entity(sim, "dut", clk).entity;
 
       sim.run(6);
@@ -258,7 +265,7 @@ TEST_CASE("simulation: Only on_tick is gated on the clock edge") {
    }
 
    SECTION("on a period-3 phase-1 clock") {
-      auto clk = sim.add_clock("slow", 3, 1);
+      Clock clk{3, 1};
       auto* entity = add_test_entity(sim, "dut", clk).entity;
 
       sim.run(6);
@@ -271,8 +278,8 @@ TEST_CASE("simulation: Only on_tick is gated on the clock edge") {
 
 TEST_CASE("simulation: Entities on different clocks tick independently") {
    Simulation sim;
-   auto fast_clk = sim.add_clock("fast", 1, 0);
-   auto slow_clk = sim.add_clock("slow", 3, 0);
+   Clock fast_clk{1, 0};
+   Clock slow_clk{3, 0};
 
    auto* fast = add_test_entity(sim, "fast_dut", fast_clk).entity;
    auto* slow = add_test_entity(sim, "slow_dut", slow_clk).entity;
@@ -289,49 +296,21 @@ TEST_CASE("simulation: Entities on different clocks tick independently") {
 
 TEST_CASE("simulation: Entity::config reports the registration the simulation assigned") {
    Simulation sim;
-   auto clk = sim.add_clock("clk", 2, 1);
+   Clock clk{2, 1};
    auto registered = add_test_entity(sim, "dut", clk);
    sim.build();
    auto const& config = registered.entity->config();
 
    REQUIRE(&config.simulation == &sim);
    REQUIRE(config.id == registered.id);
-   REQUIRE(config.clock_id == clk);
+   REQUIRE(config.clock == clk);
    // The local name, not the qualified path: `get_entity_full_name()` joins the chain
    REQUIRE(config.name == "dut");
-
-   SECTION("and aliases the clock it was registered with") {
-      auto* entity = registered.entity;
-
-      REQUIRE(&entity->config().clock == &sim.get_clock(clk));
-
-      sim.run(1);
-      REQUIRE(entity->config().clock.rising_edge());
-      sim.run(1);
-      REQUIRE_FALSE(entity->config().clock.rising_edge());
-   }
-}
-
-TEST_CASE("simulation: An entity's clock reference survives later add_clock calls") {
-   Simulation sim;
-   auto clk = sim.add_clock("clk", 2, 0);
-   auto* entity = add_test_entity(sim, "dut", clk).entity;
-
-   // EntityConfig holds a reference into the simulation's clock storage. Add
-   // enough clocks to have forced several reallocations of a std::vector.
-   for (int i = 0; i < 64; ++i) {
-      sim.add_clock("filler" + std::to_string(i));
-   }
-
-   REQUIRE(&entity->config().clock == &sim.get_clock(clk));
-
-   sim.run(4);
-   REQUIRE(entity->tick_edges() == std::vector<unsigned>{2, 4});
 }
 
 TEST_CASE("simulation: Entity names are qualified by their position in the hierarchy") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
 
    auto a = add_test_entity(sim, "a", clk).id;
    auto b = add_test_entity(sim, "b", clk, a).id;
@@ -365,7 +344,7 @@ TEST_CASE("simulation: Entity names are qualified by their position in the hiera
 
 TEST_CASE("simulation: A duplicate entity path is rejected") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
 
    auto root = add_test_entity(sim, "root", clk).id;
    add_test_entity(sim, "child", clk, root);
@@ -378,7 +357,7 @@ TEST_CASE("simulation: A duplicate entity path is rejected") {
 
 TEST_CASE("simulation: reset() rewinds the simulation but keeps entities registered") {
    Simulation sim;
-   auto clk = sim.add_clock("clk", 2, 0);
+   Clock clk{2, 0};
 
    OrderLog reset_order;
    auto first = add_test_entity(sim, "first", clk, std::nullopt, &reset_order);
@@ -417,7 +396,7 @@ TEST_CASE("simulation: reset() rewinds the simulation but keeps entities registe
 
 TEST_CASE("simulation: run() swallows a SimulationException and stops early") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
 
    // Registered ahead of the observer, so the throw pre-empts the observer's evaluate
    auto [thrower_id, thrower] = sim.add_entity<ThrowingEntity>(
@@ -442,7 +421,7 @@ TEST_CASE("simulation: run() swallows a SimulationException and stops early") {
 
 TEST_CASE("simulation: run(throw_on_exception=true)") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
 
    auto [thrower_id, thrower] = sim.add_entity<ThrowingEntity>(
          "thrower", clk, std::nullopt, 2u, ThrowingEntity::What::Simulation);
@@ -464,7 +443,7 @@ TEST_CASE("simulation: run(throw_on_exception=true)") {
 
 TEST_CASE("simulation: run() propagates exceptions that are not SimulationExceptions") {
    Simulation sim;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    sim.add_entity<ThrowingEntity>("thrower", clk, std::nullopt, 2u, ThrowingEntity::What::Runtime);
    REQUIRE_THROWS_AS(sim.run(5), std::runtime_error);
    REQUIRE(sim.current_tick() == 2);

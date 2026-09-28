@@ -1,9 +1,11 @@
 add_library(
    partitions-cpp STATIC
-   ${CMAKE_CURRENT_LIST_DIR}/fabric.cc
-   ${CMAKE_CURRENT_LIST_DIR}/tdsu.cc
-   ${CMAKE_CURRENT_LIST_DIR}/gce.cc
    ${CMAKE_CURRENT_LIST_DIR}/axi3_hp_buffer.cc
+   ${CMAKE_CURRENT_LIST_DIR}/dsp48e1.cc
+   ${CMAKE_CURRENT_LIST_DIR}/fabric.cc
+   ${CMAKE_CURRENT_LIST_DIR}/gce.cc
+   ${CMAKE_CURRENT_LIST_DIR}/tdsu.cc
+   ${CMAKE_CURRENT_LIST_DIR}/xu.cc
 )
 
 add_library(archsim::partitions ALIAS partitions-cpp)

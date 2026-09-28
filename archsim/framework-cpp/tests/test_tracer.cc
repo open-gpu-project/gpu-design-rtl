@@ -67,7 +67,7 @@ namespace {
 TEST_CASE("tracer: A tracer registers with its sink when the simulation is built") {
    MockTracerSink sink{};
    Simulation sim{&sink};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<Probe>("dut", clk, std::nullopt, "value");
 
    SECTION("registering nothing before the simulation is built") {
@@ -114,7 +114,7 @@ TEST_CASE("tracer: A tracer registers with its sink when the simulation is built
 TEST_CASE("tracer: A tracer writes value changes to its sink") {
    MockTracerSink sink{};
    Simulation sim{&sink};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [first_id, first] = sim.add_entity<Probe>("first", clk, std::nullopt, "");
    auto [second_id, second] = sim.add_entity<Probe>("second", clk, std::nullopt, "");
    sim.build();
@@ -152,7 +152,7 @@ TEST_CASE("tracer: A tracer writes value changes to its sink") {
 TEST_CASE("tracer: A tracer keeps its sink across a simulation reset") {
    MockTracerSink sink{};
    Simulation sim{&sink};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<Probe>("dut", clk, std::nullopt, "");
    sim.build();
 
@@ -173,7 +173,7 @@ TEST_CASE("tracer: A tracer keeps its sink across a simulation reset") {
 
 TEST_CASE("tracer: A tracer without a sink is inert") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<Probe>("dut", clk, std::nullopt, "");
    sim.build();
 
@@ -185,7 +185,7 @@ TEST_CASE("tracer: A tracer without a sink is inert") {
 TEST_CASE("tracer: Registering a tracer after the build is rejected") {
    MockTracerSink sink{};
    Simulation sim{&sink};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    sim.build();
 
    SECTION("throwing a simulation exception") {

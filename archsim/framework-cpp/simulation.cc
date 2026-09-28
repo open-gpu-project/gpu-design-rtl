@@ -10,28 +10,7 @@
 
 using namespace framework;
 
-clock_id_t Simulation::add_clock(std::string_view name, int period, int phase) {
-   // Validate the period first, so the phase message is never nonsense
-   if (period <= 0) {
-      throw GenericSimulationException("Clock period must be positive",
-                                       std::pair{"clock", std::string{name}},
-                                       std::pair{"period", period});
-   }
-   if (phase < 0 || phase >= period) {
-      throw GenericSimulationException("Clock phase must be in [0, period)",
-                                       std::pair{"clock", std::string{name}},
-                                       std::pair{"phase", phase},
-                                       std::pair{"period", period});
-   }
-
-   unsigned next_id = static_cast<unsigned>(m_clocks.size());
-   m_clocks.emplace_back(Clock{name, period, phase});
-   return clock_id_t{next_id};
-}
-
-SimulationSettings const& Entity::settings() const {
-   return m_config.simulation.settings();
-}
+SimulationSettings const& Entity::settings() const { return m_config.simulation.settings(); }
 
 Entity& Simulation::add_entity_impl(entity_id_t entity_id,
                                     std::string_view name,
@@ -106,11 +85,6 @@ void Simulation::run_one_tick() {
       m_sink->write_tick(m_cycle_count);
    }
 
-   // Tick all the clocks
-   for (auto& clock : m_clocks) {
-      clock.tick();
-   }
-
    // Evaluate all entities' combinational logic
    for (auto& entity : m_entities) {
       entity->on_evaluate();
@@ -118,7 +92,7 @@ void Simulation::run_one_tick() {
 
    // Commit all registered writes on this clock edge
    for (auto& entity : m_entities) {
-      if (entity->config().clock.rising_edge()) {
+      if (entity->config().clock.rising_edge(m_cycle_count)) {
          entity->on_tick();
       }
       entity->on_after_tick();
@@ -127,15 +101,9 @@ void Simulation::run_one_tick() {
 
 void Simulation::reset() {
    m_cycle_count = 0;
-   for (auto& clock : m_clocks) {
-      clock.reset();
-   }
    for (auto* tracer : m_tracers) {
       tracer->reset();
    }
-
-   // Reset entities last, so they observe a tick count of zero. Registration
-   // (names and hierarchy) deliberately survives a reset.
    for (auto& entity : m_entities) {
       entity->on_reset();
    }
@@ -165,9 +133,7 @@ std::optional<entity_id_t> Simulation::get_entity_parent(entity_id_t id) const {
    return std::nullopt;
 }
 
-void Simulation::dump_tree(std::ostream& os) const {
-   (void) os;
-}
+void Simulation::dump_tree(std::ostream& os) const { (void)os; }
 
 void MultiDriverDetector::add_and_check_driver(std::string_view signal_name) {
    auto st = cpptrace::stacktrace::current();

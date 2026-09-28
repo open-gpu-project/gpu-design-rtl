@@ -21,7 +21,7 @@ namespace partitions {
       using RAndTag = std::pair<framework::axi3::RChannelData, framework::tag_t>;
 
    public:
-      Axi3HpBuffer(EntityConfig config);
+      explicit Axi3HpBuffer(EntityConfig config);
 
    protected:
       void on_evaluate() override;

@@ -88,7 +88,7 @@ namespace sink_test {
       {
          FileTracerSink sink{path};
          Simulation sim{&sink};
-         auto clk = sim.add_clock("clk");
+         Clock clk{1, 0};
          auto [id, probe] = sim.add_entity<Probe>("dut", clk, std::nullopt);
          sim.build();
          probe.tracer.record(first);

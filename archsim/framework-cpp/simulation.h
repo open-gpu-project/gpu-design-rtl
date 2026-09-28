@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cpptrace/cpptrace.hpp>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,34 +23,32 @@ namespace framework {
    static tag_t default_tag = 0;
 
    /**
-    * Represents a clock signal in the simulation. See also `Simulation::add_clock()`.
+    * Represents a clock signal in the simulation, identified by its period and
+    * phase. The clock's rising edge falls on every tick where
+    * `tick % period == phase`. See also `Simulation::set_clock_name()`.
     */
    class Clock {
-      friend class Simulation;
-
    public:
-      bool rising_edge() const { return m_cycle % m_period == m_phase; }
-
-   private:
-      Clock(std::string_view name, int period, int phase)
-            : m_name(name), m_period(period), m_phase(phase) {
+      Clock(unsigned period, unsigned phase)
+            : m_packed(static_cast<uint64_t>(period) << 32 | static_cast<uint64_t>(phase)) {
          assert(period > 0 && "Clock period must be positive");
+         assert(phase < period && "Clock phase must be in [0, period)");
       }
-      void tick() { m_cycle++; }
-      void reset() { m_cycle = 0; }
+      bool rising_edge(unsigned cycle) const {
+         unsigned period = static_cast<unsigned>(m_packed >> 32);
+         unsigned phase = static_cast<unsigned>(m_packed & 0xFFFFFFFF);
+         return cycle % period == phase;
+      }
+      bool operator==(const Clock& other) const { return m_packed == other.m_packed; }
+      struct hash {
+         std::size_t operator()(const Clock& clk) const noexcept {
+            return std::hash<uint64_t>{}(clk.m_packed);
+         }
+      };
 
    private:
-      const std::string m_name{};
-      const int m_period{1};
-      const int m_phase{0};
-      int m_cycle{0};
+      const uint64_t m_packed;
    };
-
-   /**
-    * Opaque handle to a clock registered with the simulation. Only the
-    * simulation that issued it can resolve it back to a `Clock`.
-    */
-   DECLARE_ID_TYPE(clock_id_t, Simulation, unsigned);
 
    /**
     * Opaque handle to an entity registered with the simulation. Only the
@@ -68,8 +65,7 @@ namespace framework {
     */
    struct EntityConfig {
       Simulation& simulation;
-      Clock const& clock;
-      clock_id_t clock_id;
+      Clock clock;
       entity_id_t id;
       std::string name;
 
@@ -86,7 +82,7 @@ namespace framework {
       friend class Simulation;
 
    public:
-      Entity(EntityConfig config) : m_config(config) {}
+      explicit Entity(EntityConfig config) : m_config(config) {}
       virtual ~Entity() = default;
 
       /**
@@ -129,8 +125,8 @@ namespace framework {
 
       /**
        * Called when the simulation is reset. Any state should be restored to its
-       * initial value. The simulation's tick count and clocks are already reset
-       * by the time this is called.
+       * initial value. The simulation's tick count is already reset by the time
+       * this is called.
        */
       virtual void on_reset() {}
 
@@ -147,15 +143,10 @@ namespace framework {
       explicit Simulation(TracerSink* sink = nullptr, SimulationSettings settings = {})
             : m_sink(sink), m_settings(std::move(settings)) {}
 
-      Clock& get_clock(clock_id_t id) { return m_clocks.at(id.value); }
-      Clock const& get_clock(clock_id_t id) const { return m_clocks.at(id.value); }
-
-      /**
-       * Creates a new clock with the specified name, period, and phase, and
-       * returns its clock ID. The clock's rising edge falls on every tick where
-       * `tick % period == phase`.
-       */
-      clock_id_t add_clock(std::string_view name, int period = 1, int phase = 0);
+      std::string_view get_clock_name(Clock clock) const { return m_clock_to_name.at(clock); }
+      void set_clock_name(std::string_view name, Clock clock) {
+         m_clock_to_name.insert_or_assign(clock, std::string{name});
+      }
 
       /**
        * Adds a new synchronous hardware entity to the simulation whose tick is
@@ -164,24 +155,21 @@ namespace framework {
       template <typename T, typename... Args>
          requires std::is_base_of_v<Entity, T>
       EntityRef<T> add_entity(std::string_view name,
-                              clock_id_t clock,
+                              Clock clock,
                               std::optional<entity_id_t> parent,
                               Args&&... args) {
          auto entity_id = entity_id_t{static_cast<unsigned>(m_entities.size())};
          m_entities.push_back(nullptr);
-         auto& entity = add_entity_impl(entity_id,
-                                        name,
-                                        std::move(std::make_unique<T>(
-                                              EntityConfig{
-                                                    .simulation = *this,
-                                                    .clock = m_clocks.at(clock.value),
-                                                    .clock_id = clock,
-                                                    .id = entity_id,
-                                                    // name is computed in the next step
-                                                    .name = {},
-                                              },
-                                              std::forward<Args>(args)...)),
-                                        parent);
+         auto entity_ptr = std::make_unique<T>(
+               EntityConfig{
+                     .simulation = *this,
+                     .clock = clock,
+                     .id = entity_id,
+                     // name is computed in the next step
+                     .name = {},
+               },
+               std::forward<Args>(args)...);
+         auto& entity = add_entity_impl(entity_id, name, std::move(entity_ptr), parent);
          return {entity_id, static_cast<T&>(entity)};
       }
 
@@ -195,16 +183,6 @@ namespace framework {
       ///        `SimulationException` is logged and ends the run early, but is
       ///        not propagated to the caller unless `throw_on_exception` is set.
       void run(int cycles, bool throw_on_exception = false);
-
-      /**
-       * Run the simulation for the specified number of cycles, propagating a
-       * `SimulationException` to the caller after logging it.
-       *
-       * `run()` deliberately swallows these so a long-running simulation can
-       * report a fault and carry on. A test wants the opposite: a fault should
-       * surface as a failure rather than as quietly stale state.
-       */
-      void run_strict(int cycles);
 
       /// @brief Reset the simulation to its initial state.
       void reset();
@@ -242,9 +220,7 @@ namespace framework {
                               std::unique_ptr<Entity> entity,
                               std::optional<entity_id_t> parent);
 
-      // A deque, not a vector: `EntityConfig` holds a `Clock const&` into this
-      // container, so adding a clock must not invalidate existing references.
-      std::deque<Clock> m_clocks{};
+      std::unordered_map<Clock, std::string, Clock::hash> m_clock_to_name{};
       std::vector<std::unique_ptr<Entity>> m_entities{};
       std::unordered_map<entity_id_t, std::string, entity_id_t::hash> m_entity_names{};
       std::unordered_map<entity_id_t, entity_id_t, entity_id_t::hash> m_entity_tree{};
@@ -290,7 +266,7 @@ namespace framework {
    template <typename T, typename... Args>
       requires std::is_base_of_v<Entity, T>
    EntityRef<T> EntityConfig::add_child(std::string_view name, Args&&... args) {
-      return simulation.add_entity<T>(name, clock_id, id, std::forward<Args>(args)...);
+      return simulation.add_entity<T>(name, clock, id, std::forward<Args>(args)...);
    }
 
    template <typename T, typename... Args>

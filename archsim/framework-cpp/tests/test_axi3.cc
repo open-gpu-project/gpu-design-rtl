@@ -59,7 +59,7 @@ static_assert(!InterfaceSubset<SlaveIfSubset>);
 
 TEST_CASE("axi3: get() returns the requested views in the requested order") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto& dut = sim.add_entity<AxiInterfaceHolder>("axi", clk, std::nullopt).second;
 
    // Deliberately not the declaration order of either interface tuple, so the
@@ -81,7 +81,7 @@ TEST_CASE("axi3: get() returns the requested views in the requested order") {
 
 TEST_CASE("axi3: get() accepts a named tuple alias in place of its elements") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto& dut = sim.add_entity<AxiInterfaceHolder>("axi", clk, std::nullopt).second;
 
    // Requesting the alias must give back exactly the alias type, not some
@@ -104,7 +104,7 @@ TEST_CASE("axi3: get() accepts a named tuple alias in place of its elements") {
 
 TEST_CASE("axi3: get() views stay bound to one channel across calls") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto& dut = sim.add_entity<AxiInterfaceHolder>("axi", clk, std::nullopt).second;
 
    // Independently requested views are copies of the same cheap handle, so a

@@ -15,7 +15,7 @@ namespace {
       SrlDut(EntityConfig config, unsigned size) : Entity{config}, regs{} {
          for (unsigned i = 0; i < size; ++i) {
             auto [id, reg] = config.simulation.add_entity<Reg<std::string>>(
-                  "reg[" + std::to_string(i) + "]", config.clock_id, config.id, "");
+                  "reg[" + std::to_string(i) + "]", config.clock, config.id, "");
             regs.emplace_back(&reg);
          }
       }
@@ -49,7 +49,7 @@ namespace {
 TEST_CASE("reg: Use in a shift chain") {
    // Create a shift register chain with 4 stages
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<SrlDut>("srl", clk, std::nullopt, 4);
 
    // Assign an initial value to the first stage of the shift register
@@ -89,7 +89,7 @@ TEST_CASE("reg: Use in a shift chain") {
 
 TEST_CASE("reg: Tracing works") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<SrlDut>("srl", clk, std::nullopt, 4);
 
    std::string canary = "A";

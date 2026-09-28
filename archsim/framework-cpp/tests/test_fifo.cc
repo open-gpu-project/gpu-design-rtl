@@ -12,7 +12,7 @@ using namespace framework;
 TEST_CASE("fifo: Basic functionality") {
    Simulation sim{};
    constexpr int N = 4;
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto [dut_id, dut] = sim.add_entity<Fifo<int, N>>("fifo", clk, std::nullopt);
 
    // Write to the FIFO x4
@@ -41,7 +41,7 @@ TEST_CASE("fifo: Basic functionality") {
 
 TEST_CASE("fifo: peek() reads the head without popping it") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto& dut = sim.add_entity<Fifo<int, 2>>("fifo", clk, std::nullopt).second;
 
    REQUIRE_FALSE(dut.peek_data().has_value());
@@ -62,7 +62,7 @@ TEST_CASE("fifo: peek() reads the head without popping it") {
 
 TEST_CASE("fifo: overrunning the fifo throws") {
    Simulation sim{};
-   auto clk = sim.add_clock("clk");
+   Clock clk{1, 0};
    auto& dut = sim.add_entity<Fifo<int, 2>>("fifo", clk, std::nullopt).second;
 
    SECTION("reading while empty") {

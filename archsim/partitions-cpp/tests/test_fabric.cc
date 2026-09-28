@@ -183,7 +183,7 @@ namespace {
    /// @brief A simulation holding a single fabric DUT, rebuilt for each SECTION.
    struct Harness {
       Simulation sim{};
-      clock_id_t clk = sim.add_clock("clk");
+      Clock clk{1, 0};
       FabricDut& dut =
             sim.add_entity<FabricDut>("dut", clk, std::nullopt, std::pair{kTcmBase, kTcmLimit})
                   .second;
