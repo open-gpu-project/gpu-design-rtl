@@ -18,6 +18,10 @@ function(add_cocotb_verilator name)
    # Create a new executable target, including any extra C++ sources
    add_executable(${name} ${ARG_CPP_SOURCES})
 
+   # Verilator's runtime headers hold a std::unique_ptr to an incomplete type, which clang rejects
+   # in C++23 where unique_ptr's destructor is constexpr and gets instantiated eagerly
+   set_target_properties(${name} PROPERTIES CXX_STANDARD 20)
+
    # Store the top level module as a property for later use by the test runner
    set_target_properties(${name} PROPERTIES COCOTB_TOP_MODULE ${ARG_TOP_MODULE})
    set_target_properties(${name} PROPERTIES COCOTB_TIMESCALE ${ARG_TIMESCALE})

@@ -22,6 +22,17 @@
          "compileCommands": [
             "${workspaceFolder}/build/compile_commands.json"
          ]
+      },
+      {
+         "name": "Linux-Clang",
+         "configurationProvider": "ms-vscode.cmake-tools",
+         "intelliSenseMode": "linux-clang-x64",
+         "compilerPath": "/usr/bin/clang++-22",
+         "cStandard": "c23",
+         "cppStandard": "c++23",
+         "compileCommands": [
+            "${workspaceFolder}/build/compile_commands.json"
+         ]
       }
    ]
 }

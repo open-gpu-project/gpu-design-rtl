@@ -6,4 +6,4 @@
 	url = https://github.com/ocornut/imgui.git
 [submodule "archsim/third-party/logpp"]
 	path = archsim/third-party/logpp
-	url = git@personal-gh:open-gpu-project/logpp.git
+	url = https://github.com/open-gpu-project/logpp.git
