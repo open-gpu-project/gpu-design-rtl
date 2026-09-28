@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "concepts.h"
+#include "simulation_settings.h"
 
 namespace framework {
 
@@ -101,6 +102,8 @@ namespace framework {
          requires std::is_base_of_v<Entity, T>
       EntityRef<T> add_child(std::string_view name, Args&&... args);
 
+      SimulationSettings const& settings() const;
+
    protected:
       /**
        * Called to evaluate the entity's combinational state graphs before
@@ -141,7 +144,8 @@ namespace framework {
     */
    class Simulation {
    public:
-      explicit Simulation(TracerSink* sink = nullptr) : m_sink(sink) {}
+      explicit Simulation(TracerSink* sink = nullptr, SimulationSettings settings = {})
+            : m_sink(sink), m_settings(std::move(settings)) {}
 
       Clock& get_clock(clock_id_t id) { return m_clocks.at(id.value); }
       Clock const& get_clock(clock_id_t id) const { return m_clocks.at(id.value); }
@@ -227,6 +231,8 @@ namespace framework {
        */
       void dump_tree(std::ostream& os) const;
 
+      SimulationSettings const& settings() const { return m_settings; }
+
    private:
       void run_one_tick();
 
@@ -247,6 +253,7 @@ namespace framework {
       unsigned m_cycle_count{0};
       bool built = false;
       TracerSink* m_sink = nullptr;
+      SimulationSettings m_settings{};
    };
 
    /**

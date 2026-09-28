@@ -3,6 +3,7 @@
 find_package(cpptrace CONFIG REQUIRED)
 find_package(magic_enum CONFIG REQUIRED)
 find_package(Catch2 CONFIG REQUIRED)
+find_package(magic_enum CONFIG REQUIRED)
 
 # file(
 #    GLOB IMGUI_SOURCES

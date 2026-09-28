@@ -3,6 +3,7 @@ add_library(
    ${CMAKE_CURRENT_LIST_DIR}/fabric.cc
    ${CMAKE_CURRENT_LIST_DIR}/tdsu.cc
    ${CMAKE_CURRENT_LIST_DIR}/gce.cc
+   ${CMAKE_CURRENT_LIST_DIR}/axi3_hp_buffer.cc
 )
 
 add_library(archsim::partitions ALIAS partitions-cpp)

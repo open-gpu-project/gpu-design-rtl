@@ -11,6 +11,8 @@
 
 namespace framework::axi3 {
 
+   enum class BurstType : uint8_t { Fixed = 0, Incr = 1, Wrap = 2 };
+
    /**
     * All non-handshake signals for the AR channel
     */
@@ -19,7 +21,7 @@ namespace framework::axi3 {
       std::bitset<32> araddr;
       std::bitset<8> arlen;
       std::bitset<3> arsize;
-      std::bitset<2> arburst;
+      BurstType arburst;
    };
 
    /**
@@ -40,7 +42,7 @@ namespace framework::axi3 {
       std::bitset<32> awaddr;
       std::bitset<8> awlen;
       std::bitset<3> awsize;
-      std::bitset<2> awburst;
+      BurstType awburst;
    };
 
    /**
@@ -96,9 +98,15 @@ namespace framework::axi3 {
    struct ChannelSource {
    public:
       bool valid() const { return m_fifo.can_read(); }
-      std::pair<T, tag_t> read() { return m_fifo.read(); }
+      std::pair<T, tag_t> read() {
+         if (m_fifo.settings().enable_axi3_checks) {
+            check_value_if_valid();
+         }
+         return m_fifo.read();
+      }
       std::optional<std::pair<T, tag_t>> peek() const { return m_fifo.peek(); }
       std::optional<T> peek_data() const { return m_fifo.peek_data(); }
+      void check_value_if_valid() const;
 
    private:
       friend struct Channel<T>;
@@ -197,7 +205,7 @@ namespace framework::axi3 {
 
       /**
        * Returns the requested channel views as a tuple, in the order requested.
-       * `Ts...` must be mut-ex-subsets of `MasterInterface` or SlaveInterface`.
+       * `Ts...` must be mut-ex-subsets of `MasterInterface` or `SlaveInterface`.
        */
       template <typename... Ts>
          requires InterfaceSubset<Ts...>

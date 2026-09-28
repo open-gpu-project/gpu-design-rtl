@@ -32,6 +32,11 @@ namespace framework {
        */
       T const& value() const { return m_value.first; }
 
+      /**
+       * Returns the tag associated with the current value of the register.
+       */
+      auto tag() const { return m_value.second; }
+
    protected:
       void on_tick() override {
          if (m_next_value.has_value()) {

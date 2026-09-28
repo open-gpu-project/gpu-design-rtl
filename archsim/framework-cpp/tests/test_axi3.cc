@@ -13,7 +13,7 @@ using namespace framework::axi3;
 namespace {
 
    /// Stimulus builders, filled in so a beat looks like a plausible single-beat burst.
-   ArChannelData ar(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, 0b01}; }
+   ArChannelData ar(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, BurstType::Incr}; }
    RChannelData rd(uint8_t id, uint32_t data) { return {id, data, 0b1111, 1}; }
 
    /// Stand-ins for the interface aliases a partition declares, e.g.

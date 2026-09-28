@@ -54,8 +54,8 @@ namespace {
 
    /// Stimulus builders. Only the fields the fabric routes on really matter;
    /// the rest are filled in so a beat looks like a plausible single-beat burst.
-   ArChannelData ar(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, 0b01}; }
-   AwChannelData aw(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, 0b01}; }
+   ArChannelData ar(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, BurstType::Incr}; }
+   AwChannelData aw(uint8_t id, uint32_t addr) { return {id, addr, 0, 0b010, BurstType::Incr}; }
    WChannelData wr(uint8_t id, uint32_t data) { return {id, data, 0b1111, 1}; }
    RChannelData rd(uint8_t id, uint32_t data) { return {id, data, 0b1111, 1}; }
 

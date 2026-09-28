@@ -29,6 +29,10 @@ clock_id_t Simulation::add_clock(std::string_view name, int period, int phase) {
    return clock_id_t{next_id};
 }
 
+SimulationSettings const& Entity::settings() const {
+   return m_config.simulation.settings();
+}
+
 Entity& Simulation::add_entity_impl(entity_id_t entity_id,
                                     std::string_view name,
                                     std::unique_ptr<Entity> entity,
