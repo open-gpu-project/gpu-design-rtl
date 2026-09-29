@@ -3,6 +3,7 @@
 **/.DS_Store
 .git
 .claude
+.codex
 eda/
 
 # Python environment files
@@ -19,3 +20,7 @@ Testing/
 # CocoTB test results
 results.xml
 *.vcd
+
+# Editor/tool scratch files
+imgui.ini
+docs/.xdp-*
