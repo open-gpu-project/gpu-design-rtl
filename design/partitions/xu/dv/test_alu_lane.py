@@ -2,10 +2,8 @@
 # SPDX-License-Identifier: CC0-1.0
 # Simple tests for an adder module
 
-import random
 
 import cocotb
-from cocotb.triggers import Timer
 
 
 @cocotb.test()

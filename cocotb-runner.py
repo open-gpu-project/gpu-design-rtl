@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from cocotb_tools.runner import Verilator, _Command
 
@@ -12,13 +13,16 @@ assert test_module is not None, "COCOTB_TEST_MODULE environment variable is not 
 
 
 class MyVerilatorRunner(Verilator):
-
-   def __init__(self, *args, **kwargs):
+   def __init__(self, *args: Any, **kwargs: Any):
       super().__init__(*args, **kwargs)
 
    def _test_command(self) -> list[_Command]:
-      return [[str(out_file)] + (["--trace"] if self.waves or self.gui else []) + self.test_args +
-              self.plusargs]
+      return [
+         [str(out_file)]
+         + (["--trace"] if self.waves or self.gui else [])
+         + self.test_args
+         + self.plusargs
+      ]
 
 
 cwd = Path(__file__).parent
@@ -31,11 +35,11 @@ if results.exists():
 
 runner = MyVerilatorRunner()
 runner.test(
-    test_module,
-    hdl_toplevel=toplevel,
-    hdl_toplevel_lang="verilog",
-    build_dir=build_dir,
-    test_dir=build_dir,
+   test_module,
+   hdl_toplevel=toplevel,
+   hdl_toplevel_lang="verilog",
+   build_dir=build_dir,
+   test_dir=build_dir,
 )
 
 if not results.exists():
