@@ -27,7 +27,7 @@ module alu_dsp_wrapper(
     DSP48E1 #(
         // Register Control Attributes
         .ACASCREG(1),
-        .ADREG(1),
+        .ADREG(0), // add one more cycle in A delay when multiply since it goes through preadder, disabled temporarily
         .ALUMODEREG(1),
         .AREG(2), // Can dynamically MUX between 1 and 2
         .BCASCREG(1),
