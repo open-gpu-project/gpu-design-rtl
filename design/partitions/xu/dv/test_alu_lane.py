@@ -1,4 +1,5 @@
 from collections import deque
+from random import Random
 
 import cocotb
 from cocotb.clock import Clock
@@ -434,4 +435,91 @@ async def test_18b_cmp(dut):
       exp_y2 = expected_y2.popleft()
       assert_signal_eq(dut.Y1, exp_y1, "Y1 (pipeline)") if exp_y1 is not None else None
       assert_signal_eq(dut.Y2, exp_y2, "Y2 (pipeline)") if exp_y2 is not None else None
+      await Timer(1, unit="step")
+
+
+@cocotb.test()
+async def test_24b_cmp(dut):
+   # dut.debug_test_id.value = 3
+   cocotb.log.info(f"dut = {dut}")
+
+   expected_y2 = deque()
+   
+   test_data = [
+   #    X1       X2      AccIn1  AccIn2
+       (0x00003F, 0x3FFFF, 0x0003F, 0x3FFFF),
+       (0x000001, 0x00000, 0x00000, 0x00100),
+       (0x000100, 0x00002, 0x00000, 0x00100),
+       (0x000301, 0x00004, 0x00000, 0x00100),
+       (0x000500, 0x00006, 0x00000, 0x00100),
+       (0x000701, 0x00008, 0x00000, 0x00100),
+       (0x000900, 0x0000A, 0x00000, 0x00100),
+       (0x000B01, 0x0000C, 0x00000, 0x00100),
+       (0x000D00, 0x0000E, 0x00000, 0x00100),
+       (0x000F01, 0x00010, 0x00000, 0x00100),
+   ]
+
+   start_tdm_clocks(dut)
+
+   dut.dsp_rst.value = 1
+   dut.fab_in_rst.value = 1
+   dut.fab_out_rst.value = 1
+   drive_alu_ctl(dut, mode=6, dsp_ctl=0)
+   dut.dsp_casc_in.value = 0
+   clear_datapath(dut)
+
+   for _ in range(3):
+      await RisingEdge(dut.fab_in_clk)
+
+   dut.dsp_rst.value = 0
+   dut.fab_in_rst.value = 0
+   dut.fab_out_rst.value = 0
+   drive_alu_ctl(dut, mode=6, dsp_ctl=pack_dsp_ctl(
+       INMODE=0,
+       ALUMODE=0b0011,
+       OPMODE=0b0110011,
+       CEA=0b11,
+       CEB=0b11,
+       CEC=1,
+       CED=1,
+       CEM=1,
+       CEP=1,
+       CEAD=1,
+   ))
+   dut.dsp_casc_in.value = pack_dsp_casc(PC=48879)
+
+   for cycle, test_input in enumerate(test_data):
+      X1, X2, AccIn1, AccIn2 = test_input
+      dut.X1.value = X1
+      dut.X2.value = X2
+      dut.AccIn1.value = AccIn1
+      dut.AccIn2.value = AccIn2
+
+      if (((AccIn1 << 18) + AccIn2) & 0xFFFFFF) >= (((X1 << 18) + X2) & 0xFFFFFF):
+         expected_y2.append(1)
+      else:
+         expected_y2.append(0)
+
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
+
+      if cycle >= LANE_LATENCY:
+         exp_y2 = expected_y2.popleft() & 0xFFFFFF
+         try:
+            actual_y1 = int(dut.Y1.value) & 0xFFFFFF
+            assert actual_y1 == 0, f"Y1: expected 0x0, got 0x{actual_y1:x}"
+            actual_y2 = int(dut.Y2.value) & 0xFFFFFF
+            assert actual_y2 == exp_y2, f"Y: expected 0x{exp_y2:x}, got 0x{actual_y2:x}"
+         except AssertionError as err:
+            raise AssertionError(f"{err}\n{lane_snapshot(dut)}") from err
+      await Timer(1, unit="step")
+
+   while expected_y2:
+      await RisingEdge(dut.fab_in_clk)
+      await ReadOnly()
+      actual_y1 = int(dut.Y1.value) & 0xFFFFFF
+      assert actual_y1 == 0, f"Y1: expected 0x0, got 0x{actual_y1:x}"
+      exp_y2 = expected_y2.popleft() & 0xFFFFFF
+      actual_y2 = int(dut.Y2.value) & 0xFFFFFF
+      assert actual_y2 == exp_y2, f"Y: expected 0x{exp_y2:x}, got 0x{actual_y2:x}"
       await Timer(1, unit="step")

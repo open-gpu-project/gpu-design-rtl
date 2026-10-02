@@ -54,8 +54,19 @@ package xu_priv;
         FMA18=1,
         ADD24=2,
         FMA24=3,
-        CMP18=4
+        CMP18=4,
+        CMP24=6 // assign to 6 (110) because its similar to mode 2 (010)
     } alu_mode_t;
+
+    function automatic logic is_18_bit_mode(input alu_mode_t mode);
+        is_18_bit_mode = (mode == ADD18) || (mode == FMA18) || (mode == CMP18);
+        return is_18_bit_mode;
+    endfunction
+
+    function automatic logic is_24_bit_mode(input alu_mode_t mode);
+        is_24_bit_mode = (mode == ADD24) || (mode == FMA24) || (mode == CMP24);
+        return is_24_bit_mode;
+    endfunction
 
     typedef enum logic [2:0]{
         PRED_EQ=0,

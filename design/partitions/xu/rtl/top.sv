@@ -94,6 +94,47 @@ bram_wrapper u_bram_wrapper(
     .DO_B   (DO_B   )
 );
 
+// acc_reg_file 
+// #(
+//     .WIDTH (24 ),
+//     .DEPTH (32 )
+// )
+// reg_file1_24b(
+//     .clk   (clk   ),
+//     .we    (24b_reg_we    ),
+//     .waddr (24b_reg_waddr ),
+//     .wdata (DO_A[35:12] ),
+//     .raddr (24b_reg_raddr ),
+//     .rdata (24b_reg_rdata)
+// );
+// acc_reg_file 
+// #(
+//     .WIDTH (24 ),
+//     .DEPTH (32 )
+// )
+// reg_file2_24b(
+//     .clk   (clk   ),
+//     .we    (24b_reg_we    ),
+//     .waddr (24b_reg_waddr ),
+//     .wdata ({DO_A[11:0],DO_B[11:0]} ),
+//     .raddr (24b_reg_raddr ),
+//     .rdata (24b_reg_rdata)
+// );
+// acc_reg_file 
+// #(
+//     .WIDTH (24 ),
+//     .DEPTH (32 )
+// )
+// reg_file3_24b(
+//     .clk   (clk   ),
+//     .we    (24b_reg_we    ),
+//     .waddr (24b_reg_waddr ),
+//     .wdata (DO_B[35:12] ),
+//     .raddr (24b_reg_raddr ),
+//     .rdata (24b_reg_rdata)
+// );
+
+
 lane_input_logic u_lane_input_logic(
     .clk             (dsp_clk_div2             ),
     .rst             (rst             ),
@@ -103,7 +144,7 @@ lane_input_logic u_lane_input_logic(
     .l0x2            (l0x2            ),
     .l1x1            (l1x1            ),
     .l1x2            (l1x2            ),
-    .mode            (xu_ctl_taps_out[2].mode[1:0]            ),
+    .mode            (xu_ctl_taps_out[2].mode            ),
     .mode1_sel_low   (xu_ctl_taps_out[2].mode1_sel_low   ),
     .slice_sel_24bit (xu_ctl_taps_out[2].slice_sel_24bit )
 );
@@ -198,21 +239,37 @@ always_ff @(posedge dsp_clk_div2) begin
 end
 
 always_comb begin
-    case (xu_ctl_taps_out[7].pred_cond)
-        xu_priv::PRED_EQ: pred_write_data = {l1eq, l0eq};
-        xu_priv::PRED_NE: pred_write_data = {l1ne, l0ne};
-        xu_priv::PRED_LT: pred_write_data = {l1lt, l0lt};
-        xu_priv::PRED_LE: pred_write_data = {l1le, l0le};
-        xu_priv::PRED_GT: pred_write_data = {l1gt, l0gt};
-        xu_priv::PRED_GE: pred_write_data = {l1ge, l0ge};
-        default:          pred_write_data = 4'b0000;
-    endcase
+    if (xu_priv::is_18_bit_mode(xu_ctl_taps_out[7].mode)) begin
+        case (xu_ctl_taps_out[7].pred_cond)
+            xu_priv::PRED_EQ: pred_write_data = {l1eq, l0eq};
+            xu_priv::PRED_NE: pred_write_data = {l1ne, l0ne};
+            xu_priv::PRED_LT: pred_write_data = {l1lt, l0lt};
+            xu_priv::PRED_LE: pred_write_data = {l1le, l0le};
+            xu_priv::PRED_GT: pred_write_data = {l1gt, l0gt};
+            xu_priv::PRED_GE: pred_write_data = {l1ge, l0ge};
+            default:          pred_write_data = 4'b0000;
+        endcase
+    end
+    else if (xu_priv::is_24_bit_mode(xu_ctl_taps_out[7].mode)) begin
+        case (xu_ctl_taps_out[7].pred_cond)
+            xu_priv::PRED_EQ: pred_write_data = {{2{l1eq[0]}}, {2{l0eq[0]}}};
+            xu_priv::PRED_NE: pred_write_data = {{2{l1ne[0]}}, {2{l0ne[0]}}};
+            xu_priv::PRED_LT: pred_write_data = {{2{l1lt[0]}}, {2{l0lt[0]}}};
+            xu_priv::PRED_LE: pred_write_data = {{2{l1le[0]}}, {2{l0le[0]}}};
+            xu_priv::PRED_GT: pred_write_data = {{2{l1gt[0]}}, {2{l0gt[0]}}};
+            xu_priv::PRED_GE: pred_write_data = {{2{l1ge[0]}}, {2{l0ge[0]}}};
+            default:          pred_write_data = 4'b0000;
+        endcase
+    end else begin
+        $error("Invalid mode for predicate writeback: %0d", xu_ctl_taps_out[7].mode);
+        pred_write_data = 4'bx;
+    end
 end
 
 // lane output
 lane_output_logic u_lane_output_logic(
     .fab_out_clk    (dsp_clk_div2    ),
-    .mode           (xu_ctl_taps_out[7].mode[1:0]           ),
+    .mode           (xu_ctl_taps_out[7].mode          ),
     .l0y1           (l0y1           ),
     .l0y2           (l0y2           ),
     .l1y1           (l1y1           ),

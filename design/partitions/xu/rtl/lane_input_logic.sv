@@ -9,7 +9,7 @@ module lane_input_logic #() (
     output logic [17:0] l0x2,
     output logic [23:0] l1x1,
     output logic [17:0] l1x2,
-    input logic [1:0] mode,
+    input xu_priv::alu_mode_t mode,
     input logic mode1_sel_low,
     input logic [1:0] slice_sel_24bit
 );
@@ -63,13 +63,13 @@ assign slice3_24b = {pB_d1[35:12]};
 
 always_comb begin
     unique case (mode)
-        2'b00: begin
+        xu_priv::ADD18, xu_priv::CMP18: begin
             l0x1 = zero_extend_18b(pA_d1_18hi);
             l0x2 = pA_d1_18lo;
             l1x1 = zero_extend_18b(pB_d1_18hi);
             l1x2 = pB_d1_18lo;
         end
-        2'b01: begin
+        xu_priv::FMA18: begin
             if (mode1_sel_low) begin
                 l0x1 = sign_extend_18b(pA_d2_18lo);
                 l0x2 = pA_d1_18lo;
@@ -82,7 +82,7 @@ always_comb begin
                 l1x2 = pB_18hi;
             end
         end
-        2'b10: begin
+        xu_priv::ADD24, xu_priv::CMP24: begin
             unique case (slice_sel_24bit)
                 0: begin
                     l0x1 = {{18{1'b0}},slice1_24b[23:18]};
@@ -110,7 +110,7 @@ always_comb begin
                 end
             endcase
         end
-        2'b11: begin
+        xu_priv::FMA24: begin
             unique case (slice_sel_24bit)
                 // The low lane's b chunk is bits [16:0] and must be zero
                 // extended: bit 17 already belongs to the high lane's chunk
@@ -143,6 +143,7 @@ always_comb begin
             endcase
         end
         default: begin
+            $error("Invalid mode for lane input logic: %0d", mode);
             l0x1 = 24'hx;
             l0x2 = 18'hx;
             l1x1 = 24'hx;

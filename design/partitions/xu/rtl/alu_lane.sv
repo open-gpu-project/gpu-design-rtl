@@ -116,12 +116,26 @@ module alu_lane #(
     assign mode5_18b_input.B = X2 ^ 18'h20000;
 
     logic [47:0] Acc1PadAcc2In_mode5;
-    assign Acc1PadAcc2In_mode5 = {5'b0, 1'b1, AccIn1^ 18'h20000, 5'b0, 1'b1, AccIn2^ 18'h20000};
+    assign Acc1PadAcc2In_mode5 = {5'b0, 1'b1, AccIn1 ^ 18'h20000, 5'b0, 1'b1, AccIn2 ^ 18'h20000};
 
     assign mode5_18b_input.C = Acc1PadAcc2In_mode5;
     assign mode5_18b_input.D = 0;
     assign mode5_Y1 = {17'b0, dsp_data_out_reg.P[42]};
     assign mode5_Y2 = {17'b0,dsp_data_out_reg.P[18]};
+
+    // Motivation: 24-bit compare (X1:X2 - Acc1:Acc2)
+    xu_priv::dsp_input mode6_24b_input;
+    logic[23:0] mode6_Y1Y2;
+    logic[17:0] mode6_Y1;
+    logic[17:0] mode6_Y2;
+    // logic[35:0] Acc1Acc2In_d1;
+    assign mode6_24b_input.A = X1Zext ^ 30'h00000020;
+    assign mode6_24b_input.B = X2;
+    assign mode6_24b_input.C = {23'b0, 1'b1, Acc1Acc2In[23:0] ^ 24'h800000};
+    assign mode6_24b_input.D = 0;
+    assign mode6_Y1Y2 = {23'b0, dsp_data_out_reg.P[24]};
+    assign mode6_Y1 = {12'b0, mode6_Y1Y2[23:18]};
+    assign mode6_Y2 = mode6_Y1Y2[17:0];
 
 
     // Registered control signals
@@ -181,6 +195,7 @@ module alu_lane #(
                 xu_priv::ADD24: dsp_data_in <= mode3_24b_input;
                 xu_priv::FMA24: dsp_data_in <= mode4_24b_input;
                 xu_priv::CMP18: dsp_data_in <= mode5_18b_input;
+                xu_priv::CMP24: dsp_data_in <= mode6_24b_input;
                 default: dsp_data_in <= 0;
             endcase
         end
@@ -267,6 +282,10 @@ module alu_lane #(
         xu_priv::CMP18: begin
             Y1_out = mode5_Y1;
             Y2_out = mode5_Y2;
+        end
+        xu_priv::CMP24: begin
+            Y1_out = mode6_Y1;
+            Y2_out = mode6_Y2;
         end
         default: begin
             Y1_out = 0;
