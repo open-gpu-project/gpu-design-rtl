@@ -7,10 +7,13 @@ from cocotb.triggers import ReadOnly, Timer
 
 from design.partitions.xu.dv import xu_timing as T
 from design.partitions.xu.dv.xu_asm import load_bram
-from design.partitions.xu.dv.xu_models import fma18_expected, pack18_pair
+from design.partitions.xu.dv.xu_models import (
+    fma18_expected, make_mode2_slices, pack18_pair, pack72_from_slices,
+    sign_extend,
+)
 from design.partitions.xu.dv.xu_tb import (
-    HALF_MASK, drive_xu_ctl, dsp_add_ctl, dsp_add_kwargs, dsp_fma_ctl,
-    pack_dsp_ctl, reset_dut, xu_edge,
+    HALF_MASK, VAL24_MASK, drive_xu_ctl, dsp_add_ctl, dsp_add_kwargs,
+    dsp_fma_ctl, pack_dsp_ctl, reset_dut, xu_edge,
 )
 
 
@@ -126,6 +129,64 @@ async def test_predicate_writeback(dut):
                    expected={"DO_A": expected[0], "DO_B": expected[1]},
                    delay=T.BRAM_ADDR_TO_DO - 1, label=f"BRAM readback {label}")
     await drain()
+    assert not bench.checks
+
+
+@cocotb.test()
+async def test_cmp24_predicate_writeback(dut):
+    """CMP24 writes duplicated per-lane predicate masks for all conditions."""
+    conditions = (operator.eq, operator.ne, operator.lt,
+                  operator.le, operator.gt, operator.ge)
+    rows = (
+        (0x000000, 0x000001, 0x000000, 0x000001),
+        (0x000001, 0x000000, 0x0ABCDE, 0x0ABCDE),
+        (0x7FFFFF, 0x800000, 0xFFFFFF, 0x000000),
+        (0x123456, 0x123455, 0x654321, 0x654322),
+    )
+    sels = [row % 3 for row in range(len(rows))]
+    bram = {}
+    for row, (acc0, x0, acc1, x1) in enumerate(rows):
+        lo, hi = pack72_from_slices(*make_mode2_slices(acc0, acc1, sels[row],
+                                                       dummy=0xA50000 + row))
+        bram[2 * row] = lo
+        bram[2 * row + 1] = hi
+        lo, hi = pack72_from_slices(*make_mode2_slices(x0, x1, sels[row],
+                                                       dummy=0x5A0000 + row))
+        bram[16 + 2 * row] = lo
+        bram[17 + 2 * row] = hi
+
+    await reset_dut(dut)
+    await load_bram(dut, bram)
+    bench = PredicateBench(dut)
+    await bench.drain()
+
+    add_ctl = dsp_add_ctl()
+    cmp_ctl = pack_dsp_ctl(**dict(dsp_add_kwargs(), ALUMODE=0b0011, OPMODE=0b0110011))
+
+    for row, sel in enumerate(sels):
+        await bench.step(dict(bench.idle, mode=2, slice_sel_24bit=sel,
+                              addr_a=2 * row, addr_b=2 * row + 1,
+                              l0dsp_control=add_ctl, l1dsp_control=add_ctl,
+                              acc_we=1, acc_waddr=row))
+    await bench.drain()
+
+    slot = 0
+    for row, (acc0, x0, acc1, x1) in enumerate(rows):
+        for cond, compare in enumerate(conditions):
+            l0 = int(compare(sign_extend(acc0 & VAL24_MASK, 24),
+                             sign_extend(x0 & VAL24_MASK, 24)))
+            l1 = int(compare(sign_extend(acc1 & VAL24_MASK, 24),
+                             sign_extend(x1 & VAL24_MASK, 24)))
+            mask = (l0 * 0b0011) | (l1 * 0b1100)
+            await bench.step(dict(bench.idle, mode=6, slice_sel_24bit=sels[row],
+                                  addr_a=16 + 2 * row, addr_b=17 + 2 * row,
+                                  l0dsp_control=cmp_ctl, l1dsp_control=cmp_ctl,
+                                  acc_raddr=row, pred_we=1, pred_waddr=slot,
+                                  pred_cond=cond),
+                             expected={"pred_write_data": mask},
+                             label=f"CMP24 row={row} cond={cond}")
+            slot += 1
+    await bench.drain()
     assert not bench.checks
 
 

@@ -24,8 +24,18 @@ module top #() (
     // input xu_priv::dsp_ctl l1dsp_control,
     input xu_priv::xu_ctl xu_ctl_in,
     input xu_priv::dsp_casc_in l1dsp_casc_in,
-    output xu_priv::dsp_casc_out l0dsp_casc_out
-    
+    output xu_priv::dsp_casc_out l0dsp_casc_out,
+        
+    // 24-bit staging buffer control
+    input logic        wb24_load,
+    input logic [4:0]  wb24_load_row,
+
+    input logic        wb24_start,
+
+    input logic        wb24_flush,
+    input logic [4:0]  wb24_flush_row,
+    input logic [9:0]  wb24_flush_addr_a,
+    input logic [9:0]  wb24_flush_addr_b
     // output [17:0] l0y1_o,
     // output [17:0] l0y2_o,
     // output [17:0] l1y1_o,
@@ -94,46 +104,172 @@ bram_wrapper u_bram_wrapper(
     .DO_B   (DO_B   )
 );
 
-// acc_reg_file 
-// #(
-//     .WIDTH (24 ),
-//     .DEPTH (32 )
-// )
-// reg_file1_24b(
-//     .clk   (clk   ),
-//     .we    (24b_reg_we    ),
-//     .waddr (24b_reg_waddr ),
-//     .wdata (DO_A[35:12] ),
-//     .raddr (24b_reg_raddr ),
-//     .rdata (24b_reg_rdata)
-// );
-// acc_reg_file 
-// #(
-//     .WIDTH (24 ),
-//     .DEPTH (32 )
-// )
-// reg_file2_24b(
-//     .clk   (clk   ),
-//     .we    (24b_reg_we    ),
-//     .waddr (24b_reg_waddr ),
-//     .wdata ({DO_A[11:0],DO_B[11:0]} ),
-//     .raddr (24b_reg_raddr ),
-//     .rdata (24b_reg_rdata)
-// );
-// acc_reg_file 
-// #(
-//     .WIDTH (24 ),
-//     .DEPTH (32 )
-// )
-// reg_file3_24b(
-//     .clk   (clk   ),
-//     .we    (24b_reg_we    ),
-//     .waddr (24b_reg_waddr ),
-//     .wdata (DO_B[35:12] ),
-//     .raddr (24b_reg_raddr ),
-//     .rdata (24b_reg_rdata)
-// );
+logic [23:0] bank_rdata [0:2];
+logic [23:0] bank_wdata [0:2];
+logic [4:0]  bank_waddr [0:2];
+logic [2:0]  bank_we;
 
+genvar g;
+generate
+    for (g = 0; g < 3; g++) begin : gen_wb24_bank
+
+        acc_reg_file #(
+            .WIDTH(24),
+            .DEPTH(32)
+        ) u_bank (
+            .clk   (dsp_clk_div2),
+            .we    (bank_we[g]),
+            .waddr (bank_waddr[g]),
+            .wdata (bank_wdata[g]),
+            .raddr (wb24_flush_row),
+            .rdata (bank_rdata[g])
+        );
+
+    end
+endgenerate
+
+logic [1:0] wb24_ptr_bank;
+logic [4:0] wb24_ptr_row;
+
+wire wb24_add =
+    (xu_ctl_taps_out[7].mode == xu_priv::ADD24) &&
+    (xu_ctl_taps_out[7].l0_wb_valid ||
+     xu_ctl_taps_out[7].l1_wb_valid);
+
+wire wb24_fma =
+    (xu_ctl_taps_out[7].mode == xu_priv::FMA24) &&
+    xu_ctl_taps_out[7].l0_wb_valid;
+
+always_ff @(posedge dsp_clk_div2) begin
+    if (rst || wb24_start) begin
+        wb24_ptr_bank <= 2'd0;
+        wb24_ptr_row  <= 5'd0;
+    end
+    else if (wb24_add) begin
+        // ADD24 consumes two logical result positions.
+        case (wb24_ptr_bank)
+            2'd0: begin
+                wb24_ptr_bank <= 2'd2;
+            end
+            2'd1: begin
+                wb24_ptr_bank <= 2'd0;
+                wb24_ptr_row  <= wb24_ptr_row + 1'b1;
+            end
+            2'd2: begin
+                wb24_ptr_bank <= 2'd1;
+                wb24_ptr_row  <= wb24_ptr_row + 1'b1;
+            end
+            default: ;
+        endcase
+    end
+    else if (wb24_fma) begin
+        // FMA24 consumes one logical result position.
+        case (wb24_ptr_bank)
+            2'd0: wb24_ptr_bank <= 2'd1;
+            2'd1: wb24_ptr_bank <= 2'd2;
+            2'd2: begin
+                wb24_ptr_bank <= 2'd0;
+                wb24_ptr_row  <= wb24_ptr_row + 1'b1;
+            end
+            default: ;
+        endcase
+    end
+end
+
+logic [1:0] wb24_lane1_bank;
+logic [4:0] wb24_lane1_row;
+
+always_comb begin
+    case (wb24_ptr_bank)
+        2'd0: begin
+            wb24_lane1_bank = 2'd1;
+            wb24_lane1_row  = wb24_ptr_row;
+        end
+
+        2'd1: begin
+            wb24_lane1_bank = 2'd2;
+            wb24_lane1_row  = wb24_ptr_row;
+        end
+
+        2'd2: begin
+            wb24_lane1_bank = 2'd0;
+            wb24_lane1_row  = wb24_ptr_row + 1'b1;
+        end
+
+        default: begin
+            wb24_lane1_bank = 2'd0;
+            wb24_lane1_row  = 5'd0;
+        end
+    endcase
+end
+
+always_comb begin
+    // Defaults
+    for (int i = 0; i < 3; i++) begin
+        bank_we[i]    = 1'b0;
+        bank_waddr[i] = 5'd0;
+        bank_wdata[i] = 24'd0;
+    end
+
+    // Phase 1: preload old destination values.
+    if (wb24_load) begin
+        bank_we = 3'b111;
+
+        for (int i = 0; i < 3; i++)
+            bank_waddr[i] = wb24_load_row;
+
+        bank_wdata[0] = DO_A[35:12];
+        bank_wdata[1] = {DO_A[11:0], DO_B[11:0]};
+        bank_wdata[2] = DO_B[35:12];
+    end
+
+    // Phase 2: update selected logical results.
+    else if (wb24_add) begin
+
+        // Lane 0 -> current pointer
+        if (xu_ctl_taps_out[7].l0_wb_valid &&
+            exec_mask[0]) begin
+
+            bank_we[wb24_ptr_bank] = 1'b1;
+            bank_waddr[wb24_ptr_bank] = wb24_ptr_row;
+            bank_wdata[wb24_ptr_bank] = l0_result[23:0];
+        end
+
+        // Lane 1 -> next pointer
+        if (xu_ctl_taps_out[7].l1_wb_valid &&
+            exec_mask[2]) begin
+
+            bank_we[wb24_lane1_bank] = 1'b1;
+            bank_waddr[wb24_lane1_bank] = wb24_lane1_row;
+            bank_wdata[wb24_lane1_bank] = l1_result[23:0];
+        end
+    end
+
+    else if (wb24_fma) begin
+
+        // FMA24 produces only ONE logical result.
+        // Both DSP lanes contributed to l0_result.
+
+        if (exec_mask[0]) begin
+            bank_we[wb24_ptr_bank] = 1'b1;
+            bank_waddr[wb24_ptr_bank] = wb24_ptr_row;
+            bank_wdata[wb24_ptr_bank] = l1_result[23:0];
+        end
+    end
+end
+
+logic [35:0] wb24_flush_data_a;
+logic [35:0] wb24_flush_data_b;
+
+assign wb24_flush_data_a = {
+    bank_rdata[0],
+    bank_rdata[1][23:12]
+};
+
+assign wb24_flush_data_b = {
+    bank_rdata[2],
+    bank_rdata[1][11:0]
+};
 
 lane_input_logic u_lane_input_logic(
     .clk             (dsp_clk_div2             ),
@@ -252,12 +388,14 @@ always_comb begin
     end
     else if (xu_priv::is_24_bit_mode(xu_ctl_taps_out[7].mode)) begin
         case (xu_ctl_taps_out[7].pred_cond)
-            xu_priv::PRED_EQ: pred_write_data = {{2{l1eq[0]}}, {2{l0eq[0]}}};
-            xu_priv::PRED_NE: pred_write_data = {{2{l1ne[0]}}, {2{l0ne[0]}}};
-            xu_priv::PRED_LT: pred_write_data = {{2{l1lt[0]}}, {2{l0lt[0]}}};
-            xu_priv::PRED_LE: pred_write_data = {{2{l1le[0]}}, {2{l0le[0]}}};
-            xu_priv::PRED_GT: pred_write_data = {{2{l1gt[0]}}, {2{l0gt[0]}}};
-            xu_priv::PRED_GE: pred_write_data = {{2{l1ge[0]}}, {2{l0ge[0]}}};
+            xu_priv::PRED_EQ: pred_write_data = {{2{l1eq == 2'b11}}, {2{l0eq == 2'b11}}};
+            xu_priv::PRED_NE: pred_write_data = {{2{l1eq != 2'b11}}, {2{l0eq != 2'b11}}};
+            xu_priv::PRED_LT: pred_write_data = {{2{~l1ge[1]}}, {2{~l0ge[1]}}};
+            xu_priv::PRED_LE: pred_write_data = {{2{~l1ge[1] || (l1eq == 2'b11)}},
+                                                 {2{~l0ge[1] || (l0eq == 2'b11)}}};
+            xu_priv::PRED_GT: pred_write_data = {{2{l1ge[1] && (l1eq != 2'b11)}},
+                                                 {2{l0ge[1] && (l0eq != 2'b11)}}};
+            xu_priv::PRED_GE: pred_write_data = {{2{l1ge[1]}}, {2{l0ge[1]}}};
             default:          pred_write_data = 4'b0000;
         endcase
     end else begin
@@ -294,30 +432,52 @@ assign exec_mask = xu_ctl_taps_out[7].pred_enable ?
 
 // bram writeback
 always_comb begin
-    // Default: normal external/USC access
+    // Normal access
     bram_di_a   = DI_A;
     bram_addr_a = xu_ctl_in.ADDR_A;
     bram_en_a   = xu_ctl_in.EN_A;
     bram_we_a   = xu_ctl_in.WE_A;
-
-    // ALU writeback overrides the port
-    if (xu_ctl_taps_out[7].l0_wb_valid) begin
-        bram_di_a   = l0_result;
-        bram_addr_a = xu_ctl_taps_out[7].WB_ADDR_A;
-        bram_en_a   = 1'b1;
-        bram_we_a   = xu_ctl_taps_out[7].WB_WE_A & {{2{exec_mask[0]}}, {2{exec_mask[1]}}};;
-    end
 
     bram_di_b   = DI_B;
     bram_addr_b = xu_ctl_in.ADDR_B;
     bram_en_b   = xu_ctl_in.EN_B;
     bram_we_b   = xu_ctl_in.WE_B;
 
-    if (xu_ctl_taps_out[7].l1_wb_valid) begin
-        bram_di_b   = l1_result;
-        bram_addr_b = xu_ctl_taps_out[7].WB_ADDR_B;
+    // Existing 18-bit ALU writeback
+    if (xu_priv::is_18_bit_mode(xu_ctl_taps_out[7].mode)) begin
+
+        if (xu_ctl_taps_out[7].l0_wb_valid) begin
+            bram_di_a   = l0_result;
+            bram_addr_a = xu_ctl_taps_out[7].WB_ADDR_A;
+            bram_en_a   = 1'b1;
+            bram_we_a   =
+                xu_ctl_taps_out[7].WB_WE_A &
+                {{2{exec_mask[0]}}, {2{exec_mask[1]}}};
+        end
+
+        if (xu_ctl_taps_out[7].l1_wb_valid) begin
+            bram_di_b   = l1_result;
+            bram_addr_b = xu_ctl_taps_out[7].WB_ADDR_B;
+            bram_en_b   = 1'b1;
+            bram_we_b   =
+                xu_ctl_taps_out[7].WB_WE_B &
+                {{2{exec_mask[2]}}, {2{exec_mask[3]}}};
+        end
+    end
+
+    // Completed 24-bit bank flush
+    if (wb24_flush) begin
+        bram_di_a   = wb24_flush_data_a;
+        bram_di_b   = wb24_flush_data_b;
+
+        bram_addr_a = wb24_flush_addr_a;
+        bram_addr_b = wb24_flush_addr_b;
+
+        bram_en_a   = 1'b1;
         bram_en_b   = 1'b1;
-        bram_we_b   = xu_ctl_taps_out[7].WB_WE_B & {{2{exec_mask[2]}}, {2{exec_mask[3]}}};;
+
+        bram_we_a   = 4'b1111;
+        bram_we_b   = 4'b1111;
     end
 end
 

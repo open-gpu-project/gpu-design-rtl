@@ -33,6 +33,7 @@ add_cocotb_test(
       test_18b_fma
       test_24b_add
       test_18b_cmp
+      test_24b_cmp
 )
 
 add_cocotb_verilator(
@@ -94,6 +95,7 @@ add_cocotb_test(
    design.partitions.xu.dv.test_xu_predicates
    TESTCASES
       test_predicate_writeback
+      test_cmp24_predicate_writeback
       test_predicate_round_robin
       test_fma18_predicate_round_robin
 )
@@ -112,6 +114,7 @@ add_cocotb_test(
       test_fma18_accumulate_chain
       test_add24_slice_rotations
       test_fma24_rotations_and_consume
+      test_add24_fma24_staged_bram_writeback
       test_add18_signed
       test_fma18_signed
       test_add24_signed

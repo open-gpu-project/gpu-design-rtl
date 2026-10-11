@@ -159,6 +159,13 @@ def init_xu_inputs(dut):
    dut.l1dsp_casc_in.value = 0
    dut.DI_A.value = 0
    dut.DI_B.value = 0
+   dut.wb24_load.value = 0
+   dut.wb24_load_row.value = 0
+   dut.wb24_start.value = 0
+   dut.wb24_flush.value = 0
+   dut.wb24_flush_row.value = 0
+   dut.wb24_flush_addr_a.value = BRAM_IDLE_ADDR
+   dut.wb24_flush_addr_b.value = BRAM_IDLE_ADDR
 
 
 async def reset_dut(dut):

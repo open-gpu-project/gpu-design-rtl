@@ -42,7 +42,7 @@ function(add_cocotb_test executable_target test_module)
 
          add_test(
             NAME "${_test_name}"
-            COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/cocotb-runner.py"
+            COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/cocotb_runner.py"
             WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
          )
 
@@ -71,7 +71,7 @@ function(add_cocotb_test executable_target test_module)
 
       add_test(
          NAME "${_test_name}"
-         COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/cocotb-runner.py"
+         COMMAND "${UV_EXECUTABLE}" run "${CMAKE_CURRENT_SOURCE_DIR}/cocotb_runner.py"
          WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
       )
 

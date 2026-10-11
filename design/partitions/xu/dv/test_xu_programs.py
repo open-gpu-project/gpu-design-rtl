@@ -10,6 +10,7 @@ from pathlib import Path
 
 import cocotb
 import pytest
+from cocotb.triggers import ReadOnly, Timer
 
 from design.partitions.xu.dv import xu_timing as T
 from design.partitions.xu.dv import xu_vectors
@@ -23,13 +24,23 @@ from design.partitions.xu.dv.xu_asm import (
     Program,
     Slot,
     assemble,
+    load_bram,
+    packed_ctl,
     run_program,
 )
 from design.partitions.xu.dv.xu_models import (
     make_mode2_slices,
     make_mode3_slices,
+    fma24_expected,
     pack18_pair,
     pack72_from_slices,
+)
+from design.partitions.xu.dv.xu_tb import (
+    BRAM_IDLE_ADDR,
+    drive_xu_ctl,
+    dsp_add_ctl,
+    reset_dut,
+    xu_edge,
 )
 
 # BRAM layout bases shared by the tests below.
@@ -325,6 +336,113 @@ async def test_fma24_rotations_and_consume(dut):
                 acc=Slot(8 + k), dst=16 + k))
 
    await run_program(dut, prog)
+
+
+def _idle_wb24(dut):
+   dut.wb24_load.value = 0
+   dut.wb24_load_row.value = 0
+   dut.wb24_start.value = 0
+   dut.wb24_flush.value = 0
+   dut.wb24_flush_row.value = 0
+   dut.wb24_flush_addr_a.value = BRAM_IDLE_ADDR
+   dut.wb24_flush_addr_b.value = BRAM_IDLE_ADDR
+
+
+async def _step_xu(dut, ctl=None, **wb24):
+   _idle_wb24(dut)
+   for name, value in wb24.items():
+      getattr(dut, name).value = value
+   if ctl is None:
+      nop_ctl = dsp_add_ctl(zero_acc=True)
+      ctl = dict(l0dsp_control=nop_ctl, l1dsp_control=nop_ctl,
+                 mode=0, acc_raddr=0, acc_we=0)
+   drive_xu_ctl(dut, **ctl)
+   await xu_edge(dut)
+   await ReadOnly()
+   await Timer(1, unit="step")
+
+
+async def _stage_24bit_writeback(dut, op, dest_a, dest_b, dest_row):
+   prog = Program(ops=[op])
+   drives, _ = assemble(prog)
+   assert len(drives) == 1
+
+   await _step_xu(dut, dict(addr_a=dest_a, addr_b=dest_b))
+   await _step_xu(dut)
+   await _step_xu(dut, wb24_load=1, wb24_load_row=dest_row)
+   await _step_xu(dut, wb24_start=1)
+   await _step_xu(dut)
+   d = drives[0]
+   await _step_xu(dut, dict(addr_a=d.addr_a, addr_b=d.addr_b, **packed_ctl(d.ctl)))
+   for _ in range(T.ISSUE_TO_RESULT + 1):
+      await _step_xu(dut)
+   await _step_xu(dut, wb24_flush=1, wb24_flush_row=dest_row,
+                  wb24_flush_addr_a=dest_a, wb24_flush_addr_b=dest_b)
+   for _ in range(T.BRAM_ADDR_TO_DO + 1):
+      await _step_xu(dut)
+
+
+async def _read_bram_pair(dut, addr_a, addr_b):
+   await _step_xu(dut, dict(addr_a=addr_a, addr_b=addr_b))
+   await _step_xu(dut)
+   return int(dut.DO_A.value), int(dut.DO_B.value)
+
+
+@cocotb.test()
+async def test_add24_fma24_staged_bram_writeback(dut):
+   """Stage old 72-bit rows, merge ADD24/FMA24 results, and flush to BRAM."""
+   add_dest = (160, 161)
+   fma_dest = (162, 163)
+   add_row = 0
+   fma_row = 0
+   add_sel = 1
+   fma_sel = 2
+   add_inputs = (0x123456, 0x0FEDCB)
+   fma_inputs = (0x000123, 0x000321)
+   add_old = (0x0A0A0A, 0x0B0B0B, 0x0C0C0C)
+   fma_old = (0x010203, 0x040506, 0x070809)
+
+   prog = Program()
+   load_72_rows(prog, [make_mode2_slices(*add_inputs, add_sel, dummy=0x0D0D0D)],
+                base_index=0)
+   load_72_rows(prog, [make_mode3_slices(*fma_inputs, fma_sel, dummy=0x0E0E0E)],
+                base_index=1)
+   add_old_lo, add_old_hi = pack72_from_slices(*add_old)
+   fma_old_lo, fma_old_hi = pack72_from_slices(*fma_old)
+   prog.set_bram_word(add_dest[0], add_old_lo)
+   prog.set_bram_word(add_dest[1], add_old_hi)
+   prog.set_bram_word(fma_dest[0], fma_old_lo)
+   prog.set_bram_word(fma_dest[1], fma_old_hi)
+
+   await reset_dut(dut)
+   await load_bram(dut, prog.bram)
+   for _ in range(T.CTL_OUTPUT_TAP + 1):
+      await _step_xu(dut)
+
+   await _stage_24bit_writeback(
+       dut,
+       ADD24(addr_a=LO_72, addr_b=HI_72, slice_sel=add_sel,
+             l0_wb_valid=1, l1_wb_valid=1),
+       add_dest[0], add_dest[1], add_row)
+   expected_add = pack72_from_slices(add_inputs[0], add_inputs[1], add_old[2])
+
+   await _stage_24bit_writeback(
+       dut,
+       FMA24(addr_a=LO_72 + 1, addr_b=HI_72 + 1, slice_sel=fma_sel,
+             l0_wb_valid=1),
+       fma_dest[0], fma_dest[1], fma_row)
+   fma_result = fma24_expected(fma_inputs[0], fma_inputs[1], 0)
+   expected_fma = pack72_from_slices(fma_result, fma_old[1], fma_old[2])
+
+   actual_add = await _read_bram_pair(dut, *add_dest)
+   actual_fma = await _read_bram_pair(dut, *fma_dest)
+
+   assert actual_add == expected_add, (
+      f"ADD24 staged writeback expected={tuple(hex(v) for v in expected_add)} "
+      f"actual={tuple(hex(v) for v in actual_add)}")
+   assert actual_fma == expected_fma, (
+      f"FMA24 staged writeback expected={tuple(hex(v) for v in expected_fma)} "
+      f"actual={tuple(hex(v) for v in actual_fma)}")
 
 
 @cocotb.test()
